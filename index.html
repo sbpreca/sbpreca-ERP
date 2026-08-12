@@ -460,10 +460,8 @@ input[readonly]{background:#f5f5f5;color:#999}
       <p style="font-size:13px;color:#666;margin-bottom:12px">업체 담당자 설정이 안 보이거나 이상할 때 눌러주세요. 발주 데이터는 유지돼요.</p>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
         <button class="btn" style="color:#854d0e;border-color:#fde68a" onclick="resetContacts()">업체 목록 초기화</button>
-        <button class="btn" style="color:#dc2626;border-color:#fecaca" onclick="resetOrders()">발주 데이터 초기화</button>
         <span id="reset-msg" style="font-size:12px;color:#15803d"></span>
       </div>
-      <p style="font-size:12px;color:#999;margin-top:8px">※ 발주 데이터 초기화는 샘플 데이터로 되돌아가요. 실제 입력 데이터가 있다면 누르지 마세요.</p>
     </div>
     <div class="setting-section">
       <h3>회사 정보</h3>
@@ -877,7 +875,8 @@ async function loadAll(){
     MY = await loadConfigFromDb();
     BUYERS = await loadBuyersFromDb();
     SELLERS = await loadSellersFromDb();
-    await seedSampleOrdersIfEmpty();
+    // ※ 실사용 데이터 관리 시작 이후로는 발주가 0건이어도 샘플 데이터를 자동으로 채우지 않아요.
+    // await seedSampleOrdersIfEmpty();
     orders = await loadOrdersFromDb();
     closingState = await loadClosingStateFromDb();
     const pl = await loadPlItemsFromDb();
@@ -920,18 +919,6 @@ async function resetContacts(){
   await sb.from('sellers').insert(Object.entries(DEFAULT_SELLERS).map(([name,v])=>({name,...v})));
   BUYERS = {...DEFAULT_BUYERS};
   SELLERS = {...DEFAULT_SELLERS};
-  document.getElementById('reset-msg').textContent = '초기화 완료!';
-  setTimeout(()=>location.reload(), 1000);
-}
-
-async function resetOrders(){
-  if(!confirm('⚠ 모든 팀원의 발주·마감·손익 데이터가 전부 삭제돼요. 정말 진행할까요?')) return;
-  if(!confirm('정말로 진행하시겠어요? 이 작업은 되돌릴 수 없어요.')) return;
-  showSyncStatus('초기화 중...');
-  await sb.from('order_items').delete().neq('order_id', '00000000-0000-0000-0000-000000000000');
-  await sb.from('orders').delete().neq('no','');
-  await sb.from('closing_state').delete().neq('key','');
-  await sb.from('pl_items').delete().neq('id','00000000-0000-0000-0000-000000000000');
   document.getElementById('reset-msg').textContent = '초기화 완료!';
   setTimeout(()=>location.reload(), 1000);
 }
