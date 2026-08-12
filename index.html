@@ -372,6 +372,13 @@ input[readonly]{background:#f5f5f5;color:#999}
     <div class="filter-row">
       <label style="font-size:12px;color:#888;align-self:center;font-weight:600">연도</label>
       <select id="an-year" onchange="renderAnnual()"></select>
+      <div style="display:flex;gap:4px;margin-left:8px">
+        <button id="an-tab-all" class="btn" style="font-size:12px;padding:5px 14px;background:#111;color:#fff;border-color:#111" onclick="setAnnualTab('all')">전체</button>
+        <button id="an-tab-light" class="btn" style="font-size:12px;padding:5px 14px" onclick="setAnnualTab('조명')">조명</button>
+        <button id="an-tab-material" class="btn" style="font-size:12px;padding:5px 14px" onclick="setAnnualTab('원부자재')">원부자재</button>
+        <button id="an-tab-fee" class="btn" style="font-size:12px;padding:5px 14px" onclick="setAnnualTab('수수료')">수수료</button>
+      </div>
+      <input type="hidden" id="an-tab" value="all">
       <span style="font-size:11px;color:#999;align-self:center;margin-left:6px">※ 1~2분기(상반기)는 수동 입력, 3분기(7월)부터는 발주 데이터에서 출하일 기준 자동 집계돼요</span>
     </div>
     <div class="metrics" id="an-metrics"></div>
@@ -382,7 +389,7 @@ input[readonly]{background:#f5f5f5;color:#999}
       </div>
       <table class="data-tbl">
         <thead><tr>
-          <th>매출처</th><th>품목</th>
+          <th>매출처</th><th>품목</th><th style="width:70px">분류</th>
           <th class="r" style="width:110px">상반기(수동)</th>
           <th class="r">7월</th><th class="r">8월</th><th class="r">9월</th><th class="r" style="background:#f0f0f0">3Q</th>
           <th class="r">10월</th><th class="r">11월</th><th class="r">12월</th><th class="r" style="background:#f0f0f0">4Q</th>
@@ -405,7 +412,7 @@ input[readonly]{background:#f5f5f5;color:#999}
       </div>
       <table class="data-tbl">
         <thead><tr>
-          <th>매입처</th><th>품목</th>
+          <th>매입처</th><th>품목</th><th style="width:70px">분류</th>
           <th class="r" style="width:110px">상반기(수동)</th>
           <th class="r">7월</th><th class="r">8월</th><th class="r">9월</th><th class="r" style="background:#f0f0f0">3Q</th>
           <th class="r">10월</th><th class="r">11월</th><th class="r">12월</th><th class="r" style="background:#f0f0f0">4Q</th>
@@ -470,7 +477,7 @@ input[readonly]{background:#f5f5f5;color:#999}
       <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
         <input id="new-buyer-name" placeholder="매입처명" style="width:160px">
         <input id="new-buyer-contact" placeholder="담당자" style="width:160px">
-        <select id="new-buyer-category" style="width:110px"><option value="조명">조명</option><option value="원부자재">원부자재</option></select>
+        <select id="new-buyer-category" style="width:110px"><option value="조명">조명</option><option value="원부자재">원부자재</option><option value="수수료">수수료</option></select>
         <button class="btn btn-save" onclick="addBuyer()">추가</button>
       </div>
       <table class="data-tbl">
@@ -483,7 +490,7 @@ input[readonly]{background:#f5f5f5;color:#999}
       <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
         <input id="new-seller-name" placeholder="매출처명" style="width:160px">
         <input id="new-seller-contact" placeholder="담당자" style="width:160px">
-        <select id="new-seller-category" style="width:110px"><option value="조명">조명</option><option value="원부자재">원부자재</option></select>
+        <select id="new-seller-category" style="width:110px"><option value="조명">조명</option><option value="원부자재">원부자재</option><option value="수수료">수수료</option></select>
         <input id="new-seller-biz" placeholder="사업자번호" style="width:140px">
         <input id="new-seller-ceo" placeholder="대표자" style="width:120px">
         <input id="new-seller-addr" placeholder="주소" style="width:260px">
@@ -985,6 +992,7 @@ async function editBuyer(name){
   categoryCell.innerHTML=`<select style="border:1px solid #888;border-radius:4px;padding:4px 8px;font-size:13px">
     <option${(info.category||'')==='조명'?' selected':''}>조명</option>
     <option${(info.category||'')==='원부자재'?' selected':''}>원부자재</option>
+    <option${(info.category||'')==='수수료'?' selected':''}>수수료</option>
   </select>`;
   row.querySelector('button').textContent='저장';
   row.querySelector('button').style.background='#111';
@@ -1032,6 +1040,7 @@ async function editSeller(name){
   categoryCell.innerHTML=`<select style="border:1px solid #888;border-radius:4px;padding:4px 8px;font-size:13px">
     <option${(info.category||'')==='조명'?' selected':''}>조명</option>
     <option${(info.category||'')==='원부자재'?' selected':''}>원부자재</option>
+    <option${(info.category||'')==='수수료'?' selected':''}>수수료</option>
   </select>`;
   row.querySelector('button').textContent='저장';
   row.querySelector('button').style.background='#111';
@@ -1952,6 +1961,26 @@ const yr=d=>d?d.slice(0,4):'';
 
 function annualRowKey(category,party,item){ return category+'|'+party+'|'+item; }
 
+function setAnnualTab(tab){
+  document.getElementById('an-tab').value=tab;
+  ['all','조명','원부자재','수수료'].forEach(t=>{
+    const id=t==='all'?'an-tab-all':(t==='조명'?'an-tab-light':(t==='원부자재'?'an-tab-material':'an-tab-fee'));
+    const btn=document.getElementById(id);
+    if(btn){
+      btn.style.background=t===tab?'#111':'';
+      btn.style.color=t===tab?'#fff':'';
+      btn.style.borderColor=t===tab?'#111':'#ddd';
+    }
+  });
+  renderAnnual();
+}
+
+// 매출처/매입처명으로 분류(조명/원부자재/수수료) 조회. 등록 안 된 업체는 '미분류'
+function partyCategory(sectionCategory, party){
+  const map = sectionCategory==='매출' ? SELLERS : BUYERS;
+  return (map[party] && map[party].category) || '미분류';
+}
+
 function renderAnnual(){
   // 연도 옵션 (발주 출하일 + 수동입력 데이터 + 올해)
   const nowYear=String(new Date().getFullYear());
@@ -1964,6 +1993,8 @@ function renderAnnual(){
   const curY=ySel.value||years[0]||nowYear;
   ySel.innerHTML=years.map(y=>`<option value="${y}"${y===curY?' selected':''}>${y}년</option>`).join('');
   ySel.value=curY;
+
+  const curTab=document.getElementById('an-tab')?document.getElementById('an-tab').value:'all';
 
   function buildSection(category, buyerOrSellerKey, amtKey){
     // 자동집계: 7~12월 (출하일 기준, 선택 연도)
@@ -1996,21 +2027,21 @@ function renderAnnual(){
       const m10=mo[10]||0,m11=mo[11]||0,m12=mo[12]||0;
       const q3=m7+m8+m9, q4=m10+m11+m12;
       const ttl=h1+q3+q4;
-      return {key,party,item,h1,m7,m8,m9,q3,m10,m11,m12,q4,ttl,manualId:mrow?mrow.id:null};
+      const cat=partyCategory(category,party);
+      return {key,party,item,cat,h1,m7,m8,m9,q3,m10,m11,m12,q4,ttl,manualId:mrow?mrow.id:null};
     }).sort((a,b)=>(a.party+a.item).localeCompare(b.party+b.item));
     return rows;
   }
 
-  const sellRows=buildSection('매출','seller','samt');
-  const buyRows=buildSection('매입','buyer','bamt');
+  const sellRowsAll=buildSection('매출','seller','samt');
+  const buyRowsAll=buildSection('매입','buyer','bamt');
+  const sellRows=curTab==='all'?sellRowsAll:sellRowsAll.filter(r=>r.cat===curTab);
+  const buyRows=curTab==='all'?buyRowsAll:buyRowsAll.filter(r=>r.cat===curTab);
 
-  function renderTable(rows,category,bodyId,footId){
-    const body=document.getElementById(bodyId);
-    if(!rows.length){
-      body.innerHTML=`<tr><td colspan="13" style="text-align:center;color:#bbb;padding:1.5rem">데이터가 없어요. 아래에서 행을 추가해주세요</td></tr>`;
-    }else{
-      body.innerHTML=rows.map(r=>`<tr>
+  function rowHtml(r,category){
+    return `<tr>
         <td>${r.party}</td><td>${r.item}</td>
+        <td style="font-size:11px;color:${r.cat==='미분류'?'#bbb':'#666'}">${r.cat}</td>
         <td class="r" style="padding:4px 8px">
           <input type="number" value="${r.h1}" style="width:100px;text-align:right;border:1px solid #ddd;border-radius:4px;padding:4px 6px;font-size:12px"
             onchange="saveAnnualH1('${category}','${r.party.replace(/'/g,"\\'")}','${r.item.replace(/'/g,"\\'")}',this.value)">
@@ -2021,18 +2052,40 @@ function renderAnnual(){
         <td class="r" style="background:#fafafa;font-weight:600">${fmt(r.q4)}</td>
         <td class="r" style="font-weight:700">${fmt(r.ttl)}</td>
         <td style="text-align:center">${r.h1?`<button class="del-btn" onclick="delAnnualRow('${category}','${r.party.replace(/'/g,"\\'")}','${r.item.replace(/'/g,"\\'")}')">×</button>`:''}</td>
-      </tr>`).join('');
-    }
-    const tot=k=>rows.reduce((s,r)=>s+r[k],0);
-    document.getElementById(footId).innerHTML=`<tr class="tot">
-      <td colspan="2">합계</td>
-      <td class="r">${fmt(tot('h1'))}</td>
-      <td class="r">${fmt(tot('m7'))}</td><td class="r">${fmt(tot('m8'))}</td><td class="r">${fmt(tot('m9'))}</td>
-      <td class="r">${fmt(tot('q3'))}</td>
-      <td class="r">${fmt(tot('m10'))}</td><td class="r">${fmt(tot('m11'))}</td><td class="r">${fmt(tot('m12'))}</td>
-      <td class="r">${fmt(tot('q4'))}</td>
-      <td class="r">${fmt(tot('ttl'))}</td><td></td>
+      </tr>`;
+  }
+
+  const tot=(rows,k)=>rows.reduce((s,r)=>s+r[k],0);
+  function subtotalRow(rows,label,cls){
+    return `<tr class="${cls||''}" style="background:${cls==='tot'?'':'#f0f0f0'}">
+      <td colspan="3" style="padding:8px 12px;font-weight:600">${label}</td>
+      <td class="r">${fmt(tot(rows,'h1'))}</td>
+      <td class="r">${fmt(tot(rows,'m7'))}</td><td class="r">${fmt(tot(rows,'m8'))}</td><td class="r">${fmt(tot(rows,'m9'))}</td>
+      <td class="r">${fmt(tot(rows,'q3'))}</td>
+      <td class="r">${fmt(tot(rows,'m10'))}</td><td class="r">${fmt(tot(rows,'m11'))}</td><td class="r">${fmt(tot(rows,'m12'))}</td>
+      <td class="r">${fmt(tot(rows,'q4'))}</td>
+      <td class="r" style="font-weight:700">${fmt(tot(rows,'ttl'))}</td><td></td>
     </tr>`;
+  }
+
+  function renderTable(rows,category,bodyId,footId){
+    const body=document.getElementById(bodyId);
+    if(!rows.length){
+      body.innerHTML=`<tr><td colspan="14" style="text-align:center;color:#bbb;padding:1.5rem">데이터가 없어요. 아래에서 행을 추가해주세요</td></tr>`;
+    }else if(curTab==='all'){
+      // 전체 보기: 조명 → 원부자재 → 수수료 → 미분류 순으로 그룹핑 + 그룹별 소계
+      const order=['조명','원부자재','수수료','미분류'];
+      body.innerHTML=order.map(cat=>{
+        const grp=rows.filter(r=>r.cat===cat);
+        if(!grp.length) return '';
+        return `<tr style="background:#f8f8f8"><td colspan="14" style="padding:6px 12px;font-size:11px;font-weight:700;color:#555">${cat}</td></tr>`
+          +grp.map(r=>rowHtml(r,category)).join('')
+          +subtotalRow(grp,cat+' 소계');
+      }).join('');
+    }else{
+      body.innerHTML=rows.map(r=>rowHtml(r,category)).join('');
+    }
+    document.getElementById(footId).innerHTML=subtotalRow(rows,(curTab==='all'?'전체':curTab)+' 합계','tot');
   }
   renderTable(sellRows,'매출','an-sell-body','an-sell-foot');
   renderTable(buyRows,'매입','an-buy-body','an-buy-foot');
@@ -2044,10 +2097,11 @@ function renderAnnual(){
   const sellTtl=sum(sellRows,'ttl'), buyTtl=sum(buyRows,'ttl');
   const gH1=sellH1-buyH1, gQ3=sellQ3-buyQ3, gQ4=sellQ4-buyQ4, gTtl=sellTtl-buyTtl;
 
+  const labelPfx=curY+'년'+(curTab==='all'?'':' · '+curTab);
   document.getElementById('an-metrics').innerHTML=`
-    <div class="metric"><div class="metric-lbl">${curY}년 매출 합계</div><div class="metric-val">${fmtW(sellTtl)}</div></div>
-    <div class="metric"><div class="metric-lbl">${curY}년 매입 합계</div><div class="metric-val">${fmtW(buyTtl)}</div></div>
-    <div class="metric"><div class="metric-lbl">${curY}년 매출총이익</div><div class="metric-val ${gTtl>=0?'g':'b'}">${fmtW(gTtl)}</div></div>
+    <div class="metric"><div class="metric-lbl">${labelPfx} 매출 합계</div><div class="metric-val">${fmtW(sellTtl)}</div></div>
+    <div class="metric"><div class="metric-lbl">${labelPfx} 매입 합계</div><div class="metric-val">${fmtW(buyTtl)}</div></div>
+    <div class="metric"><div class="metric-lbl">${labelPfx} 매출총이익</div><div class="metric-val ${gTtl>=0?'g':'b'}">${fmtW(gTtl)}</div></div>
     <div class="metric"><div class="metric-lbl">매출총이익률</div><div class="metric-val">${sellTtl?(gTtl/sellTtl*100).toFixed(1):0}%</div></div>`;
 
   document.getElementById('an-gross-body').innerHTML=`
