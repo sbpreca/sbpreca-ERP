@@ -110,25 +110,26 @@ input[readonly]{background:#f5f5f5;color:#999}
 .a4-page+.a4-page{border-top:3px dashed #ccc}
 
 /* 발주서 서식 */
-.po-title{text-align:center;font-size:24px;font-weight:700;letter-spacing:12px;margin-bottom:6px}
-.po-no{text-align:center;font-size:12px;color:#555;margin-bottom:46px}
-.po-meta{display:grid;grid-template-columns:1fr 1fr;border:1.5px solid #222;margin-bottom:14px;align-items:stretch}
-.po-side+.po-side{border-left:1.5px solid #222}
-.po-row{display:flex;min-height:42px;border-bottom:1px solid #ccc}
+.po-title-band{background:#1f3864;color:#fff;text-align:center;font-size:26px;font-weight:700;letter-spacing:14px;padding:20px 0;margin-bottom:2px}
+.po-no{text-align:right;font-size:12px;color:#333;margin-bottom:18px;padding:4px 2px}
+.po-meta{display:grid;grid-template-columns:1fr 1fr;border:1.5px solid #1f3864;margin-bottom:14px;align-items:stretch}
+.po-meta .po-key{background:#dbe4f0}
+.po-side+.po-side{border-left:1.5px solid #1f3864}
+.po-row{display:flex;min-height:42px;border-bottom:1px solid #b8c4d9}
 .po-row:last-child{border-bottom:none}
-.po-key{background:#f0f0f0;padding:6px 10px;width:82px;min-width:82px;display:flex;align-items:center;font-size:11px;color:#333;font-weight:700;border-right:1px solid #ccc}
+.po-key{background:#f0f0f0;padding:6px 10px;width:82px;min-width:82px;display:flex;align-items:center;font-size:11px;color:#333;font-weight:700;border-right:1px solid #b8c4d9}
 .po-val{padding:6px 10px;display:flex;align-items:center;flex:1;font-size:12px}
 .po-tbl{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:12px;flex:1}
-.po-tbl th{background:#222;color:#fff;padding:8px 8px;border:1px solid #222;text-align:center;font-size:11px;font-weight:600}
-.po-tbl td{padding:0 8px;border:1px solid #888;text-align:center;vertical-align:middle;height:42px;box-sizing:border-box}
+.po-tbl th{background:#1f3864;color:#fff;padding:8px 8px;border:1px solid #1f3864;text-align:center;font-size:11px;font-weight:600}
+.po-tbl td{padding:0 8px;border:1px solid #b8c4d9;text-align:center;vertical-align:middle;height:42px;box-sizing:border-box}
 .po-tbl td.l{text-align:left}
 .po-tbl td.r{text-align:right}
-.po-tbl tr.empty-row td{height:42px;color:#ddd;border:1px solid #888;background:#fff}
-.po-tbl tfoot td{background:#222;color:#fff;font-weight:700;padding:8px 8px;border:1px solid #222}
-.po-foot{border:1.5px solid #222;margin-bottom:12px}
-.po-foot-row{display:flex;min-height:42px;border-bottom:1px solid #ccc}
+.po-tbl tr.empty-row td{height:42px;color:#ddd;border:1px solid #b8c4d9;background:#fff}
+.po-tbl tfoot td{background:#1f3864;color:#fff;font-weight:700;padding:8px 8px;border:1px solid #1f3864}
+.po-foot{border:1.5px solid #1f3864;margin-bottom:12px}
+.po-foot-row{display:flex;min-height:42px;border-bottom:1px solid #b8c4d9}
 .po-foot-row:last-child{border-bottom:none}
-.po-foot-key{background:#f0f0f0;padding:5px 10px;width:70px;min-width:70px;display:flex;align-items:center;font-size:11px;color:#333;font-weight:700;border-right:1px solid #ccc}
+.po-foot-key{background:#dbe4f0;padding:5px 10px;width:70px;min-width:70px;display:flex;align-items:center;font-size:11px;color:#333;font-weight:700;border-right:1px solid #b8c4d9}
 .po-foot-val{padding:5px 10px;display:flex;align-items:center;flex:1;font-size:12px}
 .po-note{font-size:11px;color:#666;line-height:1.9;margin-top:auto;padding-top:12px;border-top:1px solid #eee}
 
@@ -1234,10 +1235,10 @@ function showPO(){
     </tr>`).join('');
     const blank=emptyRows(its.length,FIXED_ROWS,8,'empty-row');
     html+=`<div class="a4-page">
-      <div class="po-title">발 주 서</div>
+      <div class="po-title-band">발 주 서</div>
+      <div class="po-no">No. ${poNo}</div>
       <div class="po-meta">
         <div class="po-side" style="display:flex;flex-direction:column">
-          <div class="po-row"><span class="po-key">문서번호</span><span class="po-val">No. ${poNo}</span></div>
           <div class="po-row"><span class="po-key">수 신 처</span><span class="po-val">${buyer}</span></div>
           <div class="po-row" style="flex:1"><span class="po-key">담 당 자</span><span class="po-val">${bi.contact}</span></div>
           <div class="po-row" style="flex:1;border-bottom:none"><span class="po-key">발 주 일</span><span class="po-val">${date.replace(/-/g,'.')}</span></div>
