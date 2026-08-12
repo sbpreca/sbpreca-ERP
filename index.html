@@ -154,6 +154,20 @@ input[readonly]{background:#f5f5f5;color:#999}
 .ts-tbl tfoot td{background:#f0f0f0;font-weight:700;border:1px solid #999;border-top:2px solid #222;padding:8px 8px;color:#111}
 .ts-bank{font-size:12px;color:#111;padding:8px 0;border-top:1.5px solid #222;display:flex;justify-content:space-between;align-items:center;margin-top:8px}
 
+/* 연간 현황 보고서 */
+.report-page{width:794px;padding:20mm 14mm;margin:0 auto;font-family:'맑은 고딕','Malgun Gothic','Apple SD Gothic Neo',sans-serif;color:#111;box-sizing:border-box}
+.report-title{text-align:center;font-size:21px;font-weight:700;margin-bottom:4px}
+.report-sub{text-align:center;font-size:12px;color:#666;margin-bottom:22px}
+.report-section-title{font-size:14px;font-weight:700;margin:26px 0 8px;padding-bottom:6px;border-bottom:2px solid #222}
+.report-tbl{width:100%;border-collapse:collapse;font-size:10.5px}
+.report-tbl th{background:#222;color:#fff;padding:5px 3px;border:1px solid #222;text-align:center;font-weight:600;white-space:nowrap}
+.report-tbl td{padding:4px 3px;border:1px solid #ccc;text-align:right;white-space:nowrap;color:#111}
+.report-tbl td.l{text-align:left}
+.report-tbl tr.grp-head td{background:#f0f0f0;font-weight:700;text-align:left}
+.report-tbl tr.grp-sub td{background:#f7f7f7;font-weight:700}
+.report-tbl tr.grand td{background:#222;color:#fff;font-weight:700}
+.report-tbl tr{page-break-inside:avoid}
+
 @media print{
   body{background:#fff!important}
   #overlay{position:static!important;background:none!important;padding:0!important;display:block!important;overflow:visible!important}
@@ -379,6 +393,7 @@ input[readonly]{background:#f5f5f5;color:#999}
         <button id="an-tab-fee" class="btn" style="font-size:12px;padding:5px 14px" onclick="setAnnualTab('수수료')">수수료</button>
       </div>
       <input type="hidden" id="an-tab" value="all">
+      <button class="btn btn-po" style="margin-left:8px" onclick="printAnnualReport()">보고서 PDF</button>
       <span style="font-size:11px;color:#999;align-self:center;margin-left:6px">※ 1~2분기(상반기)는 수동 입력, 3분기(7월)부터는 발주 데이터에서 출하일 기준 자동 집계돼요</span>
     </div>
     <div class="metrics" id="an-metrics"></div>
@@ -2108,6 +2123,76 @@ function renderAnnual(){
     <tr><td style="padding:10px 12px">매출</td><td class="r">${fmtW(sellH1)}</td><td class="r">${fmtW(sellQ3)}</td><td class="r">${fmtW(sellQ4)}</td><td class="r" style="font-weight:700">${fmtW(sellTtl)}</td></tr>
     <tr><td style="padding:10px 12px">매입</td><td class="r">${fmtW(buyH1)}</td><td class="r">${fmtW(buyQ3)}</td><td class="r">${fmtW(buyQ4)}</td><td class="r" style="font-weight:700">${fmtW(buyTtl)}</td></tr>
     <tr class="tot"><td style="padding:10px 12px">매출총이익</td><td class="r">${fmtW(gH1)}</td><td class="r">${fmtW(gQ3)}</td><td class="r">${fmtW(gQ4)}</td><td class="r">${fmtW(gTtl)}</td></tr>`;
+
+  _annualCache={curY,curTab,sellRows,buyRows};
+}
+let _annualCache=null;
+
+function printAnnualReport(){
+  renderAnnual();
+  if(!_annualCache) return;
+  const {curY,curTab,sellRows,buyRows}=_annualCache;
+  const tabLabel=curTab==='all'?'전체':curTab;
+  const today=new Date().toISOString().slice(0,10).replace(/-/g,'.');
+  const order=['조명','원부자재','수수료','미분류'];
+  const tot=(arr,k)=>arr.reduce((s,r)=>s+r[k],0);
+
+  function rowTr(r){
+    return `<tr><td class="l">${r.party}</td><td class="l">${r.item}</td><td>${r.cat}</td>
+      <td>${fmt(r.h1)}</td><td>${fmt(r.m7)}</td><td>${fmt(r.m8)}</td><td>${fmt(r.m9)}</td><td>${fmt(r.q3)}</td>
+      <td>${fmt(r.m10)}</td><td>${fmt(r.m11)}</td><td>${fmt(r.m12)}</td><td>${fmt(r.q4)}</td><td>${fmt(r.ttl)}</td></tr>`;
+  }
+  function subTr(arr,lbl,cls){
+    return `<tr class="${cls}"><td class="l" colspan="3">${lbl}</td>
+      <td>${fmt(tot(arr,'h1'))}</td><td>${fmt(tot(arr,'m7'))}</td><td>${fmt(tot(arr,'m8'))}</td><td>${fmt(tot(arr,'m9'))}</td><td>${fmt(tot(arr,'q3'))}</td>
+      <td>${fmt(tot(arr,'m10'))}</td><td>${fmt(tot(arr,'m11'))}</td><td>${fmt(tot(arr,'m12'))}</td><td>${fmt(tot(arr,'q4'))}</td><td>${fmt(tot(arr,'ttl'))}</td></tr>`;
+  }
+  function tableHtml(rows,label,partyLabel){
+    const headerRow=`<tr>
+      <th style="width:110px">${partyLabel}</th><th style="width:70px">품목</th><th style="width:50px">분류</th>
+      <th>상반기</th><th>7월</th><th>8월</th><th>9월</th><th>3Q</th><th>10월</th><th>11월</th><th>12월</th><th>4Q</th><th>연계</th>
+    </tr>`;
+    let body='';
+    if(!rows.length){
+      body=`<tr><td colspan="13" style="text-align:center;color:#999;padding:14px">데이터 없음</td></tr>`;
+    }else if(curTab==='all'){
+      body=order.map(cat=>{
+        const grp=rows.filter(r=>r.cat===cat);
+        if(!grp.length) return '';
+        return `<tr class="grp-head"><td colspan="13">${cat}</td></tr>`+grp.map(rowTr).join('')+subTr(grp,cat+' 소계','grp-sub');
+      }).join('');
+    }else{
+      body=rows.map(rowTr).join('');
+    }
+    body+=subTr(rows,(curTab==='all'?'전체':tabLabel)+' 합계','grand');
+    return `<div class="report-section-title">${label}</div>
+      <table class="report-tbl"><thead>${headerRow}</thead><tbody>${body}</tbody></table>`;
+  }
+
+  const sum=(rows,k)=>rows.reduce((s,r)=>s+r[k],0);
+  const sellTtl=sum(sellRows,'ttl'), buyTtl=sum(buyRows,'ttl'), gTtl=sellTtl-buyTtl;
+  const sellH1=sum(sellRows,'h1'), buyH1=sum(buyRows,'h1');
+  const sellQ3=sum(sellRows,'q3'), buyQ3=sum(buyRows,'q3');
+  const sellQ4=sum(sellRows,'q4'), buyQ4=sum(buyRows,'q4');
+  const gH1=sellH1-buyH1, gQ3=sellQ3-buyQ3, gQ4=sellQ4-buyQ4;
+
+  const html=`<div class="report-page">
+    <div class="report-title">${curY}년 연간 매출·매입 현황 보고서</div>
+    <div class="report-sub">${MY.name}　|　구분: ${tabLabel}　|　출력일: ${today}</div>
+    ${tableHtml(sellRows,'매출 현황','매출처')}
+    ${tableHtml(buyRows,'매입 현황','매입처')}
+    <div class="report-section-title">매출총이익 요약</div>
+    <table class="report-tbl">
+      <thead><tr><th style="width:120px">구분</th><th>상반기(수동)</th><th>3Q(7~9월)</th><th>4Q(10~12월)</th><th>연계</th></tr></thead>
+      <tbody>
+        <tr><td class="l">매출</td><td>${fmt(sellH1)}</td><td>${fmt(sellQ3)}</td><td>${fmt(sellQ4)}</td><td>${fmt(sellTtl)}</td></tr>
+        <tr><td class="l">매입</td><td>${fmt(buyH1)}</td><td>${fmt(buyQ3)}</td><td>${fmt(buyQ4)}</td><td>${fmt(buyTtl)}</td></tr>
+        <tr class="grand"><td class="l">매출총이익</td><td>${fmt(gH1)}</td><td>${fmt(gQ3)}</td><td>${fmt(gQ4)}</td><td>${fmt(gTtl)}</td></tr>
+      </tbody>
+    </table>
+  </div>`;
+  document.getElementById('doc-content').innerHTML=html;
+  document.getElementById('overlay').style.display='block';
 }
 
 async function saveAnnualH1(category,party,item,value){
