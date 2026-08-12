@@ -154,8 +154,8 @@ input[readonly]{background:#f5f5f5;color:#999}
 .ts-tbl tfoot td{background:#f0f0f0;font-weight:700;border:1px solid #999;border-top:2px solid #222;padding:8px 8px;color:#111}
 .ts-bank{font-size:12px;color:#111;padding:8px 0;border-top:1.5px solid #222;display:flex;justify-content:space-between;align-items:center;margin-top:8px}
 
-/* 연간 현황 보고서 */
-.report-page{width:794px;padding:20mm 14mm;margin:0 auto;font-family:'맑은 고딕','Malgun Gothic','Apple SD Gothic Neo',sans-serif;color:#111;box-sizing:border-box}
+/* 연간 현황 보고서 (가로 A4) */
+.report-page{width:1120px;padding:14mm 16mm;margin:0 auto;font-family:'맑은 고딕','Malgun Gothic','Apple SD Gothic Neo',sans-serif;color:#111;box-sizing:border-box}
 .report-title{text-align:center;font-size:21px;font-weight:700;margin-bottom:4px}
 .report-sub{text-align:center;font-size:12px;color:#666;margin-bottom:22px}
 .report-section-title{font-size:14px;font-weight:700;margin:26px 0 8px;padding-bottom:6px;border-bottom:2px solid #222}
@@ -179,6 +179,7 @@ input[readonly]{background:#f5f5f5;color:#999}
   @page{size:A4 portrait;margin:0}
 }
 </style>
+<style id="dynamic-page-style"></style>
 </head>
 <body>
 <div id="loading-screen" style="position:fixed;inset:0;background:#eee;z-index:9998;display:flex;align-items:center;justify-content:center;font-size:16px;color:#555">불러오는 중...</div>
@@ -413,11 +414,12 @@ input[readonly]{background:#f5f5f5;color:#999}
         <tbody id="an-sell-body"></tbody>
         <tfoot id="an-sell-foot"></tfoot>
       </table>
-      <div style="padding:10px 12px;display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid #eee">
+      <div style="padding:10px 12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;border-top:1px solid #eee">
         <input id="an-sell-party" placeholder="매출처명 (예: 테크피아_CTO-C3)" style="width:200px">
-        <input id="an-sell-item" placeholder="품목 (예: CTO-C3)" style="width:140px">
+        <input id="an-sell-item" placeholder="품목 (조명 업체는 비워도 돼요)" style="width:180px">
         <input type="number" id="an-sell-amt" placeholder="상반기 합계금액" style="width:150px">
         <button class="btn btn-save" onclick="addAnnualRow('매출')">+ 행 추가</button>
+        <span style="font-size:11px;color:#999">※ 조명 업체는 품목 구분 없이 업체 단위로 합산돼요</span>
       </div>
     </div>
 
@@ -436,11 +438,12 @@ input[readonly]{background:#f5f5f5;color:#999}
         <tbody id="an-buy-body"></tbody>
         <tfoot id="an-buy-foot"></tfoot>
       </table>
-      <div style="padding:10px 12px;display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid #eee">
+      <div style="padding:10px 12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;border-top:1px solid #eee">
         <input id="an-buy-party" placeholder="매입처명" style="width:200px">
-        <input id="an-buy-item" placeholder="품목" style="width:140px">
+        <input id="an-buy-item" placeholder="품목 (조명 업체는 비워도 돼요)" style="width:180px">
         <input type="number" id="an-buy-amt" placeholder="상반기 합계금액" style="width:150px">
         <button class="btn btn-save" onclick="addAnnualRow('매입')">+ 행 추가</button>
+        <span style="font-size:11px;color:#999">※ 조명 업체는 품목 구분 없이 업체 단위로 합산돼요</span>
       </div>
     </div>
 
@@ -1261,6 +1264,8 @@ function showPO(){
     </div>`;
   });
   document.getElementById('doc-content').innerHTML=html;
+  document.getElementById('dynamic-page-style').textContent='';
+  document.getElementById('doc-frame').style.width='794px';
   document.getElementById('overlay').style.display='block';
 }
 
@@ -1336,6 +1341,8 @@ function buildTS(selectedItems, issueDate){
     </div>`;
   });
   document.getElementById('doc-content').innerHTML=html;
+  document.getElementById('dynamic-page-style').textContent='';
+  document.getElementById('doc-frame').style.width='794px';
   document.getElementById('overlay').style.display='block';
 }
 
@@ -1450,6 +1457,8 @@ function showTSfromDeliver(){
     });
   });
   document.getElementById('doc-content').innerHTML=html;
+  document.getElementById('dynamic-page-style').textContent='';
+  document.getElementById('doc-frame').style.width='794px';
   document.getElementById('overlay').style.display='block';
   // 납품완료 처리
   checked.forEach(r=>{
@@ -1550,6 +1559,8 @@ function quickTS(idx){
     </div>`;
   });
   document.getElementById('doc-content').innerHTML=html;
+  document.getElementById('dynamic-page-style').textContent='';
+  document.getElementById('doc-frame').style.width='794px';
   document.getElementById('overlay').style.display='block';
   // 미납품이었던 항목만 납품완료로 전환
   items.forEach(r2=>{
@@ -1982,6 +1993,16 @@ function partyCategory(sectionCategory, party){
   const map = sectionCategory==='매출' ? SELLERS : BUYERS;
   return (map[party] && map[party].category) || '미분류';
 }
+// 조명 업체는 품목 구분 없이 업체 단위로만 집계 (원부자재는 품목별로 세분화)
+function isLightParty(sectionCategory, party){
+  return partyCategory(sectionCategory, party)==='조명';
+}
+// 상반기 수동입력을 특정 업체(연도+구분+업체) 기준으로 통째로 지움 (조명 업체는 품목 무관하게 하나로 합치기 위함)
+async function clearAllManualForParty(year, category, party){
+  showSyncStatus('저장 중...');
+  const {error}=await sb.from('annual_manual').delete().eq('year',year).eq('category',category).eq('party',party);
+  if(error){ console.error(error); showSyncStatus('저장 실패', true); }
+}
 
 function renderAnnual(){
   // 연도 옵션 (발주 출하일 + 수동입력 데이터 + 올해)
@@ -2000,6 +2021,7 @@ function renderAnnual(){
 
   function buildSection(category, buyerOrSellerKey, amtKey){
     // 자동집계: 7~12월 (출하일 기준, 선택 연도)
+    // 조명 업체는 품목 구분 없이 업체 단위로만 합산, 원부자재는 품목별로 세분화
     const monthAgg={}; // key -> {7:amt,...,12:amt}
     orders.forEach(o=>{
       o.items.forEach(i=>{
@@ -2008,16 +2030,21 @@ function renderAnnual(){
         if(mo<7) return; // 1~6월은 수동 입력 영역이라 자동집계 제외
         const party=i[buyerOrSellerKey];
         if(!party) return;
-        const item=i.item||'';
+        const item=isLightParty(category,party) ? '' : (i.item||'');
         const key=annualRowKey(category,party,item);
         if(!monthAgg[key]) monthAgg[key]={};
         monthAgg[key][mo]=(monthAgg[key][mo]||0)+(i[amtKey]||0);
       });
     });
-    // 수동입력 (상반기)
+    // 수동입력 (상반기) - 조명 업체는 저장된 품목명과 무관하게 업체 단위로 합산
     const manualRows=annualManual.filter(r=>String(r.year)===curY && r.category===category);
     const manualMap={};
-    manualRows.forEach(r=>{ manualMap[annualRowKey(category,r.party,r.item)]=r; });
+    manualRows.forEach(r=>{
+      const item=isLightParty(category,r.party) ? '' : r.item;
+      const key=annualRowKey(category,r.party,item);
+      const prevAmt=manualMap[key]?(+manualMap[key].amount||0):0;
+      manualMap[key]={...r, item, amount:prevAmt+(+r.amount||0)};
+    });
 
     const allKeys=[...new Set([...Object.keys(monthAgg), ...Object.keys(manualMap)])];
     const rows=allKeys.map(key=>{
@@ -2041,8 +2068,9 @@ function renderAnnual(){
   const buyRows=curTab==='all'?buyRowsAll:buyRowsAll.filter(r=>r.cat===curTab);
 
   function rowHtml(r,category){
+    const itemLabel = r.item || (r.cat==='조명' ? '<span style="color:#bbb">(업체 전체)</span>' : '');
     return `<tr>
-        <td>${r.party}</td><td>${r.item}</td>
+        <td>${r.party}</td><td>${itemLabel}</td>
         <td style="font-size:11px;color:${r.cat==='미분류'?'#bbb':'#666'}">${r.cat}</td>
         <td class="r" style="padding:4px 8px">
           <input type="number" value="${r.h1}" style="width:100px;text-align:right;border:1px solid #ddd;border-radius:4px;padding:4px 6px;font-size:12px"
@@ -2125,7 +2153,8 @@ function printAnnualReport(){
   const tot=(arr,k)=>arr.reduce((s,r)=>s+r[k],0);
 
   function rowTr(r){
-    return `<tr><td class="l">${r.party}</td><td class="l">${r.item}</td><td>${r.cat}</td>
+    const itemLabel=r.item||(r.cat==='조명'?'(업체 전체)':'');
+    return `<tr><td class="l">${r.party}</td><td class="l">${itemLabel}</td><td>${r.cat}</td>
       <td>${fmt(r.h1)}</td><td>${fmt(r.m7)}</td><td>${fmt(r.m8)}</td><td>${fmt(r.m9)}</td><td>${fmt(r.q3)}</td>
       <td>${fmt(r.m10)}</td><td>${fmt(r.m11)}</td><td>${fmt(r.m12)}</td><td>${fmt(r.q4)}</td><td>${fmt(r.ttl)}</td></tr>`;
   }
@@ -2179,22 +2208,40 @@ function printAnnualReport(){
     </table>
   </div>`;
   document.getElementById('doc-content').innerHTML=html;
+  document.getElementById('dynamic-page-style').textContent='@media print{ @page{ size:A4 landscape; margin:10mm; } }';
+  document.getElementById('doc-frame').style.width='1160px';
   document.getElementById('overlay').style.display='block';
 }
 
 async function saveAnnualH1(category,party,item,value){
   const curY=document.getElementById('an-year').value;
   const amount=+value||0;
-  const row=await upsertAnnualManual({year:curY,category,party,item,amount});
-  if(row){
-    const idx=annualManual.findIndex(r=>String(r.year)===String(curY)&&r.category===category&&r.party===party&&r.item===item);
-    if(idx>=0) annualManual[idx]=row; else annualManual.push(row);
+  if(isLightParty(category,party)){
+    // 조명 업체: 품목 무관하게 하나로 합쳐서 관리 (기존 항목 전부 지우고 하나로 재저장)
+    await clearAllManualForParty(curY,category,party);
+    annualManual = annualManual.filter(r=>!(String(r.year)===String(curY)&&r.category===category&&r.party===party));
+    if(amount>0){
+      const row=await upsertAnnualManual({year:curY,category,party,item:'',amount});
+      if(row) annualManual.push(row);
+    }
+  }else{
+    const row=await upsertAnnualManual({year:curY,category,party,item,amount});
+    if(row){
+      const idx=annualManual.findIndex(r=>String(r.year)===String(curY)&&r.category===category&&r.party===party&&r.item===item);
+      if(idx>=0) annualManual[idx]=row; else annualManual.push(row);
+    }
   }
   renderAnnual();
 }
 
 async function delAnnualRow(category,party,item){
   const curY=document.getElementById('an-year').value;
+  if(isLightParty(category,party)){
+    await clearAllManualForParty(curY,category,party);
+    annualManual = annualManual.filter(r=>!(String(r.year)===String(curY)&&r.category===category&&r.party===party));
+    renderAnnual();
+    return;
+  }
   const idx=annualManual.findIndex(r=>String(r.year)===String(curY)&&r.category===category&&r.party===party&&r.item===item);
   if(idx<0) return;
   const id=annualManual[idx].id;
@@ -2206,10 +2253,18 @@ async function delAnnualRow(category,party,item){
 async function addAnnualRow(category){
   const pfx=category==='매출'?'an-sell':'an-buy';
   const party=document.getElementById(pfx+'-party').value.trim();
-  const item=document.getElementById(pfx+'-item').value.trim();
+  let item=document.getElementById(pfx+'-item').value.trim();
   const amount=+document.getElementById(pfx+'-amt').value||0;
-  if(!party||!item){ alert('업체명과 품목을 입력해주세요'); return; }
+  if(!party){ alert('업체명을 입력해주세요'); return; }
+  const light=isLightParty(category,party);
+  if(light){ item=''; }
+  else if(!item){ alert('품목을 입력해주세요'); return; }
   const curY=document.getElementById('an-year').value||String(new Date().getFullYear());
+  if(light){
+    // 조명 업체는 하나의 행으로만 관리 (기존 값 있으면 덮어씀)
+    await clearAllManualForParty(curY,category,party);
+    annualManual = annualManual.filter(r=>!(String(r.year)===String(curY)&&r.category===category&&r.party===party));
+  }
   const row=await upsertAnnualManual({year:curY,category,party,item,amount});
   if(row) annualManual.push(row);
   document.getElementById(pfx+'-party').value='';
