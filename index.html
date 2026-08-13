@@ -1971,11 +1971,11 @@ function setClosingTab(tab){
 function renderClosing(){
   const cm=document.getElementById('cl-month').value;
   const tab=document.getElementById('cl-tab')?document.getElementById('cl-tab').value:'all';
-  const months=[...new Set(orders.map(o=>ym(o.date)).filter(Boolean))].sort().reverse();
+  // 출하일(납품일) 기준으로 월 목록/필터링 (발주일 기준 아님 - 손익계산서/연간현황과 동일 기준으로 통일)
+  const months=[...new Set(orders.flatMap(o=>o.items.map(i=>i.ship?ym(i.ship):'')).filter(Boolean))].sort().reverse();
   document.getElementById('cl-month').innerHTML=`<option value="">전체</option>`+months.map(m=>`<option${m===cm?' selected':''}>${m}</option>`).join('');
 
-  const filtered=cm?orders.filter(o=>ym(o.date)===cm):orders;
-  const all=filtered.flatMap(o=>o.items);
+  const all=orders.flatMap(o=>o.items).filter(i=>!cm || (i.ship && ym(i.ship)===cm));
 
   // 매입처별 집계 (품목별 상세 포함)
   const bm={};
