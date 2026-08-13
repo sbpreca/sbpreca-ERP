@@ -504,6 +504,20 @@ input[readonly]{background:#f5f5f5;color:#999}
   <!-- 설정 -->
   <div id="page-settings" class="page">
     <div class="setting-section">
+      <h3>품목 단가표 (매입단가 / 매출단가)</h3>
+      <p style="font-size:13px;color:#666;margin-bottom:12px">업체와 무관하게 품목 하나에 매입단가·매출단가를 등록해두면, 발주 입력 시 품목을 고를 때 자동으로 채워져요 (에누리 등 필요하면 그 자리에서 바로 수정 가능).</p>
+      <table class="data-tbl">
+        <thead><tr><th>품목</th><th class="r" style="width:140px">매입단가</th><th class="r" style="width:140px">매출단가</th><th style="width:60px"></th></tr></thead>
+        <tbody id="item-price-body"></tbody>
+      </table>
+      <div style="padding:10px 12px;display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid #eee">
+        <input id="new-price-item" placeholder="품목명" style="width:200px">
+        <input type="number" id="new-price-buy" placeholder="매입단가" style="width:130px">
+        <input type="number" id="new-price-sell" placeholder="매출단가" style="width:130px">
+        <button class="btn btn-save" onclick="addItemPrice()">+ 추가</button>
+      </div>
+    </div>
+    <div class="setting-section">
       <h3>업체 데이터 초기화</h3>
       <p style="font-size:13px;color:#666;margin-bottom:12px">업체 담당자 설정이 안 보이거나 이상할 때 눌러주세요. 발주 데이터는 유지돼요.</p>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
@@ -643,8 +657,8 @@ const DEFAULT_SELLERS={
 };
 let BUYERS={...DEFAULT_BUYERS},SELLERS={...DEFAULT_SELLERS};
 
-const ITEMS=['CTO-C3','CTO-B2','SR-40M','ITO sol','투광등 w Pole _80W','내압방폭등_60W','BL 평판등_40W','CR-25','배송비','기타'];
-const SPECS={'CTO-C3':'20KG/CAN','CTO-B2':'20KG/CAN','SR-40M':'20KG/CAN'};
+const ITEMS=['CTO-C3','CTO-B2','SR-40M','ITO','다운라이트 20W','클립방습등 40W','BL 평판등 40W','BL 평판등40W 디밍 센서','LED 직부등_40W 디밍','LED 직부등_40W','LED 직부등_50W','LED 직부등_50W edge','K2 Line 방습등 40W','CR-25','CR-25Y','원형투광등 150W 삼각 브라켓포함','HL-Exd-L80','원형투광등 80W','LED 방폭형광등 17W*2','투광등 W Pole_80W','방폭등_L80','방폭등_LSI80','덕산네오룩스_AlN Crucible_20cc','덕산네오룩스_Al Crucible','m bar','덕산네오룩스_getter','Sensor Crystal','배송비','기타'];
+const SPECS={'CTO-C3':'20KG/CAN','CTO-B2':'20KG/CAN','SR-40M':'20KG/CAN','다운라이트 20W':'6"','LED 직부등_40W':'1280*320','LED 직부등_40W 디밍':'1280*320','LED 직부등_50W':'1280*320','LED 직부등_50W edge':'1280*320','K2 Line 방습등 40W':'1200*100*82','CR-25':'1200mm','CR-25Y':'1200mm','원형투광등 150W 삼각 브라켓포함':'6", \'벽부형','투광등 W Pole_80W':'2.5M U Pole( 90D )'};
 
 const fmt=n=>Math.round(n||0).toLocaleString('ko-KR');
 const fmtW=n=>fmt(n)+'원';
@@ -776,6 +790,28 @@ async function loadBuyersFromDb(){
   const out={};
   data.forEach(r=>{ out[r.name]={contact:r.contact,manager:r.manager,category:r.category}; });
   return out;
+}
+
+// ── 품목별 단가표 (매입단가/매출단가, 업체 무관) ──
+let ITEM_PRICES={}; // {품목명: {buy, sell}}
+async function loadItemPricesFromDb(){
+  const {data, error}=await sb.from('item_prices').select('*');
+  if(error){ console.error(error); return {}; }
+  const out={};
+  data.forEach(r=>{ out[r.item]={buy:r.buy_price||0, sell:r.sell_price||0}; });
+  return out;
+}
+async function upsertItemPrice(item,buy,sell){
+  showSyncStatus('저장 중...');
+  const {error}=await sb.from('item_prices').upsert({item, buy_price:buy, sell_price:sell}, {onConflict:'item'});
+  if(error){ console.error(error); showSyncStatus('저장 실패', true); return false; }
+  showSyncStatus('저장됨');
+  return true;
+}
+async function deleteItemPrice(item){
+  showSyncStatus('삭제 중...');
+  const {error}=await sb.from('item_prices').delete().eq('item', item);
+  if(error){ console.error(error); showSyncStatus('삭제 실패', true); }
 }
 
 async function loadSellersFromDb(){
@@ -929,6 +965,7 @@ async function loadAll(){
     otherData = pl.other;
     annualManual = await loadAnnualManualFromDb();
     txRules = await loadTxRulesFromDb();
+    ITEM_PRICES = await loadItemPricesFromDb();
     showSyncStatus('연결됨');
   }catch(err){
     console.error('loadAll error:', err);
@@ -997,6 +1034,56 @@ function loadConfig(){
   document.getElementById('cfg-mgr2-email').value=(mgrs['김은희']||{}).email||'okehkim@naver.com';
   renderBuyerContacts();
   renderSellerContacts();
+  renderItemPrices();
+}
+
+function renderItemPrices(){
+  const names=Object.keys(ITEM_PRICES).sort();
+  const body=document.getElementById('item-price-body');
+  if(!names.length){
+    body.innerHTML=`<tr><td colspan="4" style="text-align:center;color:#bbb;padding:1.2rem">등록된 단가가 없어요</td></tr>`;
+    return;
+  }
+  body.innerHTML=names.map(item=>{
+    const p=ITEM_PRICES[item];
+    return `<tr>
+      <td style="font-weight:500">${item}</td>
+      <td class="r" style="padding:4px 8px">
+        <input type="number" value="${p.buy||0}" style="width:120px;text-align:right;border:1px solid #ddd;border-radius:4px;padding:4px 6px"
+          onchange="saveItemPriceField('${item.replace(/'/g,"\\'")}','buy',this.value)">
+      </td>
+      <td class="r" style="padding:4px 8px">
+        <input type="number" value="${p.sell||0}" style="width:120px;text-align:right;border:1px solid #ddd;border-radius:4px;padding:4px 6px"
+          onchange="saveItemPriceField('${item.replace(/'/g,"\\'")}','sell',this.value)">
+      </td>
+      <td style="text-align:center"><button class="del-btn" onclick="delItemPrice('${item.replace(/'/g,"\\'")}')">×</button></td>
+    </tr>`;
+  }).join('');
+}
+
+async function saveItemPriceField(item,field,value){
+  if(!ITEM_PRICES[item]) ITEM_PRICES[item]={buy:0,sell:0};
+  ITEM_PRICES[item][field]=+value||0;
+  await upsertItemPrice(item, ITEM_PRICES[item].buy, ITEM_PRICES[item].sell);
+}
+
+async function addItemPrice(){
+  const item=document.getElementById('new-price-item').value.trim();
+  const buy=+document.getElementById('new-price-buy').value||0;
+  const sell=+document.getElementById('new-price-sell').value||0;
+  if(!item){ alert('품목명을 입력해주세요'); return; }
+  ITEM_PRICES[item]={buy,sell};
+  await upsertItemPrice(item,buy,sell);
+  document.getElementById('new-price-item').value='';
+  document.getElementById('new-price-buy').value='';
+  document.getElementById('new-price-sell').value='';
+  renderItemPrices();
+}
+
+async function delItemPrice(item){
+  delete ITEM_PRICES[item];
+  await deleteItemPrice(item);
+  renderItemPrices();
 }
 
 function renderBuyerContacts(){
@@ -1012,6 +1099,8 @@ function renderBuyerContacts(){
       </td>
     </tr>`).join('');
 }
+
+
 
 async function editBuyer(name){
   const info=BUYERS[name]||{};
@@ -1156,13 +1245,13 @@ function addRow(it={}){
   const iOpts=ITEMS.map(k=>`<option${k===it.item?' selected':''}>${k}</option>`).join('');
   const sOpts=Object.keys(SELLERS).map(k=>`<option${k===it.seller?' selected':''}>${k}</option>`).join('');
   tr.innerHTML=`
-    <td><select class="bsel" onchange="calcS()" style="width:100%;font-size:12px;border:1px solid #e8e8e8;padding:4px 5px;border-radius:4px"><option></option>${bOpts}</select></td>
-    <td><select class="isel" onchange="autoSpec(this)" style="width:100%;font-size:12px;border:1px solid #e8e8e8;padding:4px 5px;border-radius:4px"><option></option>${iOpts}</select></td>
+    <td><select class="bsel" onchange="calcS();autoBPrice(this)" style="width:100%;font-size:12px;border:1px solid #e8e8e8;padding:4px 5px;border-radius:4px"><option></option>${bOpts}</select></td>
+    <td><select class="isel" onchange="autoSpec(this);autoBPrice(this);autoSPrice(this)" style="width:100%;font-size:12px;border:1px solid #e8e8e8;padding:4px 5px;border-radius:4px"><option></option>${iOpts}</select></td>
     <td><input type="text" class="spin" value="${it.spec||''}" style="width:100%"></td>
     <td><input type="number" class="bq" value="${it.bqty||''}" style="width:100%;text-align:right" oninput="calcRow(this);calcS()"></td>
     <td><input type="number" class="bp" value="${it.bprice||''}" style="width:100%;text-align:right" oninput="calcRow(this);calcS()"></td>
     <td class="amt ba">${it.bamt?fmt(it.bamt):'-'}</td>
-    <td><select class="ssel" onchange="calcS()" style="width:100%;font-size:12px;border:1px solid #e8e8e8;padding:4px 5px;border-radius:4px"><option></option>${sOpts}</select></td>
+    <td><select class="ssel" onchange="calcS();autoSPrice(this)" style="width:100%;font-size:12px;border:1px solid #e8e8e8;padding:4px 5px;border-radius:4px"><option></option>${sOpts}</select></td>
     <td><input type="number" class="sq" value="${it.sqty||''}" style="width:100%;text-align:right" oninput="calcRow(this);calcS()"></td>
     <td><input type="number" class="sp2" value="${it.sprice||''}" style="width:100%;text-align:right" oninput="calcRow(this);calcS()"></td>
     <td class="amt sa">${it.samt?fmt(it.samt):'-'}</td>
@@ -1172,6 +1261,23 @@ function addRow(it={}){
   document.getElementById('items-body').appendChild(tr);
 }
 function autoSpec(sel){const tr=sel.closest('tr'),s=SPECS[sel.value];if(s)tr.querySelector('.spin').value=s;}
+// 품목이 정해지면 등록된 매입/매출 단가를 자동으로 채움 (이미 값이 있으면 안 건드림, 업체는 무관하게 품목 기준)
+function autoBPrice(el){
+  const tr=el.closest('tr');
+  const bpInput=tr.querySelector('.bp');
+  if(bpInput.value) return;
+  const item=tr.querySelector('.isel').value;
+  const found=ITEM_PRICES[item];
+  if(found && found.buy){ bpInput.value=found.buy; calcRow(bpInput); calcS(); }
+}
+function autoSPrice(el){
+  const tr=el.closest('tr');
+  const spInput=tr.querySelector('.sp2');
+  if(spInput.value) return;
+  const item=tr.querySelector('.isel').value;
+  const found=ITEM_PRICES[item];
+  if(found && found.sell){ spInput.value=found.sell; calcRow(spInput); calcS(); }
+}
 function calcRow(inp){
   const tr=inp.closest('tr');
   const bq=+tr.querySelector('.bq').value||0,bp=+tr.querySelector('.bp').value||0;
@@ -1297,6 +1403,8 @@ function showPO(){
         <tbody>${dataRows}${blank}</tbody>
         <tfoot><tr><td colspan="5" style="text-align:right;padding:8px">합　계</td><td class="r">${fmt(sub)}</td><td colspan="2"></td></tr></tfoot>
       </table>
+      ${(()=>{ const refs=[...new Set(its.map(r=>r.item))].filter(it=>ITEM_PRICES[it]).map(it=>`${it} ${fmt(ITEM_PRICES[it].buy)}원`);
+        return refs.length?`<div style="font-size:11px;color:#888;margin:-6px 0 10px 2px">※ 등록 매입단가 참고: ${refs.join(' 　 ')}</div>`:''; })()}
       <div class="po-foot">
         <div class="po-foot-row"><span class="po-foot-key">납 품 처</span><span class="po-foot-val">${deliverKey||'　'}</span></div>
         <div class="po-foot-row"><span class="po-foot-key">소 재 지</span><span class="po-foot-val">${di.addr||'　'}</span></div>
@@ -1377,6 +1485,8 @@ function buildTS(selectedItems, issueDate){
           <td></td>
         </tr></tfoot>
       </table>
+      ${(()=>{ const refs=[...new Set(its.map(r=>r.item))].filter(it=>ITEM_PRICES[it]).map(it=>`${it} ${fmt(ITEM_PRICES[it].sell)}원`);
+        return refs.length?`<div style="font-size:11px;color:#888;margin:-6px 0 10px 2px">※ 등록 매출단가 참고: ${refs.join(' 　 ')}</div>`:''; })()}
       <div class="ts-bank">
         <span>${MY.bank}</span>
         <span>인수자　　　　　　　　　(인)</span>
@@ -1899,8 +2009,9 @@ function renderPL(){
   const months=[...new Set(orders.flatMap(o=>o.items.map(i=>i.ship?ym(i.ship):'')).filter(Boolean))].sort().reverse();
   document.getElementById('pl-month').innerHTML=`<option value="">전체</option>`+months.map(m=>`<option${m===pm?' selected':''}>${m}</option>`).join('');
 
-  // 납품일(출하일) 기준으로 집계
+  // 납품일(출하일) 기준으로 집계 - 실제 "납품완료"된 것만 매출/매입으로 인식
   const all=orders.flatMap(o=>o.items).filter(i=>{
+    if(i.status!=='납품완료') return false;
     if(!pm) return true;
     return i.ship && ym(i.ship)===pm;
   });
@@ -2057,6 +2168,7 @@ function renderAnnual(){
     const monthAgg={}; // key -> {7:amt,...,12:amt}
     orders.forEach(o=>{
       o.items.forEach(i=>{
+        if(i.status!=='납품완료') return;
         if(!i.ship || yr(i.ship)!==curY) return;
         const mo=+i.ship.slice(5,7);
         if(mo<7) return; // 1~6월은 수동 입력 영역이라 자동집계 제외
