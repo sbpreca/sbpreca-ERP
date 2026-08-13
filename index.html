@@ -292,6 +292,7 @@ input[readonly]{background:#f5f5f5;color:#999}
           <th style="width:48px" class="c">분할</th>
           <th style="width:60px" class="c">명세서</th>
           <th style="width:60px" class="c">마감제외</th>
+          <th style="width:100px" class="c">매출 정산월</th>
         </tr></thead>
         <tbody id="deliver-body"></tbody>
       </table>
@@ -313,6 +314,10 @@ input[readonly]{background:#f5f5f5;color:#999}
       <button class="btn" style="margin-left:auto" onclick="exportClosingExcel()">📥 엑셀 다운로드</button>
     </div>
     <div class="metrics" id="cl-metrics"></div>
+    <div class="section-box" style="margin-bottom:14px">
+      <div class="section-title">이 달 메모</div>
+      <textarea id="cl-note" placeholder="이 달 마감/손익 관련 메모를 남겨두세요 (손익계산서 탭과 공유돼요)" style="width:100%;min-height:60px;border:none;padding:12px;font-size:13px;font-family:inherit;resize:vertical;box-sizing:border-box" onchange="saveClosingNote(this.value)"></textarea>
+    </div>
     <div class="section-box" style="margin-bottom:14px">
       <div class="section-title">매입처별 결제 마감</div>
       <table class="data-tbl">
@@ -350,6 +355,10 @@ input[readonly]{background:#f5f5f5;color:#999}
       <button class="btn" style="margin-left:auto" onclick="exportPLExcel()">📥 엑셀 다운로드</button>
     </div>
     <div class="metrics" id="pl-metrics"></div>
+    <div class="section-box" style="margin-bottom:14px">
+      <div class="section-title">이 달 메모</div>
+      <textarea id="pl-note" placeholder="이 달 마감/손익 관련 메모를 남겨두세요 (마감현황 탭과 공유돼요)" style="width:100%;min-height:60px;border:none;padding:12px;font-size:13px;font-family:inherit;resize:vertical;box-sizing:border-box" onchange="savePLNote(this.value)"></textarea>
+    </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
       <div>
         <div class="section-box" style="margin-bottom:14px">
@@ -766,7 +775,7 @@ async function saveOrdersToDb(){
         order_id:orderId, buyer:it.buyer||'', item:it.item||'', spec:it.spec||'',
         bqty:it.bqty||0, bprice:it.bprice||0, bamt:it.bamt||0,
         seller:it.seller||'', sqty:it.sqty||0, sprice:it.sprice||0, samt:it.samt||0,
-        ship:it.ship||null, status:it.status||'미납품', closing_sell_exclude:it.closing_sell_exclude||false, sort_order:idx
+        ship:it.ship||null, status:it.status||'미납품', closing_sell_exclude:it.closing_sell_exclude||false, closing_month_override:it.closing_month_override||null, sort_order:idx
       }));
       if(itemRows.length){
         const {error:e3}=await sb.from('order_items').insert(itemRows);
@@ -792,7 +801,7 @@ async function loadOrdersFromDb(){
       buyer:it.buyer, item:it.item, spec:it.spec,
       bqty:it.bqty, bprice:it.bprice, bamt:it.bamt,
       seller:it.seller, sqty:it.sqty, sprice:it.sprice, samt:it.samt,
-      ship:it.ship, status:it.status, closing_sell_exclude:it.closing_sell_exclude||false
+      ship:it.ship, status:it.status, closing_sell_exclude:it.closing_sell_exclude||false, closing_month_override:it.closing_month_override||''
     })),
     total_buy: dbItems.filter(it=>it.order_id===o.id).reduce((s,it)=>s+(it.bamt||0),0),
     total_sell: dbItems.filter(it=>it.order_id===o.id).reduce((s,it)=>s+(it.samt||0),0),
@@ -849,6 +858,36 @@ async function loadBuyersFromDb(){
 }
 
 // ── 품목별 단가표 (매입단가/매출단가, 업체 무관) ──
+// ── 월별 메모 (마감현황/손익계산서 공유) ──
+let monthlyNotes={}; // {month: note}
+async function loadMonthlyNotesFromDb(){
+  const {data, error}=await sb.from('monthly_notes').select('*');
+  if(error){ console.error(error); return {}; }
+  const out={};
+  data.forEach(r=>{ out[r.month]=r.note||''; });
+  return out;
+}
+let _noteSaveTimer={};
+function upsertMonthlyNote(month,note){
+  clearTimeout(_noteSaveTimer[month]);
+  _noteSaveTimer[month]=setTimeout(async ()=>{
+    showSyncStatus('저장 중...');
+    const {error}=await sb.from('monthly_notes').upsert({month,note}, {onConflict:'month'});
+    if(error){ console.error(error); showSyncStatus('저장 실패', true); return; }
+    showSyncStatus('저장됨');
+  }, 400);
+}
+function saveClosingNote(text){
+  const m=document.getElementById('cl-month').value||'all';
+  monthlyNotes[m]=text;
+  upsertMonthlyNote(m,text);
+}
+function savePLNote(text){
+  const m=document.getElementById('pl-month').value||'all';
+  monthlyNotes[m]=text;
+  upsertMonthlyNote(m,text);
+}
+
 let ITEM_PRICES={}; // {품목명: {buy, sell}}
 // ── 대차대조표 ──
 let BS_SECTIONS=['유동자산','비유동자산','유동부채','비유동부채','자본'];
@@ -1056,6 +1095,7 @@ async function loadAll(){
     txRules = await loadTxRulesFromDb();
     ITEM_PRICES = await loadItemPricesFromDb();
     balanceData = await loadBalanceFromDb();
+    monthlyNotes = await loadMonthlyNotesFromDb();
     showSyncStatus('연결됨');
   }catch(err){
     console.error('loadAll error:', err);
@@ -1671,6 +1711,12 @@ function updateClosingExclude(idx,checked){
   o.items[r.item_idx].closing_sell_exclude=checked;
   persist();
 }
+function updateClosingMonthOverride(idx,val){
+  const r=deliverRows[idx];if(!r)return;
+  const o=orders.find(x=>x.no===r.order_no);if(!o)return;
+  o.items[r.item_idx].closing_month_override=val||'';
+  persist();
+}
 function showTSfromDeliver(){
   const manager=MY.contact;
   const checked=[...document.querySelectorAll('.dl-chk:checked')].map(c=>deliverRows[+c.dataset.idx]).filter(Boolean);
@@ -1921,9 +1967,12 @@ function renderDeliver(){
         <td class="c" title="반품예정 등으로 이번 마감현황(외상매출금) 집계에서 이 매출만 빼고 싶을 때 체크">
           <input type="checkbox" ${r.closing_sell_exclude?'checked':''} onchange="updateClosingExclude(${idx},this.checked)">
         </td>
+        <td class="c" title="실제 납품월과 다르게 매출을 인식하기로 한 경우(마감현황에만 반영) - 예: 2026-07">
+          <input type="month" value="${r.closing_month_override||''}" style="width:100%;font-size:11px" onchange="updateClosingMonthOverride(${idx},this.value)">
+        </td>
       </tr>`;
     }).join('')
-    :'<tr><td colspan="11" style="text-align:center;color:#bbb;padding:2rem">납품 내역이 없어요</td></tr>';
+    :'<tr><td colspan="12" style="text-align:center;color:#bbb;padding:2rem">납품 내역이 없어요</td></tr>';
 }
 
 /* ── 탭 전환 ── */
@@ -2013,15 +2062,19 @@ function setClosingTab(tab){
 function renderClosing(){
   const cm=document.getElementById('cl-month').value;
   const tab=document.getElementById('cl-tab')?document.getElementById('cl-tab').value:'all';
-  // 출하일(납품일) 기준으로 월 목록/필터링 (발주일 기준 아님 - 손익계산서/연간현황과 동일 기준으로 통일)
-  const months=[...new Set(orders.flatMap(o=>o.items.map(i=>i.ship?ym(i.ship):'')).filter(Boolean))].sort().reverse();
+  // 매입: 출하일(납품일) 기준 / 매출: 정산월 재지정(closing_month_override)이 있으면 그걸 우선, 없으면 출하일 기준
+  const sellMonthOf=i=>i.closing_month_override||ym(i.ship);
+  const months=[...new Set(orders.flatMap(o=>o.items.flatMap(i=>[i.ship?ym(i.ship):'', sellMonthOf(i)])).filter(Boolean))].sort().reverse();
   document.getElementById('cl-month').innerHTML=`<option value="">전체</option>`+months.map(m=>`<option${m===cm?' selected':''}>${m}</option>`).join('');
+  document.getElementById('cl-note').value=monthlyNotes[cm||'all']||'';
 
-  const all=orders.flatMap(o=>o.items).filter(i=>!cm || (i.ship && ym(i.ship)===cm));
+  const allItems=orders.flatMap(o=>o.items);
+  const allBuy=allItems.filter(i=>!cm || (i.ship && ym(i.ship)===cm));
+  const all=allItems.filter(i=>!cm || sellMonthOf(i)===cm); // 매출처 집계용 (기존 all 변수명 유지 - 아래 매출 로직에서 계속 사용)
 
-  // 매입처별 집계 (품목별 상세 포함)
+  // 매입처별 집계 (품목별 상세 포함) - 출하일 기준 그대로
   const bm={};
-  all.forEach(i=>{
+  allBuy.forEach(i=>{
     if(!i.buyer)return;
     if(!bm[i.buyer])bm[i.buyer]={amt:0,items:{}};
     bm[i.buyer].amt+=i.bamt;
@@ -2159,6 +2212,7 @@ function renderPL(){
   // 납품일 기준 월 목록
   const months=[...new Set(orders.flatMap(o=>o.items.map(i=>i.ship?ym(i.ship):'')).filter(Boolean))].sort().reverse();
   document.getElementById('pl-month').innerHTML=`<option value="">전체</option>`+months.map(m=>`<option${m===pm?' selected':''}>${m}</option>`).join('');
+  document.getElementById('pl-note').value=monthlyNotes[pm||'all']||'';
 
   // 납품일(출하일) 기준으로 집계 - 실제 "납품완료"된 것만 매출/매입으로 인식
   const all=orders.flatMap(o=>o.items).filter(i=>{
