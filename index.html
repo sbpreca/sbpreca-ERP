@@ -686,6 +686,33 @@ const SPECS={'CTO-C3':'20KG/CAN','CTO-B2':'20KG/CAN','SR-40M':'20KG/CAN','다운
 const fmt=n=>Math.round(n||0).toLocaleString('ko-KR');
 const fmtW=n=>fmt(n)+'원';
 const ym=d=>d?d.slice(0,7):'';
+
+// 업체별 결제조건에 따른 결제예정일 자동계산
+// - 테크피아: 거래월 + 2개월 말일
+// - 성화전설: 거래월 말일 + 45일
+// - 나머지: 거래월 + 1개월 말일
+function lastDayOfMonth(y,m){ return new Date(y, m, 0).getDate(); } // m: 1~12
+function computeDueDate(company, monthStr){
+  if(!monthStr) return '';
+  const [y,m]=monthStr.split('-').map(Number);
+  const base=(company||'').split('_')[0];
+  if(base==='테크피아'){
+    let ny=y, nm=m+2;
+    while(nm>12){ nm-=12; ny++; }
+    const d=lastDayOfMonth(ny,nm);
+    return `${ny}-${String(nm).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+  }
+  if(base==='성화전설'){
+    const d=lastDayOfMonth(y,m);
+    const dt=new Date(y, m-1, d);
+    dt.setDate(dt.getDate()+45);
+    return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+  }
+  let ny=y, nm=m+1;
+  if(nm>12){ nm-=12; ny++; }
+  const d=lastDayOfMonth(ny,nm);
+  return `${ny}-${String(nm).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+}
 // 매출처 키 정규화 (테크피아_CTO-C3 → 테크피아)
 const sellerKey=s=>s||''; // 매출처명 그대로 사용
 
@@ -2021,8 +2048,10 @@ function renderClosing(){
 
   function dateInput(type, name){
     const key=stKey(type,name,'date');
-    const val=closingState[key]||'';
-    return `<input type="date" value="${val}" style="width:110px;font-size:12px;padding:4px 7px;border:1px solid #ddd;border-radius:4px" onchange="closingState['${key}']=this.value;persistClosing()">`;
+    const auto=computeDueDate(name, cm);
+    const val=closingState[key]||auto||'';
+    const isAuto=!closingState[key] && auto;
+    return `<input type="date" value="${val}" style="width:110px;font-size:12px;padding:4px 7px;border:1px solid ${isAuto?'#c7d2e0':'#ddd'};border-radius:4px;background:${isAuto?'#f7f9fc':'#fff'}" title="${isAuto?'자동계산(결제조건 기준) - 직접 수정 가능':''}" onchange="closingState['${key}']=this.value;persistClosing()">`;
   }
 
   function buyRowHtml(name, v, idx){
