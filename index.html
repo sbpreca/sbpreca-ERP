@@ -667,30 +667,27 @@ const persist=()=>{
 async function saveOrdersToDb(){
   showSyncStatus('저장 중...');
   try{
-    // 1. orders 테이블에 upsert (no를 unique key로 사용)
+    // 1. orders 테이블에 upsert (no를 unique key로 사용) - 절대 삭제하지 않음
     const orderRows = orders.map(o=>({
       no:o.no, date:o.date, note:o.note||'', manager:o.manager||'이은진'
     }));
+    if(orderRows.length===0){
+      // 화면에 발주가 하나도 없는 상태에서는 저장을 아예 시도하지 않음
+      // (로딩 타이밍 문제 등으로 orders가 비어있는 상태에서 실수로 DB를 건드리는 걸 방지)
+      showSyncStatus('연결됨');
+      return;
+    }
     if(orderRows.length){
       const {error:e1}=await sb.from('orders').upsert(orderRows, {onConflict:'no'});
       if(e1) throw e1;
     }
-    // 2. 각 order의 id를 조회해서 order_items 동기화
+    // 2. 각 order의 id를 조회
     const {data:dbOrders, error:e2}=await sb.from('orders').select('id,no');
     if(e2) throw e2;
     const noToId={};
     dbOrders.forEach(o=>{ noToId[o.no]=o.id; });
 
-    // 현재 화면의 모든 order_no 목록
-    const currentNos = orders.map(o=>o.no);
-
-    // DB에는 있지만 화면(orders)엔 없는 발주 -> 삭제 (사용자가 지운 경우)
-    const nosToDelete = dbOrders.filter(o=>!currentNos.includes(o.no)).map(o=>o.id);
-    if(nosToDelete.length){
-      await sb.from('orders').delete().in('id', nosToDelete);
-    }
-
-    // 각 발주의 품목을 통째로 다시 씀 (delete-then-insert, 가장 단순하고 확실한 방식)
+    // 화면에 있는 발주의 품목만 다시 씀 (delete-then-insert, 화면에 없는 발주는 절대 건드리지 않음)
     for(const o of orders){
       const orderId = noToId[o.no];
       if(!orderId) continue;
@@ -1913,15 +1910,7 @@ function renderPL(){
 
   // 판관비
   const sgaKey=pm||'all';
-  if(!sgaData[sgaKey]){
-    sgaData[sgaKey]=DEFAULT_SGA.map(name=>({name,amt:0}));
-    // 6월 데이터 기본값 세팅
-    if(sgaKey==='2026-06'||sgaKey==='2026-07'){
-      const defaults={'급여':5450000,'보험료':604410,'지급수수료':701364,'여비교통비':92000,'통신비':136425,'복리후생비':317982,'접대비':612000,'소모품비':7727,'수도광열비':46630,'세금과공과':70690};
-      sgaData[sgaKey]=sgaData[sgaKey].map(i=>({...i,amt:defaults[i.name]||0}));
-    }
-    persistSga();
-  }
+  if(!sgaData[sgaKey]) sgaData[sgaKey]=[];
   const sgaList=sgaData[sgaKey]||[];
   const totalSga=sgaList.reduce((s,i)=>s+(+i.amt||0),0);
   const opIncome=gross-totalSga;
@@ -1929,10 +1918,6 @@ function renderPL(){
   // 영업외
   const otherKey=pm||'all';
   if(!otherData[otherKey]) otherData[otherKey]=[];
-  if(otherKey==='2026-06'&&otherData[otherKey].length===0){
-    otherData[otherKey]=[{name:'이자비용',type:'exp',amt:358743}];
-    persistOther();
-  }
   const otherList=otherData[otherKey]||[];
   const otherInc=otherList.filter(i=>i.type==='inc').reduce((s,i)=>s+(+i.amt||0),0);
   const otherExp=otherList.filter(i=>i.type==='exp').reduce((s,i)=>s+(+i.amt||0),0);
