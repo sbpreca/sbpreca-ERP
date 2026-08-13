@@ -947,14 +947,15 @@ function saveClosingStateToDb(){
 // ── 손익계산서 항목 (판관비/영업외손익) ──
 async function loadPlItemsFromDb(){
   const {data, error}=await sb.from('pl_items').select('*');
-  if(error){ console.error(error); return {sga:{}, other:{}, inventory:{}, vat:{}, salesAdj:{}}; }
-  const sga={}, other={}, inventory={}, vat={}, salesAdj={};
+  if(error){ console.error(error); return {sga:{}, other:{}, inventory:{}, vat:{}, salesAdj:{}, purchaseAdj:{}}; }
+  const sga={}, other={}, inventory={}, vat={}, salesAdj={}, purchaseAdj={};
   data.forEach(r=>{
-    const target = r.category==='sga' ? sga : r.category==='inventory' ? inventory : r.category==='vat' ? vat : r.category==='sales_adj' ? salesAdj : other;
+    const target = r.category==='sga' ? sga : r.category==='inventory' ? inventory : r.category==='vat' ? vat
+      : r.category==='sales_adj' ? salesAdj : r.category==='purchase_adj' ? purchaseAdj : other;
     if(!target[r.month]) target[r.month]=[];
     target[r.month].push({name:r.name, amt:r.amount, type:r.type||undefined});
   });
-  return {sga, other, inventory, vat, salesAdj};
+  return {sga, other, inventory, vat, salesAdj, purchaseAdj};
 }
 
 let _plSaveTimer={};
@@ -1017,6 +1018,7 @@ async function loadAll(){
     inventoryData = pl.inventory;
     vatData = pl.vat;
     salesAdjData = pl.salesAdj;
+    purchaseAdjData = pl.purchaseAdj;
     annualManual = await loadAnnualManualFromDb();
     txRules = await loadTxRulesFromDb();
     ITEM_PRICES = await loadItemPricesFromDb();
@@ -1040,18 +1042,27 @@ let closingState={};
 const persistClosing=()=>{ saveClosingStateToDb(); };
 
 // 판관비·영업외손익 저장
-let sgaData={}, otherData={}, inventoryData={}, vatData={}, salesAdjData={};
+let sgaData={}, otherData={}, inventoryData={}, vatData={}, salesAdjData={}, purchaseAdjData={};
 const persistSga=()=>{ savePlItemsToDb('sga', sgaData); };
 const persistOther=()=>{ savePlItemsToDb('other', otherData); };
 const persistInventory=()=>{ savePlItemsToDb('inventory', inventoryData); };
 const persistVat=()=>{ savePlItemsToDb('vat', vatData); };
 const persistSalesAdj=()=>{ savePlItemsToDb('sales_adj', salesAdjData); };
+const persistPurchaseAdj=()=>{ savePlItemsToDb('purchase_adj', purchaseAdjData); };
 function saveSalesAdj(key,value){
   if(!salesAdjData[key]) salesAdjData[key]=[{name:'매출조정',amt:0}];
   const item=salesAdjData[key].find(i=>i.name==='매출조정');
   if(item) item.amt=+value||0;
   else salesAdjData[key].push({name:'매출조정',amt:+value||0});
   persistSalesAdj();
+  renderPL();
+}
+function savePurchaseAdj(key,value){
+  if(!purchaseAdjData[key]) purchaseAdjData[key]=[{name:'매입조정',amt:0}];
+  const item=purchaseAdjData[key].find(i=>i.name==='매입조정');
+  if(item) item.amt=+value||0;
+  else purchaseAdjData[key].push({name:'매입조정',amt:+value||0});
+  persistPurchaseAdj();
   renderPL();
 }
 function saveInventory(key,name,value){
@@ -2108,11 +2119,15 @@ function renderPL(){
     return i.ship && ym(i.ship)===pm;
   });
   const salesRaw=all.reduce((s,i)=>s+i.samt,0); // 발주 데이터 기준 매출액 (자동)
-  const purchases=all.reduce((s,i)=>s+i.bamt,0); // 당기매입액
+  const purchasesRaw=all.reduce((s,i)=>s+i.bamt,0); // 발주 데이터 기준 당기매입액 (자동)
   const salesAdjKey=pm||'all';
   if(!salesAdjData[salesAdjKey]) salesAdjData[salesAdjKey]=[{name:'매출조정',amt:0}];
   const salesAdj=(salesAdjData[salesAdjKey].find(i=>i.name==='매출조정')||{amt:0}).amt||0;
   const sales=salesRaw+salesAdj; // 매출액(최종) = 발주기준 매출 + 매출조정(선수금 상계 등)
+  const purchaseAdjKey=pm||'all';
+  if(!purchaseAdjData[purchaseAdjKey]) purchaseAdjData[purchaseAdjKey]=[{name:'매입조정',amt:0}];
+  const purchaseAdj=(purchaseAdjData[purchaseAdjKey].find(i=>i.name==='매입조정')||{amt:0}).amt||0;
+  const purchases=purchasesRaw+purchaseAdj; // 당기매입액(최종)
   const invKey=pm||'all';
   if(!inventoryData[invKey]) inventoryData[invKey]=[{name:'기초재고',amt:0},{name:'기말재고',amt:0}];
   const beginInv=(inventoryData[invKey].find(i=>i.name==='기초재고')||{amt:0}).amt||0;
@@ -2174,7 +2189,12 @@ function renderPL(){
       <input type="number" value="${beginInv}" style="width:120px;text-align:right;border:1px solid #ddd;border-radius:4px;padding:4px 8px;font-size:12px"
         onchange="saveInventory('${invKey}','기초재고',this.value)">
     </td></tr>`+
-    `<tr style="background:#fafafa"><td style="padding:6px 12px;padding-left:24px;font-size:12px;color:#666">당기매입액</td><td class="r" style="padding:6px 12px;font-size:12px;color:#666">${fmtW(purchases)}</td></tr>`+
+    `<tr style="background:#fafafa"><td style="padding:6px 12px;padding-left:24px;font-size:12px;color:#666">발주기준 당기매입액(자동)</td><td class="r" style="padding:6px 12px;font-size:12px;color:#666">${fmtW(purchasesRaw)}</td></tr>`+
+    `<tr style="background:#fafafa"><td style="padding:6px 12px;padding-left:24px;font-size:12px;color:#666">매입조정 (마감주기 차이 등)</td><td class="r" style="padding:3px 12px">
+      <input type="number" value="${purchaseAdj}" style="width:120px;text-align:right;border:1px solid #ddd;border-radius:4px;padding:4px 8px;font-size:12px"
+        onchange="savePurchaseAdj('${purchaseAdjKey}',this.value)">
+    </td></tr>`+
+    `<tr style="background:#fafafa"><td style="padding:6px 12px;padding-left:24px;font-size:12px;color:#666;font-weight:600">당기매입액(최종)</td><td class="r" style="padding:6px 12px;font-size:12px;color:#666;font-weight:600">${fmtW(purchases)}</td></tr>`+
     `<tr style="background:#fafafa"><td style="padding:6px 12px;padding-left:24px;font-size:12px;color:#666">기말재고액</td><td class="r" style="padding:3px 12px">
       <input type="number" value="${endInv}" style="width:120px;text-align:right;border:1px solid #ddd;border-radius:4px;padding:4px 8px;font-size:12px"
         onchange="saveInventory('${invKey}','기말재고',this.value)">
