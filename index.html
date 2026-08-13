@@ -248,6 +248,7 @@ input[readonly]{background:#f5f5f5;color:#999}
       <button class="btn btn-save" onclick="newOrderFromList()">+ 새 발주</button>
       <select id="fl-month" onchange="renderList()"><option value="">전체 월</option></select>
       <select id="fl-buyer" onchange="renderList()"><option value="">전체 매입처</option></select>
+      <button class="btn" style="margin-left:auto" onclick="exportOrdersExcel()">📥 엑셀 다운로드</button>
     </div>
     <div id="list-area"></div>
   </div>
@@ -290,6 +291,7 @@ input[readonly]{background:#f5f5f5;color:#999}
           <th style="width:74px" class="c">납품상태</th>
           <th style="width:48px" class="c">분할</th>
           <th style="width:60px" class="c">명세서</th>
+          <th style="width:60px" class="c">마감제외</th>
         </tr></thead>
         <tbody id="deliver-body"></tbody>
       </table>
@@ -307,6 +309,8 @@ input[readonly]{background:#f5f5f5;color:#999}
         <button id="cl-tab-material" class="btn" style="font-size:12px;padding:5px 14px" onclick="setClosingTab('원부자재')">원부자재</button>
       </div>
       <input type="hidden" id="cl-tab" value="all">
+      <button class="btn btn-po" onclick="printClosingReport()">보고서 PDF</button>
+      <button class="btn" style="margin-left:auto" onclick="exportClosingExcel()">📥 엑셀 다운로드</button>
     </div>
     <div class="metrics" id="cl-metrics"></div>
     <div class="section-box" style="margin-bottom:14px">
@@ -342,6 +346,8 @@ input[readonly]{background:#f5f5f5;color:#999}
     <div class="filter-row">
       <label style="font-size:12px;color:#888;align-self:center;font-weight:600">조회 월</label>
       <select id="pl-month" onchange="renderPL()"><option value="">전체</option></select>
+      <button class="btn btn-po" onclick="printPLReport()">보고서 PDF</button>
+      <button class="btn" style="margin-left:auto" onclick="exportPLExcel()">📥 엑셀 다운로드</button>
     </div>
     <div class="metrics" id="pl-metrics"></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
@@ -760,7 +766,7 @@ async function saveOrdersToDb(){
         order_id:orderId, buyer:it.buyer||'', item:it.item||'', spec:it.spec||'',
         bqty:it.bqty||0, bprice:it.bprice||0, bamt:it.bamt||0,
         seller:it.seller||'', sqty:it.sqty||0, sprice:it.sprice||0, samt:it.samt||0,
-        ship:it.ship||null, status:it.status||'미납품', sort_order:idx
+        ship:it.ship||null, status:it.status||'미납품', closing_sell_exclude:it.closing_sell_exclude||false, sort_order:idx
       }));
       if(itemRows.length){
         const {error:e3}=await sb.from('order_items').insert(itemRows);
@@ -786,7 +792,7 @@ async function loadOrdersFromDb(){
       buyer:it.buyer, item:it.item, spec:it.spec,
       bqty:it.bqty, bprice:it.bprice, bamt:it.bamt,
       seller:it.seller, sqty:it.sqty, sprice:it.sprice, samt:it.samt,
-      ship:it.ship, status:it.status
+      ship:it.ship, status:it.status, closing_sell_exclude:it.closing_sell_exclude||false
     })),
     total_buy: dbItems.filter(it=>it.order_id===o.id).reduce((s,it)=>s+(it.bamt||0),0),
     total_sell: dbItems.filter(it=>it.order_id===o.id).reduce((s,it)=>s+(it.samt||0),0),
@@ -1659,6 +1665,12 @@ function updateStatus(idx,val){
   }
   persist();updateTsBar();
 }
+function updateClosingExclude(idx,checked){
+  const r=deliverRows[idx];if(!r)return;
+  const o=orders.find(x=>x.no===r.order_no);if(!o)return;
+  o.items[r.item_idx].closing_sell_exclude=checked;
+  persist();
+}
 function showTSfromDeliver(){
   const manager=MY.contact;
   const checked=[...document.querySelectorAll('.dl-chk:checked')].map(c=>deliverRows[+c.dataset.idx]).filter(Boolean);
@@ -1906,9 +1918,12 @@ function renderDeliver(){
         </select></td>
         <td class="c">${isPend?`<button class="btn" style="font-size:11px;padding:3px 8px" onclick="splitItem(${idx})">분할</button>`:'　'}</td>
         <td class="c">${r.samt>0?`<button class="btn btn-ts" style="font-size:11px;padding:3px 8px" onclick="quickTS(${idx})">${isPend?'명세서':'재발행'}</button>`:'　'}</td>
+        <td class="c" title="반품예정 등으로 이번 마감현황(외상매출금) 집계에서 이 매출만 빼고 싶을 때 체크">
+          <input type="checkbox" ${r.closing_sell_exclude?'checked':''} onchange="updateClosingExclude(${idx},this.checked)">
+        </td>
       </tr>`;
     }).join('')
-    :'<tr><td colspan="10" style="text-align:center;color:#bbb;padding:2rem">납품 내역이 없어요</td></tr>';
+    :'<tr><td colspan="11" style="text-align:center;color:#bbb;padding:2rem">납품 내역이 없어요</td></tr>';
 }
 
 /* ── 탭 전환 ── */
@@ -2017,6 +2032,7 @@ function renderClosing(){
   // 매출처별 집계 - 회사 단위로 통합 (테크피아_CTO-C3 → 테크피아), 품목은 상세로 보관
   const sm={};
   all.forEach(i=>{
+    if(i.closing_sell_exclude)return; // 반품예정 등으로 마감집계에서 제외 표시된 매출
     const rawSeller=i.seller||'';
     if(!rawSeller)return;
     const company=rawSeller.split('_')[0];
@@ -2123,7 +2139,10 @@ function renderClosing(){
 
   document.getElementById('cl-sell-body').innerHTML=sellHtml+
     '<tr class="tot"><td>'+(tab==='all'?'전체':tab)+' 합계</td><td class="r">'+fmtW(shownSellTotal)+'</td><td class="r">'+fmtW(Math.round(shownSellTotal*0.1))+'</td><td class="r profit-val">'+fmtW(Math.round(shownSellTotal*1.1))+'</td><td colspan="3"></td></tr>';
+
+  _closingCache={cm,bm,sm,stKey};
 }
+let _closingCache=null;
 
 function toggleDetail(detailId, rowEl){
   const rows=document.querySelectorAll('.'+detailId+'-row');
@@ -2270,7 +2289,12 @@ function renderPL(){
     <td class="r" style="padding:8px 12px">${fmtW(item.amt)}</td>
     <td style="text-align:center"><button class="del-btn" onclick="otherData['${otherKey}'].splice(${i},1);persistOther();renderPL()">×</button></td>
   </tr>`).join('');
+
+  _plCache={pm,sales,salesRaw,salesAdj,purchases,purchasesRaw,purchaseAdj,beginInv,endInv,cogs,gross,
+    totalSga,sgaList,opIncome,otherInc,otherExp,otherList,preIncome,
+    outputVat,inputVatCogs,otherInputVat,vatPayable};
 }
+let _plCache=null;
 
 function addSgaItem(){
   const pm=document.getElementById('pl-month').value;
@@ -2471,6 +2495,85 @@ function renderAnnual(){
 
   _annualCache={curY,curTab,sellRows,buyRows};
 }
+/* ══════════════ 엑셀 다운로드 (앱 → 엑셀) ══════════════ */
+
+function exportOrdersExcel(){
+  const rows=[['발주번호','발주일','매입처','품목','규격','매입수량','매입단가','매입금액','출하일','매출처','판매수량','판매단가','공급가액','상태']];
+  orders.forEach(o=>{
+    o.items.forEach(it=>{
+      rows.push([o.no,o.date,it.buyer,it.item,it.spec||'',it.bqty||0,it.bprice||0,it.bamt||0,
+        it.ship||'',it.seller||'',it.sqty||0,it.sprice||0,it.samt||0,it.status||'']);
+    });
+  });
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=[{wch:12},{wch:11},{wch:14},{wch:22},{wch:14},{wch:9},{wch:11},{wch:13},{wch:11},{wch:16},{wch:9},{wch:11},{wch:13},{wch:9}];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'발주목록');
+  XLSX.writeFile(wb, `발주목록_전체_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+
+function exportClosingExcel(){
+  if(!_closingCache){ alert('먼저 마감현황 화면을 한 번 열어주세요.'); return; }
+  const {cm,bm,sm,stKey}=_closingCache;
+  const rows=[['구분','업체명','공급가액','부가세','결제/청구예정액','예정일','계산서','처리완료']];
+  rows.push([`매입처별 결제 마감 (${cm||'전체'})`]);
+  Object.entries(bm).sort((a,b)=>b[1].amt-a[1].amt).forEach(([name,v])=>{
+    const vat=Math.round(v.amt*0.1);
+    rows.push(['매입',name,v.amt,vat,v.amt+vat,
+      closingState[stKey('buy',name,'date')]||computeDueDate(name,cm),
+      closingState[stKey('buy',name,'tax')]||'미발급',
+      closingState[stKey('buy',name,'done')]||'미완료']);
+  });
+  rows.push([]);
+  rows.push([`매출처별 청구 마감 (${cm||'전체'})`]);
+  Object.entries(sm).sort((a,b)=>b[1].amt-a[1].amt).forEach(([name,v])=>{
+    const vat=Math.round(v.amt*0.1);
+    rows.push(['매출',name,v.amt,vat,v.amt+vat,
+      closingState[stKey('sell',name,'date')]||computeDueDate(name,cm),
+      closingState[stKey('sell',name,'tax')]||'미발급',
+      closingState[stKey('sell',name,'done')]||'미완료']);
+  });
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=[{wch:8},{wch:16},{wch:13},{wch:11},{wch:14},{wch:11},{wch:9},{wch:9}];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'마감현황');
+  XLSX.writeFile(wb, `마감현황_${cm||'전체'}_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+
+function exportPLExcel(){
+  if(!_plCache){ alert('먼저 손익계산서 화면을 한 번 열어주세요.'); return; }
+  const c=_plCache;
+  const rows=[['구분','금액']];
+  rows.push(['① 매출액', c.sales]);
+  rows.push(['　납품기준 매출액(자동)', c.salesRaw]);
+  rows.push(['　매출조정', c.salesAdj]);
+  rows.push(['② 매출원가', c.cogs]);
+  rows.push(['　기초재고액', c.beginInv]);
+  rows.push(['　납품기준 당기매입액(자동)', c.purchasesRaw]);
+  rows.push(['　매입조정', c.purchaseAdj]);
+  rows.push(['　당기매입액(최종)', c.purchases]);
+  rows.push(['　기말재고액', c.endInv]);
+  rows.push(['③ 매출총이익', c.gross]);
+  rows.push(['④ 판매비와관리비', c.totalSga]);
+  c.sgaList.forEach(it=>rows.push(['　'+it.name, it.amt]));
+  rows.push(['⑤ 영업이익', c.opIncome]);
+  rows.push(['⑥ 영업외수익', c.otherInc]);
+  rows.push(['⑦ 영업외비용', c.otherExp]);
+  c.otherList.forEach(it=>rows.push(['　'+it.name+(it.type==='inc'?'(수익)':'(비용)'), it.amt]));
+  rows.push(['⑧ 세전이익', c.preIncome]);
+  rows.push([]);
+  rows.push(['부가세 현황(예상)']);
+  rows.push(['매출세액', c.outputVat]);
+  rows.push(['매입세액(원가분)', c.inputVatCogs]);
+  rows.push(['기타매입세액', c.otherInputVat]);
+  rows.push([c.vatPayable>=0?'납부예상세액':'환급예상세액', Math.abs(c.vatPayable)]);
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=[{wch:26},{wch:15}];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'손익계산서');
+  XLSX.writeFile(wb, `손익계산서_${c.pm||'전체'}_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+
 let _annualCache=null;
 
 /* ══════════════ 지출분류 (은행/카드 → 계정 자동분류 → 손익계산서 반영) ══════════════ */
@@ -2827,6 +2930,90 @@ async function addBalanceItem(section){
   document.getElementById(`bs-new-amt-${section}`).value='';
   document.getElementById(`bs-new-note-${section}`).value='';
   renderBalance();
+}
+
+function printClosingReport(){
+  renderClosing();
+  if(!_closingCache) return;
+  const {cm,bm,sm,stKey}=_closingCache;
+  const today=new Date().toISOString().slice(0,10).replace(/-/g,'.');
+
+  function block(entries,label,type){
+    const list=Object.entries(entries).sort((a,b)=>b[1].amt-a[1].amt);
+    if(!list.length) return '';
+    const rows=list.map(([name,v])=>{
+      const vat=Math.round(v.amt*0.1);
+      const due=closingState[stKey(type,name,'date')]||computeDueDate(name,cm);
+      const tax=closingState[stKey(type,name,'tax')]||'미발급';
+      const done=closingState[stKey(type,name,'done')]||'미완료';
+      return `<tr><td class="l">${name}</td><td>${fmt(v.amt)}</td><td>${fmt(vat)}</td><td>${fmt(v.amt+vat)}</td><td>${due||'-'}</td><td>${tax}</td><td>${done}</td></tr>`;
+    }).join('');
+    const sub=list.reduce((s,[,v])=>s+v.amt,0);
+    const subVat=Math.round(sub*0.1);
+    return `<tr class="grp-head"><td colspan="7">${label}</td></tr>${rows}
+      <tr class="grand"><td class="l">${label} 소계</td><td>${fmt(sub)}</td><td>${fmt(subVat)}</td><td>${fmt(sub+subVat)}</td><td colspan="3"></td></tr>`;
+  }
+
+  const html=`<div class="report-page" style="width:794px">
+    <div class="report-title">거래처별 당월 마감 금액 집계</div>
+    <div class="report-sub">${MY.name}　|　마감 기간: ${cm||'전체'}　|　출력일: ${today}</div>
+    <div class="report-section-title">매입처별 결제 마감</div>
+    <table class="report-tbl"><thead><tr><th>업체명</th><th style="width:110px">공급가액</th><th style="width:90px">부가세</th><th style="width:110px">결제예정액</th><th style="width:90px">예정일</th><th style="width:60px">계산서</th><th style="width:60px">처리완료</th></tr></thead>
+      <tbody>${block(bm,'매입처별','buy')}</tbody></table>
+    <div class="report-section-title">매출처별 청구 마감</div>
+    <table class="report-tbl"><thead><tr><th>업체명</th><th style="width:110px">공급가액</th><th style="width:90px">부가세</th><th style="width:110px">청구예정액</th><th style="width:90px">예정일</th><th style="width:60px">계산서</th><th style="width:60px">처리완료</th></tr></thead>
+      <tbody>${block(sm,'매출처별','sell')}</tbody></table>
+  </div>`;
+  document.getElementById('doc-content').innerHTML=html;
+  document.getElementById('dynamic-page-style').textContent='';
+  document.getElementById('doc-frame').style.width='794px';
+  document.getElementById('overlay').style.display='block';
+}
+
+function printPLReport(){
+  renderPL();
+  if(!_plCache) return;
+  const c=_plCache;
+  const today=new Date().toISOString().slice(0,10).replace(/-/g,'.');
+  const row=(label,val,cls)=>`<tr class="${cls||''}"><td class="l">${label}</td><td>${fmt(val)}</td></tr>`;
+  const subRow=(label,val)=>`<tr><td class="l" style="padding-left:20px;color:#666">${label}</td><td style="color:#666">${fmt(val)}</td></tr>`;
+
+  const html=`<div class="report-page" style="width:794px">
+    <div class="report-title">손익계산서</div>
+    <div class="report-sub">${MY.name}　|　조회 월: ${c.pm||'전체'}　|　출력일: ${today}</div>
+    <table class="report-tbl"><thead><tr><th>구분</th><th style="width:140px">금액(원)</th></tr></thead>
+      <tbody>
+        ${row('① 매출액',c.sales,'grand')}
+        ${subRow('납품기준 매출액(자동)',c.salesRaw)}
+        ${subRow('매출조정',c.salesAdj)}
+        ${row('② 매출원가',c.cogs)}
+        ${subRow('기초재고액',c.beginInv)}
+        ${subRow('납품기준 당기매입액(자동)',c.purchasesRaw)}
+        ${subRow('매입조정',c.purchaseAdj)}
+        ${subRow('당기매입액(최종)',c.purchases)}
+        ${subRow('기말재고액',c.endInv)}
+        ${row('③ 매출총이익',c.gross,'grand')}
+        ${row('④ 판매비와관리비',c.totalSga)}
+        ${c.sgaList.map(it=>subRow(it.name,it.amt)).join('')}
+        ${row('⑤ 영업이익',c.opIncome,'grand')}
+        ${row('⑥ 영업외수익',c.otherInc)}
+        ${row('⑦ 영업외비용',c.otherExp)}
+        ${c.otherList.map(it=>subRow(it.name+(it.type==='inc'?'(수익)':'(비용)'),it.amt)).join('')}
+        ${row('⑧ 세전이익',c.preIncome,'grand')}
+      </tbody></table>
+    <div class="report-section-title">부가세 현황 (예상)</div>
+    <table class="report-tbl"><thead><tr><th>구분</th><th style="width:140px">금액(원)</th></tr></thead>
+      <tbody>
+        <tr><td class="l">매출세액</td><td>${fmt(c.outputVat)}</td></tr>
+        <tr><td class="l">매입세액(원가분)</td><td>${fmt(c.inputVatCogs)}</td></tr>
+        <tr><td class="l">기타매입세액</td><td>${fmt(c.otherInputVat)}</td></tr>
+        <tr class="grand"><td class="l">${c.vatPayable>=0?'납부예상세액':'환급예상세액'}</td><td>${fmt(Math.abs(c.vatPayable))}</td></tr>
+      </tbody></table>
+  </div>`;
+  document.getElementById('doc-content').innerHTML=html;
+  document.getElementById('dynamic-page-style').textContent='';
+  document.getElementById('doc-frame').style.width='794px';
+  document.getElementById('overlay').style.display='block';
 }
 
 function printBalanceReport(){
