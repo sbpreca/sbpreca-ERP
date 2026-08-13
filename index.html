@@ -192,6 +192,7 @@ input[readonly]{background:#f5f5f5;color:#999}
     <button class="nav-btn" onclick="go('deliver')">납품 현황</button>
     <button class="nav-btn" onclick="go('closing')">마감현황</button>
     <button class="nav-btn" onclick="go('pl')">손익계산서</button>
+    <button class="nav-btn" onclick="go('balance')">대차대조표</button>
     <button class="nav-btn" onclick="go('txclass')">지출분류</button>
     <button class="nav-btn" onclick="go('annual')">연간 현황</button>
     <button class="nav-btn" onclick="go('settings')">설정</button>
@@ -383,6 +384,18 @@ input[readonly]{background:#f5f5f5;color:#999}
         </div>
       </div>
     </div>
+  </div>
+
+  <!-- 대차대조표 -->
+  <div id="page-balance" class="page">
+    <div class="filter-row">
+      <label style="font-size:12px;color:#888;align-self:center;font-weight:600">월</label>
+      <select id="bs-month" onchange="renderBalance()"></select>
+      <button class="btn btn-po" style="margin-left:8px" onclick="printBalanceReport()">보고서 PDF</button>
+    </div>
+    <div class="metrics" id="bs-metrics"></div>
+
+    <div id="bs-sections"></div>
   </div>
 
   <!-- 지출분류 -->
@@ -794,6 +807,34 @@ async function loadBuyersFromDb(){
 
 // ── 품목별 단가표 (매입단가/매출단가, 업체 무관) ──
 let ITEM_PRICES={}; // {품목명: {buy, sell}}
+// ── 대차대조표 ──
+let BS_SECTIONS=['유동자산','비유동자산','유동부채','비유동부채','자본'];
+let balanceData={}; // {month: [{id,section,name,amount,note}]}
+async function loadBalanceFromDb(){
+  const {data, error}=await sb.from('balance_sheet_items').select('*').order('created_at');
+  if(error){ console.error(error); return {}; }
+  const out={};
+  data.forEach(r=>{
+    if(!out[r.month]) out[r.month]=[];
+    out[r.month].push({id:r.id, section:r.section, name:r.name, amount:r.amount, note:r.note||''});
+  });
+  return out;
+}
+async function upsertBalanceItem(month,section,name,amount,note,id){
+  showSyncStatus('저장 중...');
+  const row={month,section,name,amount,note:note||''};
+  if(id) row.id=id;
+  const {data,error}=await sb.from('balance_sheet_items').upsert(row).select();
+  if(error){ console.error(error); showSyncStatus('저장 실패', true); return null; }
+  showSyncStatus('저장됨');
+  return data&&data[0];
+}
+async function deleteBalanceItem(id){
+  showSyncStatus('삭제 중...');
+  const {error}=await sb.from('balance_sheet_items').delete().eq('id', id);
+  if(error){ console.error(error); showSyncStatus('삭제 실패', true); }
+}
+
 async function loadItemPricesFromDb(){
   const {data, error}=await sb.from('item_prices').select('*');
   if(error){ console.error(error); return {}; }
@@ -896,14 +937,14 @@ function saveClosingStateToDb(){
 // ── 손익계산서 항목 (판관비/영업외손익) ──
 async function loadPlItemsFromDb(){
   const {data, error}=await sb.from('pl_items').select('*');
-  if(error){ console.error(error); return {sga:{}, other:{}}; }
-  const sga={}, other={};
+  if(error){ console.error(error); return {sga:{}, other:{}, inventory:{}}; }
+  const sga={}, other={}, inventory={};
   data.forEach(r=>{
-    const target = r.category==='sga' ? sga : other;
+    const target = r.category==='sga' ? sga : r.category==='inventory' ? inventory : other;
     if(!target[r.month]) target[r.month]=[];
     target[r.month].push({name:r.name, amt:r.amount, type:r.type||undefined});
   });
-  return {sga, other};
+  return {sga, other, inventory};
 }
 
 let _plSaveTimer={};
@@ -963,9 +1004,11 @@ async function loadAll(){
     const pl = await loadPlItemsFromDb();
     sgaData = pl.sga;
     otherData = pl.other;
+    inventoryData = pl.inventory;
     annualManual = await loadAnnualManualFromDb();
     txRules = await loadTxRulesFromDb();
     ITEM_PRICES = await loadItemPricesFromDb();
+    balanceData = await loadBalanceFromDb();
     showSyncStatus('연결됨');
   }catch(err){
     console.error('loadAll error:', err);
@@ -985,9 +1028,18 @@ let closingState={};
 const persistClosing=()=>{ saveClosingStateToDb(); };
 
 // 판관비·영업외손익 저장
-let sgaData={}, otherData={};
+let sgaData={}, otherData={}, inventoryData={};
 const persistSga=()=>{ savePlItemsToDb('sga', sgaData); };
 const persistOther=()=>{ savePlItemsToDb('other', otherData); };
+const persistInventory=()=>{ savePlItemsToDb('inventory', inventoryData); };
+function saveInventory(key,name,value){
+  if(!inventoryData[key]) inventoryData[key]=[{name:'기초재고',amt:0},{name:'기말재고',amt:0}];
+  const item=inventoryData[key].find(i=>i.name===name);
+  if(item) item.amt=+value||0;
+  else inventoryData[key].push({name,amt:+value||0});
+  persistInventory();
+  renderPL();
+}
 
 const DEFAULT_SGA=['급여','보험료','지급수수료','여비교통비','통신비','복리후생비','접대비','소모품비','수도광열비','세금과공과'];
 
@@ -1784,8 +1836,8 @@ function renderDeliver(){
 
 /* ── 탭 전환 ── */
 function go(p){
-  const navIds=['list','deliver','closing','pl','txclass','annual','settings'];
-  const allIds=['list','deliver','closing','pl','txclass','annual','new','settings'];
+  const navIds=['list','deliver','closing','pl','balance','txclass','annual','settings'];
+  const allIds=['list','deliver','closing','pl','balance','txclass','annual','new','settings'];
   allIds.forEach(id=>{
     document.getElementById('page-'+id).classList.toggle('on',id===p);
   });
@@ -1797,6 +1849,7 @@ function go(p){
   if(p==='deliver')renderDeliver();
   if(p==='closing')renderClosing();
   if(p==='pl')renderPL();
+  if(p==='balance')renderBalance();
   if(p==='txclass')renderTxSummary();
   if(p==='annual')renderAnnual();
   if(p==='settings')loadConfig();
@@ -2016,7 +2069,12 @@ function renderPL(){
     return i.ship && ym(i.ship)===pm;
   });
   const sales=all.reduce((s,i)=>s+i.samt,0);
-  const cogs=all.reduce((s,i)=>s+i.bamt,0);
+  const purchases=all.reduce((s,i)=>s+i.bamt,0); // 당기매입액
+  const invKey=pm||'all';
+  if(!inventoryData[invKey]) inventoryData[invKey]=[{name:'기초재고',amt:0},{name:'기말재고',amt:0}];
+  const beginInv=(inventoryData[invKey].find(i=>i.name==='기초재고')||{amt:0}).amt||0;
+  const endInv=(inventoryData[invKey].find(i=>i.name==='기말재고')||{amt:0}).amt||0;
+  const cogs=beginInv+purchases-endInv; // 매출원가 = 기초재고 + 당기매입 - 기말재고
   const gross=sales-cogs;
 
   // 판관비
@@ -2055,6 +2113,15 @@ function renderPL(){
 
   document.getElementById('pl-body').innerHTML=
     plRow('① 매출액',sales,'total')+
+    `<tr style="background:#fafafa"><td style="padding:6px 12px;padding-left:24px;font-size:12px;color:#666">기초재고액</td><td class="r" style="padding:3px 12px">
+      <input type="number" value="${beginInv}" style="width:120px;text-align:right;border:1px solid #ddd;border-radius:4px;padding:4px 8px;font-size:12px"
+        onchange="saveInventory('${invKey}','기초재고',this.value)">
+    </td></tr>`+
+    `<tr style="background:#fafafa"><td style="padding:6px 12px;padding-left:24px;font-size:12px;color:#666">당기매입액</td><td class="r" style="padding:6px 12px;font-size:12px;color:#666">${fmtW(purchases)}</td></tr>`+
+    `<tr style="background:#fafafa"><td style="padding:6px 12px;padding-left:24px;font-size:12px;color:#666">기말재고액</td><td class="r" style="padding:3px 12px">
+      <input type="number" value="${endInv}" style="width:120px;text-align:right;border:1px solid #ddd;border-radius:4px;padding:4px 8px;font-size:12px"
+        onchange="saveInventory('${invKey}','기말재고',this.value)">
+    </td></tr>`+
     plRow('② 매출원가',cogs,'')+
     plRow('③ 매출총이익',gross,'total')+
     `<tr style="background:#f9f9f9"><td style="padding:6px 12px;font-size:11px;color:#888">매출총이익률</td><td class="r" style="padding:6px 12px;font-size:11px;color:#888">${gm}%</td></tr>`+
@@ -2543,6 +2610,146 @@ async function applyTxToPL(){
   otherData[ym]=otherList;
   persistSga(); persistOther();
   alert('손익계산서에 반영했어요. 손익계산서 탭에서 확인해보세요.');
+}
+
+/* ══════════════ 대차대조표 ══════════════ */
+function renderBalance(){
+  const nowYm=new Date().toISOString().slice(0,7);
+  const months=[...new Set([...Object.keys(balanceData), nowYm])].sort().reverse();
+  const sel=document.getElementById('bs-month');
+  const curYm=sel.value||months[0]||nowYm;
+  sel.innerHTML=months.map(m=>`<option value="${m}"${m===curYm?' selected':''}>${m}</option>`).join('');
+  sel.value=curYm;
+
+  const items=balanceData[curYm]||[];
+  const bySection=sec=>items.filter(i=>i.section===sec);
+  const sumSec=sec=>bySection(sec).reduce((s,i)=>s+(+i.amount||0),0);
+
+  const totalAsset=sumSec('유동자산')+sumSec('비유동자산');
+  const totalLiab=sumSec('유동부채')+sumSec('비유동부채');
+  const totalEquity=sumSec('자본');
+  const diff=totalAsset-(totalLiab+totalEquity);
+
+  document.getElementById('bs-metrics').innerHTML=`
+    <div class="metric"><div class="metric-lbl">자산총계</div><div class="metric-val">${fmtW(totalAsset)}</div></div>
+    <div class="metric"><div class="metric-lbl">부채총계</div><div class="metric-val">${fmtW(totalLiab)}</div></div>
+    <div class="metric"><div class="metric-lbl">자본총계</div><div class="metric-val">${fmtW(totalEquity)}</div></div>
+    <div class="metric"><div class="metric-lbl">차대변 차액</div><div class="metric-val ${diff===0?'g':'b'}">${fmtW(diff)}</div></div>`;
+
+  function sectionBox(section,label){
+    const rows=bySection(section);
+    const sub=rows.reduce((s,i)=>s+(+i.amount||0),0);
+    return `<div class="section-box" style="margin-bottom:14px">
+      <div class="section-title"><span>${label}</span><span style="font-size:13px;color:#666;font-weight:600">소계 ${fmtW(sub)}</span></div>
+      <table class="data-tbl">
+        <thead><tr><th>계정과목</th><th class="r" style="width:150px">금액</th><th>비고</th><th style="width:36px"></th></tr></thead>
+        <tbody>${rows.length?rows.map(r=>`<tr>
+          <td>${r.name}</td>
+          <td class="r" style="padding:4px 8px">
+            <input type="number" value="${r.amount}" style="width:130px;text-align:right;border:1px solid #ddd;border-radius:4px;padding:4px 6px"
+              onchange="saveBalanceField('${r.id}','amount',this.value)">
+          </td>
+          <td style="padding:4px 8px">
+            <input value="${(r.note||'').replace(/"/g,'&quot;')}" style="width:100%;border:1px solid #ddd;border-radius:4px;padding:4px 6px;font-size:12px"
+              onchange="saveBalanceField('${r.id}','note',this.value)">
+          </td>
+          <td style="text-align:center"><button class="del-btn" onclick="delBalanceItem('${r.id}')">×</button></td>
+        </tr>`).join(''):`<tr><td colspan="4" style="text-align:center;color:#bbb;padding:1rem">항목이 없어요</td></tr>`}</tbody>
+      </table>
+      <div style="padding:10px 12px;display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid #eee">
+        <input id="bs-new-name-${section}" placeholder="계정과목" style="width:160px">
+        <input type="number" id="bs-new-amt-${section}" placeholder="금액" style="width:130px">
+        <input id="bs-new-note-${section}" placeholder="비고 (선택)" style="width:180px">
+        <button class="btn btn-save" onclick="addBalanceItem('${section}')">+ 추가</button>
+      </div>
+    </div>`;
+  }
+
+  document.getElementById('bs-sections').innerHTML=
+    `<h3 style="font-size:14px;margin:4px 0 10px">자산</h3>`+
+    sectionBox('유동자산','1. 유동자산')+
+    sectionBox('비유동자산','2. 비유동자산')+
+    `<h3 style="font-size:14px;margin:20px 0 10px">부채</h3>`+
+    sectionBox('유동부채','1. 유동부채')+
+    sectionBox('비유동부채','2. 비유동부채')+
+    `<h3 style="font-size:14px;margin:20px 0 10px">자본</h3>`+
+    sectionBox('자본','자본');
+
+  _balanceCache={curYm,items,totalAsset,totalLiab,totalEquity,diff};
+}
+let _balanceCache=null;
+
+async function saveBalanceField(id,field,value){
+  const curYm=document.getElementById('bs-month').value;
+  const item=(balanceData[curYm]||[]).find(i=>i.id===id);
+  if(!item) return;
+  item[field]= field==='amount' ? (+value||0) : value;
+  await upsertBalanceItem(curYm,item.section,item.name,item.amount,item.note,id);
+  renderBalance();
+}
+async function delBalanceItem(id){
+  const curYm=document.getElementById('bs-month').value;
+  balanceData[curYm]=(balanceData[curYm]||[]).filter(i=>i.id!==id);
+  await deleteBalanceItem(id);
+  renderBalance();
+}
+async function addBalanceItem(section){
+  const curYm=document.getElementById('bs-month').value;
+  const name=document.getElementById(`bs-new-name-${section}`).value.trim();
+  const amount=+document.getElementById(`bs-new-amt-${section}`).value||0;
+  const note=document.getElementById(`bs-new-note-${section}`).value.trim();
+  if(!name){ alert('계정과목을 입력해주세요'); return; }
+  const row=await upsertBalanceItem(curYm,section,name,amount,note);
+  if(row){
+    if(!balanceData[curYm]) balanceData[curYm]=[];
+    balanceData[curYm].push({id:row.id, section, name, amount, note});
+  }
+  document.getElementById(`bs-new-name-${section}`).value='';
+  document.getElementById(`bs-new-amt-${section}`).value='';
+  document.getElementById(`bs-new-note-${section}`).value='';
+  renderBalance();
+}
+
+function printBalanceReport(){
+  renderBalance();
+  if(!_balanceCache) return;
+  const {curYm,items,totalAsset,totalLiab,totalEquity,diff}=_balanceCache;
+  const today=new Date().toISOString().slice(0,10).replace(/-/g,'.');
+  const bySection=sec=>items.filter(i=>i.section===sec);
+  const sumSec=sec=>bySection(sec).reduce((s,i)=>s+(+i.amount||0),0);
+  function rows(sec){
+    const list=bySection(sec);
+    if(!list.length) return `<tr><td colspan="3" style="text-align:center;color:#999">-</td></tr>`;
+    return list.map(r=>`<tr><td class="l">${r.name}</td><td>${fmt(r.amount)}</td><td class="l">${r.note||''}</td></tr>`).join('');
+  }
+  function block(sec,label){
+    return `<tr class="grp-head"><td colspan="3">${label} (소계 ${fmt(sumSec(sec))})</td></tr>${rows(sec)}`;
+  }
+  const html=`<div class="report-page" style="width:794px">
+    <div class="report-title">대차대조표</div>
+    <div class="report-sub">${MY.name}　|　기준월: ${curYm}　|　출력일: ${today}</div>
+    <div class="report-section-title">자산</div>
+    <table class="report-tbl"><thead><tr><th>계정과목</th><th style="width:120px">금액(원)</th><th>비고</th></tr></thead>
+      <tbody>${block('유동자산','1. 유동자산')}${block('비유동자산','2. 비유동자산')}
+        <tr class="grand"><td class="l">자산총계</td><td>${fmt(totalAsset)}</td><td></td></tr>
+      </tbody></table>
+    <div class="report-section-title">부채</div>
+    <table class="report-tbl"><thead><tr><th>계정과목</th><th style="width:120px">금액(원)</th><th>비고</th></tr></thead>
+      <tbody>${block('유동부채','1. 유동부채')}${block('비유동부채','2. 비유동부채')}
+        <tr class="grand"><td class="l">부채총계</td><td>${fmt(totalLiab)}</td><td></td></tr>
+      </tbody></table>
+    <div class="report-section-title">자본</div>
+    <table class="report-tbl"><thead><tr><th>계정과목</th><th style="width:120px">금액(원)</th><th>비고</th></tr></thead>
+      <tbody>${block('자본','자본')}
+        <tr class="grand"><td class="l">자본총계</td><td>${fmt(totalEquity)}</td><td></td></tr>
+        <tr class="grand"><td class="l">부채 및 자본총계</td><td>${fmt(totalLiab+totalEquity)}</td><td></td></tr>
+        <tr><td class="l">차대변 차액</td><td>${fmt(diff)}</td><td></td></tr>
+      </tbody></table>
+  </div>`;
+  document.getElementById('doc-content').innerHTML=html;
+  document.getElementById('dynamic-page-style').textContent='';
+  document.getElementById('doc-frame').style.width='794px';
+  document.getElementById('overlay').style.display='block';
 }
 
 function printAnnualReport(){
