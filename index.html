@@ -2317,8 +2317,13 @@ async function handleTxFile(e){
   }
 
   txRowsPending = parsed.map(p=>{
+    // 은행 거래에서 500원은 항상 이체수수료 (신창수/김은희/이은진 등 이름과 무관하게)
+    if(p.source==='bank' && p.amount===500){
+      return {...p, account:'지급수수료', ruleKeyword:p.description, saveRule:false};
+    }
     const matched=matchTxRule(p.description);
-    return {...p, account: matched?matched.account:'', ruleKeyword: matched?matched.keyword:p.description, saveRule: !matched};
+    const defaultAccount = matched ? matched.account : (p.source==='card' ? '복리후생비' : '');
+    return {...p, account: defaultAccount, ruleKeyword: matched?matched.keyword:p.description, saveRule: !matched};
   });
   document.getElementById('tx-file-status').textContent=`${parsed.length}건 불러옴 (${isBank?'은행':'카드'} 형식)`;
   renderTxReview();
