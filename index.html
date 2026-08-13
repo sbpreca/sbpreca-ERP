@@ -352,6 +352,16 @@ input[readonly]{background:#f5f5f5;color:#999}
             <tbody id="pl-body"></tbody>
           </table>
         </div>
+        <div class="section-box">
+          <div class="section-title" style="justify-content:space-between">
+            <span>부가세 현황 (예상)</span>
+            <span id="vat-period" style="font-size:11px;color:#888;font-weight:600"></span>
+          </div>
+          <table class="data-tbl">
+            <tbody id="vat-body"></tbody>
+          </table>
+          <p style="font-size:11px;color:#999;padding:8px 12px 4px">※ 매입세액은 발주 매입원가 기준으로 자동 계산돼요. 카드/경비 등 판관비 쪽 매입세액공제분은 "기타매입세액"에 직접 입력해주세요.</p>
+        </div>
       </div>
       <div>
         <div class="section-box" style="margin-bottom:14px">
@@ -937,14 +947,14 @@ function saveClosingStateToDb(){
 // ── 손익계산서 항목 (판관비/영업외손익) ──
 async function loadPlItemsFromDb(){
   const {data, error}=await sb.from('pl_items').select('*');
-  if(error){ console.error(error); return {sga:{}, other:{}, inventory:{}}; }
-  const sga={}, other={}, inventory={};
+  if(error){ console.error(error); return {sga:{}, other:{}, inventory:{}, vat:{}}; }
+  const sga={}, other={}, inventory={}, vat={};
   data.forEach(r=>{
-    const target = r.category==='sga' ? sga : r.category==='inventory' ? inventory : other;
+    const target = r.category==='sga' ? sga : r.category==='inventory' ? inventory : r.category==='vat' ? vat : other;
     if(!target[r.month]) target[r.month]=[];
     target[r.month].push({name:r.name, amt:r.amount, type:r.type||undefined});
   });
-  return {sga, other, inventory};
+  return {sga, other, inventory, vat};
 }
 
 let _plSaveTimer={};
@@ -1005,6 +1015,7 @@ async function loadAll(){
     sgaData = pl.sga;
     otherData = pl.other;
     inventoryData = pl.inventory;
+    vatData = pl.vat;
     annualManual = await loadAnnualManualFromDb();
     txRules = await loadTxRulesFromDb();
     ITEM_PRICES = await loadItemPricesFromDb();
@@ -1028,10 +1039,11 @@ let closingState={};
 const persistClosing=()=>{ saveClosingStateToDb(); };
 
 // 판관비·영업외손익 저장
-let sgaData={}, otherData={}, inventoryData={};
+let sgaData={}, otherData={}, inventoryData={}, vatData={};
 const persistSga=()=>{ savePlItemsToDb('sga', sgaData); };
 const persistOther=()=>{ savePlItemsToDb('other', otherData); };
 const persistInventory=()=>{ savePlItemsToDb('inventory', inventoryData); };
+const persistVat=()=>{ savePlItemsToDb('vat', vatData); };
 function saveInventory(key,name,value){
   if(!inventoryData[key]) inventoryData[key]=[{name:'기초재고',amt:0},{name:'기말재고',amt:0}];
   const item=inventoryData[key].find(i=>i.name===name);
@@ -1039,6 +1051,23 @@ function saveInventory(key,name,value){
   else inventoryData[key].push({name,amt:+value||0});
   persistInventory();
   renderPL();
+}
+function saveVat(key,name,value){
+  if(!vatData[key]) vatData[key]=[{name:'기타매입세액',amt:0}];
+  const item=vatData[key].find(i=>i.name===name);
+  if(item) item.amt=+value||0;
+  else vatData[key].push({name,amt:+value||0});
+  persistVat();
+  renderPL();
+}
+// 부가세 신고기간(분기) 라벨
+function vatPeriodLabel(month){
+  if(!month) return '';
+  const mo=+month.slice(5,7);
+  if(mo<=3) return '1기 예정신고 (1~3월)';
+  if(mo<=6) return '1기 확정신고 (4~6월)';
+  if(mo<=9) return '2기 예정신고 (7~9월)';
+  return '2기 확정신고 (10~12월)';
 }
 
 const DEFAULT_SGA=['급여','보험료','지급수수료','여비교통비','통신비','복리후생비','접대비','소모품비','수도광열비','세금과공과'];
@@ -2095,6 +2124,14 @@ function renderPL(){
   const gm=sales?(gross/sales*100).toFixed(1):0;
   const om=sales?(opIncome/sales*100).toFixed(1):0;
 
+  // 부가세 예상 (매출세액 - 매입세액 - 기타매입세액)
+  const outputVat=Math.round(sales*0.1); // 매출세액
+  const inputVatCogs=Math.round(purchases*0.1); // 매입세액(매입원가분)
+  const vatKey=pm||'all';
+  if(!vatData[vatKey]) vatData[vatKey]=[{name:'기타매입세액',amt:0}];
+  const otherInputVat=(vatData[vatKey].find(i=>i.name==='기타매입세액')||{amt:0}).amt||0;
+  const vatPayable=outputVat-inputVatCogs-otherInputVat;
+
   document.getElementById('pl-metrics').innerHTML=`
     <div class="metric"><div class="metric-lbl">매출액</div><div class="metric-val">${fmtW(sales)}</div></div>
     <div class="metric"><div class="metric-lbl">매출총이익</div><div class="metric-val ${gross>=0?'g':''}">${fmtW(gross)}</div></div>
@@ -2131,6 +2168,20 @@ function renderPL(){
     plRow('⑥ 영업외수익',otherInc,'')+
     plRow('⑦ 영업외비용',otherExp,'')+
     plRow('⑧ 세전이익',preIncome,'total');
+
+  // 부가세 현황
+  document.getElementById('vat-period').textContent=vatPeriodLabel(pm);
+  document.getElementById('vat-body').innerHTML=`
+    <tr><td style="padding:8px 12px">매출세액 (매출액×10%)</td><td class="r" style="padding:8px 12px">${fmtW(outputVat)}</td></tr>
+    <tr><td style="padding:8px 12px">매입세액 - 매입원가분 (당기매입×10%)</td><td class="r" style="padding:8px 12px">${fmtW(inputVatCogs)}</td></tr>
+    <tr><td style="padding:4px 12px">기타매입세액 (판관비 등)</td><td class="r" style="padding:3px 12px">
+      <input type="number" value="${otherInputVat}" style="width:130px;text-align:right;border:1px solid #ddd;border-radius:4px;padding:4px 8px"
+        onchange="saveVat('${vatKey}','기타매입세액',this.value)">
+    </td></tr>
+    <tr class="tot" style="font-weight:700;background:#f5f5f5;border-top:2px solid #ddd">
+      <td style="padding:10px 12px">${vatPayable>=0?'납부예상세액':'환급예상세액'}</td>
+      <td class="r" style="padding:10px 12px;color:${vatPayable>=0?'#dc2626':'#166534'}">${fmtW(Math.abs(vatPayable))}</td>
+    </tr>`;
 
   // 판관비 테이블
   document.getElementById('sga-body').innerHTML=sgaList.map((item,i)=>`<tr>
