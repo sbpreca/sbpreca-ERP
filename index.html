@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>상보프레카 발주 관리</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'맑은 고딕','Apple SD Gothic Neo',sans-serif;font-size:14px;color:#1a1a1a;background:#eee}
@@ -191,6 +192,7 @@ input[readonly]{background:#f5f5f5;color:#999}
     <button class="nav-btn" onclick="go('deliver')">납품 현황</button>
     <button class="nav-btn" onclick="go('closing')">마감현황</button>
     <button class="nav-btn" onclick="go('pl')">손익계산서</button>
+    <button class="nav-btn" onclick="go('txclass')">지출분류</button>
     <button class="nav-btn" onclick="go('annual')">연간 현황</button>
     <button class="nav-btn" onclick="go('settings')">설정</button>
   </div>
@@ -380,6 +382,48 @@ input[readonly]{background:#f5f5f5;color:#999}
           </div>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- 지출분류 -->
+  <div id="page-txclass" class="page">
+    <div class="section-box" style="margin-bottom:14px">
+      <div class="section-title">은행/카드 엑셀 업로드</div>
+      <div style="padding:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+        <input id="tx-label" placeholder="구분 (예: 013계좌, 021계좌, 법인카드)" style="width:200px">
+        <input type="file" id="tx-file" accept=".xlsx,.xls" onchange="handleTxFile(event)">
+        <span id="tx-file-status" style="font-size:12px;color:#888"></span>
+      </div>
+      <p style="font-size:12px;color:#999;padding:0 12px 10px">※ 은행 거래내역(입금액/출금액/내용 컬럼)과 카드 이용내역(가맹점명/이용금액 컬럼)을 자동으로 구분해서 읽어요. 매출/매입 거래도 넣으셔도 되지만, 손익계산서에는 반영 안 되고 "비손익"으로 따로 잡혀요 (잔액 확인용).</p>
+    </div>
+
+    <div class="section-box" id="tx-review-box" style="margin-bottom:14px;display:none">
+      <div class="section-title">
+        <span>분류 확인 (<span id="tx-review-count">0</span>건)</span>
+        <button class="btn btn-save" onclick="saveTxReview()">전체 저장</button>
+      </div>
+      <table class="data-tbl">
+        <thead><tr>
+          <th style="width:90px">날짜</th><th>내용</th><th class="r" style="width:100px">금액</th><th style="width:60px">구분</th>
+          <th style="width:150px">계정</th><th style="width:150px">규칙 키워드</th><th style="width:70px">규칙저장</th>
+        </tr></thead>
+        <tbody id="tx-review-body"></tbody>
+      </table>
+    </div>
+
+    <div class="section-box">
+      <div class="section-title">
+        <span>월별 분류 현황</span>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="tx-summary-month" onchange="renderTxSummary()"></select>
+          <button class="btn btn-save" onclick="applyTxToPL()">손익계산서에 반영</button>
+        </div>
+      </div>
+      <table class="data-tbl">
+        <thead><tr><th>계정과목</th><th style="width:100px">구분</th><th class="r" style="width:130px">합계</th></tr></thead>
+        <tbody id="tx-summary-body"></tbody>
+        <tfoot id="tx-summary-foot"></tfoot>
+      </table>
     </div>
   </div>
 
@@ -824,7 +868,7 @@ async function loadPlItemsFromDb(){
   data.forEach(r=>{
     const target = r.category==='sga' ? sga : other;
     if(!target[r.month]) target[r.month]=[];
-    target[r.month].push({name:r.name, amt:r.amount});
+    target[r.month].push({name:r.name, amt:r.amount, type:r.type||undefined});
   });
   return {sga, other};
 }
@@ -838,7 +882,7 @@ function savePlItemsToDb(category, dataObj){
     const rows=[];
     Object.entries(dataObj).forEach(([month, items])=>{
       (items||[]).forEach(it=>{
-        rows.push({month, category, name:it.name, amount:it.amt});
+        rows.push({month, category, name:it.name, amount:it.amt, type:it.type||null});
       });
     });
     if(rows.length){
@@ -887,6 +931,7 @@ async function loadAll(){
     sgaData = pl.sga;
     otherData = pl.other;
     annualManual = await loadAnnualManualFromDb();
+    txRules = await loadTxRulesFromDb();
     showSyncStatus('연결됨');
   }catch(err){
     console.error('loadAll error:', err);
@@ -1632,8 +1677,8 @@ function renderDeliver(){
 
 /* ── 탭 전환 ── */
 function go(p){
-  const navIds=['list','deliver','closing','pl','annual','settings'];
-  const allIds=['list','deliver','closing','pl','annual','new','settings'];
+  const navIds=['list','deliver','closing','pl','txclass','annual','settings'];
+  const allIds=['list','deliver','closing','pl','txclass','annual','new','settings'];
   allIds.forEach(id=>{
     document.getElementById('page-'+id).classList.toggle('on',id===p);
   });
@@ -1645,6 +1690,7 @@ function go(p){
   if(p==='deliver')renderDeliver();
   if(p==='closing')renderClosing();
   if(p==='pl')renderPL();
+  if(p==='txclass')renderTxSummary();
   if(p==='annual')renderAnnual();
   if(p==='settings')loadConfig();
 }
@@ -2143,6 +2189,259 @@ function renderAnnual(){
   _annualCache={curY,curTab,sellRows,buyRows};
 }
 let _annualCache=null;
+
+/* ══════════════ 지출분류 (은행/카드 → 계정 자동분류 → 손익계산서 반영) ══════════════ */
+
+// 계정과목 → 손익 반영 여부 매핑
+const ACCOUNT_PLTYPE={
+  '급여':'판관비','보험료':'판관비','지급수수료':'판관비','여비교통비':'판관비','통신비':'판관비',
+  '복리후생비':'판관비','접대비':'판관비','기업업무추진비':'판관비','소모품비':'판관비','사무용품비':'판관비',
+  '수도광열비':'판관비','전력비':'판관비','세금과공과':'판관비','감가상각비':'판관비','지급임차료':'판관비','운반비':'판관비','도서인쇄비':'판관비',
+  '이자수익':'영업외수익','잡수익':'영업외수익',
+  '이자비용':'영업외비용','잡손실':'영업외비용',
+  '매출':'비손익','매입':'비손익','계좌간이체':'비손익','카드결제대금':'비손익','미분류':'비손익'
+};
+const ACCOUNT_LIST=Object.keys(ACCOUNT_PLTYPE);
+
+let txRules=[]; // {id,keyword,account}
+let txRowsPending=[]; // 업로드 후 저장 전 검토중인 행들
+let txAll=[]; // DB에 저장된 전체 bank_tx (요약용, lazy load)
+
+async function loadTxRulesFromDb(){
+  const {data,error}=await sb.from('tx_rules').select('*');
+  if(error){ console.error(error); return []; }
+  return data;
+}
+async function loadBankTxFromDb(){
+  const {data,error}=await sb.from('bank_tx').select('*').order('tx_date');
+  if(error){ console.error(error); return []; }
+  return data;
+}
+async function upsertTxRule(keyword,account){
+  const {data,error}=await sb.from('tx_rules').upsert({keyword,account},{onConflict:'keyword'}).select();
+  if(error){ console.error(error); return null; }
+  return data&&data[0];
+}
+async function saveBankTxRows(rows){
+  const {error}=await sb.from('bank_tx').upsert(rows,{onConflict:'source,account_label,tx_date,description,amount,direction'});
+  if(error){ console.error(error); alert('저장 중 오류가 발생했어요: '+error.message); return false; }
+  return true;
+}
+
+function matchTxRule(desc){
+  let best=null;
+  txRules.forEach(r=>{
+    if(desc.includes(r.keyword)){
+      if(!best || r.keyword.length>best.keyword.length) best=r;
+    }
+  });
+  return best;
+}
+
+function excelDateToStr(v){
+  if(typeof v==='number'){
+    const d=XLSX.SSF.parse_date_code(v);
+    return `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
+  }
+  const s=String(v).trim();
+  const m=s.match(/(\d{4})[.\-\/](\d{1,2})[.\-\/](\d{1,2})/);
+  if(m) return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+  return s.slice(0,10);
+}
+
+async function handleTxFile(e){
+  const file=e.target.files[0];
+  if(!file) return;
+  const label=document.getElementById('tx-label').value.trim() || file.name.replace(/\.(xlsx|xls)$/i,'');
+  document.getElementById('tx-file-status').textContent='읽는 중...';
+  if(!txRules.length) txRules=await loadTxRulesFromDb();
+
+  const buf=await file.arrayBuffer();
+  const wb=XLSX.read(buf,{type:'array', cellDates:false});
+  const sheet=wb.Sheets[wb.SheetNames[0]];
+  const rows=XLSX.utils.sheet_to_json(sheet,{header:1,defval:''});
+  const header=rows[0].map(h=>String(h).trim());
+
+  const isBank = header.includes('입금액') && header.includes('출금액');
+  const isCard = header.includes('가맹점명') && header.includes('이용금액');
+
+  if(!isBank && !isCard){
+    alert('은행 거래내역(입금액/출금액) 또는 카드 이용내역(가맹점명/이용금액) 형식이 아니에요. 컬럼 구성을 확인해주세요.');
+    document.getElementById('tx-file-status').textContent='';
+    return;
+  }
+
+  const idx=name=>header.indexOf(name);
+  const parsed=[];
+
+  if(isBank){
+    const iDate=idx('거래일시'), iIn=idx('입금액'), iOut=idx('출금액'), iDesc=idx('내용');
+    for(let i=1;i<rows.length;i++){
+      const r=rows[i];
+      if(!r || r.length===0) continue;
+      const inAmt=+r[iIn]||0, outAmt=+r[iOut]||0;
+      if(inAmt===0 && outAmt===0) continue;
+      const desc=String(r[iDesc]||'').trim();
+      if(!desc) continue;
+      parsed.push({
+        source:'bank', account_label:label,
+        tx_date:excelDateToStr(r[iDate]),
+        description:desc,
+        amount: inAmt>0?inAmt:outAmt,
+        direction: inAmt>0?'in':'out'
+      });
+    }
+  }else{
+    const iDate=idx('이용일시'), iDesc=idx('가맹점명'), iAmt=idx('이용금액');
+    for(let i=1;i<rows.length;i++){
+      const r=rows[i];
+      if(!r || r.length===0) continue;
+      const amt=+r[iAmt]||0;
+      if(amt===0) continue;
+      const desc=String(r[iDesc]||'').trim();
+      if(!desc) continue;
+      parsed.push({
+        source:'card', account_label:label,
+        tx_date:excelDateToStr(r[iDate]),
+        description:desc,
+        amount: Math.abs(amt),
+        direction: amt<0?'in':'out'
+      });
+    }
+  }
+
+  if(!parsed.length){
+    alert('읽을 수 있는 거래가 없어요.');
+    document.getElementById('tx-file-status').textContent='';
+    return;
+  }
+
+  txRowsPending = parsed.map(p=>{
+    const matched=matchTxRule(p.description);
+    return {...p, account: matched?matched.account:'', ruleKeyword: matched?matched.keyword:p.description, saveRule: !matched};
+  });
+  document.getElementById('tx-file-status').textContent=`${parsed.length}건 불러옴 (${isBank?'은행':'카드'} 형식)`;
+  renderTxReview();
+}
+
+function renderTxReview(){
+  const box=document.getElementById('tx-review-box');
+  if(!txRowsPending.length){ box.style.display='none'; return; }
+  box.style.display='block';
+  document.getElementById('tx-review-count').textContent=txRowsPending.length;
+  const optHtml=ACCOUNT_LIST.map(a=>`<option value="${a}">${a} (${ACCOUNT_PLTYPE[a]})</option>`).join('');
+  document.getElementById('tx-review-body').innerHTML=txRowsPending.map((r,i)=>`<tr>
+    <td style="font-size:11px">${r.tx_date}</td>
+    <td style="font-size:12px">${r.description}</td>
+    <td class="r">${fmt(r.amount)}</td>
+    <td style="text-align:center;font-size:11px;color:${r.direction==='in'?'#166534':'#dc2626'}">${r.direction==='in'?'입금':'출금'}</td>
+    <td style="padding:2px 4px">
+      <select style="width:100%;font-size:12px;padding:3px" onchange="txRowsPending[${i}].account=this.value;renderTxReviewRowState(${i})">
+        <option value="">선택...</option>${optHtml.replace(`value="${r.account}"`, `value="${r.account}" selected`)}
+      </select>
+    </td>
+    <td style="padding:2px 4px">
+      <input value="${r.ruleKeyword.replace(/"/g,'&quot;')}" style="width:100%;font-size:11px;padding:3px" onchange="txRowsPending[${i}].ruleKeyword=this.value">
+    </td>
+    <td style="text-align:center"><input type="checkbox" ${r.saveRule?'checked':''} onchange="txRowsPending[${i}].saveRule=this.checked"></td>
+  </tr>`).join('');
+}
+function renderTxReviewRowState(i){ /* select 변경만 반영, 재렌더 불필요 */ }
+
+async function saveTxReview(){
+  const missing=txRowsPending.filter(r=>!r.account);
+  if(missing.length){ alert(`계정이 지정 안 된 항목이 ${missing.length}건 있어요. 전부 지정해주세요.`); return; }
+  showSyncStatus('저장 중...');
+  // 규칙 저장
+  for(const r of txRowsPending){
+    if(r.saveRule && r.ruleKeyword.trim()){
+      const rule=await upsertTxRule(r.ruleKeyword.trim(), r.account);
+      if(rule){
+        const idx=txRules.findIndex(x=>x.keyword===rule.keyword);
+        if(idx>=0) txRules[idx]=rule; else txRules.push(rule);
+      }
+    }
+  }
+  // 거래 저장
+  const rows=txRowsPending.map(r=>({
+    source:r.source, account_label:r.account_label, tx_date:r.tx_date, description:r.description,
+    amount:r.amount, direction:r.direction, account:r.account, pl_type:ACCOUNT_PLTYPE[r.account]||'비손익',
+    year_month:r.tx_date.slice(0,7)
+  }));
+  const ok=await saveBankTxRows(rows);
+  if(ok){
+    showSyncStatus('저장됨');
+    txRowsPending=[];
+    document.getElementById('tx-review-box').style.display='none';
+    document.getElementById('tx-file-status').textContent='저장 완료!';
+    document.getElementById('tx-file').value='';
+    txAll=await loadBankTxFromDb();
+    renderTxSummary();
+  }
+}
+
+async function renderTxSummary(){
+  if(!txAll.length) txAll=await loadBankTxFromDb();
+  const months=[...new Set(txAll.map(t=>t.year_month))].sort().reverse();
+  const nowYm=new Date().toISOString().slice(0,7);
+  const sel=document.getElementById('tx-summary-month');
+  const curYm=sel.value || months[0] || nowYm;
+  sel.innerHTML=(months.length?months:[nowYm]).map(m=>`<option value="${m}"${m===curYm?' selected':''}>${m}</option>`).join('');
+  sel.value=curYm;
+
+  const rows=txAll.filter(t=>t.year_month===curYm);
+  const byAccount={};
+  rows.forEach(t=>{
+    if(!byAccount[t.account]) byAccount[t.account]={account:t.account, pl_type:t.pl_type, in:0, out:0};
+    if(t.direction==='in') byAccount[t.account].in+=+t.amount; else byAccount[t.account].out+=+t.amount;
+  });
+  const list=Object.values(byAccount).sort((a,b)=>{
+    const order={'판관비':0,'영업외수익':1,'영업외비용':2,'비손익':3};
+    return (order[a.pl_type]-order[b.pl_type]) || a.account.localeCompare(b.account);
+  });
+
+  if(!list.length){
+    document.getElementById('tx-summary-body').innerHTML=`<tr><td colspan="3" style="text-align:center;color:#bbb;padding:1.5rem">이 달에 저장된 분류 내역이 없어요</td></tr>`;
+    document.getElementById('tx-summary-foot').innerHTML='';
+    return;
+  }
+  document.getElementById('tx-summary-body').innerHTML=list.map(a=>{
+    // 판관비/영업외비용 계정은 out 기준, 영업외수익/매출은 in 기준, 비손익은 in+out 둘다 참고용 표기
+    const val = a.pl_type==='판관비' ? a.out
+      : a.pl_type==='영업외비용' ? a.out
+      : a.pl_type==='영업외수익' ? a.in
+      : (a.in - a.out); // 비손익: 순증감 참고용
+    return `<tr>
+      <td>${a.account}</td>
+      <td style="font-size:11px;color:#888">${a.pl_type}</td>
+      <td class="r" style="font-weight:600">${fmt(val)}</td>
+    </tr>`;
+  }).join('');
+  const plTotal=list.filter(a=>a.pl_type==='판관비').reduce((s,a)=>s+a.out,0);
+  document.getElementById('tx-summary-foot').innerHTML=`<tr class="tot"><td colspan="2">판관비 합계</td><td class="r">${fmt(plTotal)}</td></tr>`;
+}
+
+async function applyTxToPL(){
+  const ym=document.getElementById('tx-summary-month').value;
+  if(!ym) return;
+  if(!confirm(`${ym} 손익계산서의 판관비/영업외손익을 지금 분류된 내역으로 덮어쓸까요? (기존 수동 입력값은 사라져요)`)) return;
+  const rows=txAll.filter(t=>t.year_month===ym);
+  const byAccount={};
+  rows.forEach(t=>{
+    if(!byAccount[t.account]) byAccount[t.account]={account:t.account, pl_type:t.pl_type, in:0, out:0};
+    if(t.direction==='in') byAccount[t.account].in+=+t.amount; else byAccount[t.account].out+=+t.amount;
+  });
+  const sgaList=[], otherList=[];
+  Object.values(byAccount).forEach(a=>{
+    if(a.pl_type==='판관비') sgaList.push({name:a.account, amt:a.out});
+    else if(a.pl_type==='영업외수익') otherList.push({name:a.account, type:'inc', amt:a.in});
+    else if(a.pl_type==='영업외비용') otherList.push({name:a.account, type:'exp', amt:a.out});
+  });
+  sgaData[ym]=sgaList;
+  otherData[ym]=otherList;
+  persistSga(); persistOther();
+  alert('손익계산서에 반영했어요. 손익계산서 탭에서 확인해보세요.');
+}
 
 function printAnnualReport(){
   renderAnnual();
