@@ -766,11 +766,13 @@ async function saveOrdersToDb(){
     const noToId={};
     dbOrders.forEach(o=>{ noToId[o.no]=o.id; });
 
-    // 화면에 있는 발주의 품목만 다시 씀 (delete-then-insert, 화면에 없는 발주는 절대 건드리지 않음)
+    // 화면에 있는 발주의 품목만 다시 씀
+    // 안전을 위해 "새로 삽입 성공 확인 후에만 기존 것 삭제" 순서로 진행 (삽입 실패 시 기존 데이터 보존)
     for(const o of orders){
       const orderId = noToId[o.no];
       if(!orderId) continue;
-      await sb.from('order_items').delete().eq('order_id', orderId);
+      const {data:oldRows}=await sb.from('order_items').select('id').eq('order_id', orderId);
+      const oldIds=(oldRows||[]).map(r=>r.id);
       const itemRows = (o.items||[]).map((it,idx)=>({
         order_id:orderId, buyer:it.buyer||'', item:it.item||'', spec:it.spec||'',
         bqty:it.bqty||0, bprice:it.bprice||0, bamt:it.bamt||0,
@@ -779,7 +781,16 @@ async function saveOrdersToDb(){
       }));
       if(itemRows.length){
         const {error:e3}=await sb.from('order_items').insert(itemRows);
-        if(e3) throw e3;
+        if(e3){
+          console.error('저장 실패 - 기존 데이터는 보존됨:', e3);
+          alert('저장에 실패했어요 (기존 데이터는 안전하게 남아있어요). 관리자에게 문의해주세요.\n\n오류: '+e3.message);
+          showSyncStatus('저장 실패', true);
+          return;
+        }
+      }
+      // 새 데이터 삽입 성공했을 때만 기존 데이터 삭제
+      if(oldIds.length){
+        await sb.from('order_items').delete().in('id', oldIds);
       }
     }
     showSyncStatus('저장됨');
