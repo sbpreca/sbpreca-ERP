@@ -1914,15 +1914,17 @@ function renderDeliver(){
   const dm=document.getElementById('dl-month').value;
   const ds=document.getElementById('dl-seller').value;
   const dst=document.getElementById('dl-status').value;
-  const months=[...new Set(orders.map(o=>ym(o.date)).filter(Boolean))].sort().reverse();
+  // 출하일(납품일) 기준으로 월 목록/필터링 (발주일 아님 - 손익계산서/연간현황/마감현황과 동일 기준)
+  const months=[...new Set(orders.flatMap(o=>o.items.map(i=>i.ship?ym(i.ship):'')).filter(Boolean))].sort().reverse();
   // 매출처는 정규화된 키로 수집
   const sellers=[...new Set(orders.flatMap(o=>o.items.map(i=>sellerKey(i.seller)).filter(Boolean)))].sort();
   document.getElementById('dl-month').innerHTML=`<option value="">전체 월</option>`+months.map(m=>`<option${m===dm?' selected':''}>${m}</option>`).join('');
   document.getElementById('dl-seller').innerHTML=`<option value="">전체 매출처</option>`+sellers.map(s=>`<option${s===ds?' selected':''}>${s}</option>`).join('');
 
   deliverRows=[];
-  orders.filter(o=>!dm||ym(o.date)===dm).forEach(o=>{
+  orders.forEach(o=>{
     o.items.forEach((item,item_idx)=>{
+      if(dm && ym(item.ship)!==dm) return; // 출하일 기준 필터 (발주일 아님)
       const sk=item.seller||item.buyer||'';
       if(!sk)return;
       if(ds&&sk!==ds)return;
