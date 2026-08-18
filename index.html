@@ -279,6 +279,7 @@ input[readonly]{background:#f5f5f5;color:#999}
       </div>
       <table class="deliver-tbl">
         <thead><tr>
+          <th style="width:36px" class="c">No</th>
           <th style="width:32px;text-align:center"></th>
           <th style="width:100px">매출처</th>
           <th style="width:80px">담당자</th>
@@ -1962,6 +1963,7 @@ function renderDeliver(){
       const isPend=r.status==='미납품';
       const si=SELLERS[r.seller]||{};
       return `<tr class="${!isPend?'done-row':''}">
+        <td class="c" style="color:#999;font-size:11px">${idx+1}</td>
         <td class="c"><input type="checkbox" class="dl-chk" data-idx="${idx}" ${!isPend?'disabled':''} onchange="updateTsBar()"></td>
         <td style="font-weight:600">${r.seller}</td>
         <td style="font-size:12px;color:#666">${si.contact||'　'}</td>
@@ -1985,7 +1987,7 @@ function renderDeliver(){
         </td>
       </tr>`;
     }).join('')
-    :'<tr><td colspan="12" style="text-align:center;color:#bbb;padding:2rem">납품 내역이 없어요</td></tr>';
+    :'<tr><td colspan="13" style="text-align:center;color:#bbb;padding:2rem">납품 내역이 없어요</td></tr>';
 }
 
 /* ── 탭 전환 ── */
@@ -2113,12 +2115,6 @@ function renderClosing(){
   const totSell=Object.values(sm).reduce((s,v)=>s+v.amt,0);
   const margin=totSell-totBuy;
 
-  document.getElementById('cl-metrics').innerHTML=`
-    <div class="metric"><div class="metric-lbl">총 매입 결제예정</div><div class="metric-val">${fmtW(totBuy*1.1)}</div></div>
-    <div class="metric"><div class="metric-lbl">총 매출 청구예정</div><div class="metric-val g">${fmtW(totSell*1.1)}</div></div>
-    <div class="metric"><div class="metric-lbl">이익 (VAT 제외)</div><div class="metric-val b">${fmtW(margin)}</div></div>
-    <div class="metric"><div class="metric-lbl">이익률</div><div class="metric-val b">${totSell?(margin/totSell*100).toFixed(1):0}%</div></div>`;
-
   const stKey=(type,name,field)=>`${cm||'all'}_${type}_${name}_${field}`;
 
   function stSelect(type, name, field, opts){
@@ -2199,6 +2195,13 @@ function renderClosing(){
 
   const shownBuyTotal=tab==='all'?totBuy:(tab==='조명'?lightBuyEntries.reduce((s,[,v])=>s+v.amt,0):matBuyEntries.reduce((s,[,v])=>s+v.amt,0));
   const shownSellTotal=tab==='all'?totSell:(tab==='조명'?lightSellEntries.reduce((s,[,v])=>s+v.amt,0):matSellEntries.reduce((s,[,v])=>s+v.amt,0));
+  const shownMargin=shownSellTotal-shownBuyTotal;
+
+  document.getElementById('cl-metrics').innerHTML=`
+    <div class="metric"><div class="metric-lbl">${tab==='all'?'전체':tab} 매입 결제예정</div><div class="metric-val">${fmtW(shownBuyTotal*1.1)}</div></div>
+    <div class="metric"><div class="metric-lbl">${tab==='all'?'전체':tab} 매출 청구예정</div><div class="metric-val g">${fmtW(shownSellTotal*1.1)}</div></div>
+    <div class="metric"><div class="metric-lbl">이익 (VAT 제외)</div><div class="metric-val b">${fmtW(shownMargin)}</div></div>
+    <div class="metric"><div class="metric-lbl">이익률</div><div class="metric-val b">${shownSellTotal?(shownMargin/shownSellTotal*100).toFixed(1):0}%</div></div>`;
 
   document.getElementById('cl-buy-body').innerHTML=buyHtml+
     '<tr class="tot"><td>'+(tab==='all'?'전체':tab)+' 합계</td><td class="r">'+fmtW(shownBuyTotal)+'</td><td class="r">'+fmtW(Math.round(shownBuyTotal*0.1))+'</td><td class="r profit-val">'+fmtW(Math.round(shownBuyTotal*1.1))+'</td><td colspan="3"></td></tr>';
