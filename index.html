@@ -2711,6 +2711,13 @@ function renderAnnual(){
 /* ══════════════ 발주 엑셀 업로드 (엑셀 → 앱, 중복 자동 검사) ══════════════ */
 let _orderUploadParsed=null; // {rows:[{...,isDup}], }
 
+function findColAny(header, names){
+  for(const name of names){
+    const idx=findCol(header,name);
+    if(idx>=0) return idx;
+  }
+  return -1;
+}
 function findCol(header, name){
   return header.findIndex(h=>String(h||'').trim()===name);
 }
@@ -2744,9 +2751,9 @@ async function handleOrderUploadFile(e){
     return;
   }
 
-  const iDate=findCol(header,'발주일'), iBuyer=findCol(header,'매입처'), iItem=findCol(header,'품목'),
+  const iDate=findColAny(header,['발주일','발주일자']), iBuyer=findCol(header,'매입처'), iItem=findCol(header,'품목'),
     iSpec=findCol(header,'규격'), iBPrice=findCol(header,'매입단가'), iBAmt=findCol(header,'매입금액'),
-    iShip=findCol(header,'출하일'), iSeller=findCol(header,'매출처'), iSPrice=findCol(header,'판매단가'),
+    iShip=findColAny(header,['출하일','납품일','납품일자']), iSeller=findCol(header,'매출처'), iSPrice=findCol(header,'판매단가'),
     iSAmt=findCol(header,'공급가액');
   const qtyIdxs=findColAll(header,'수량');
   const iBQty=qtyIdxs[0]??-1, iSQty=qtyIdxs[1]??-1;
