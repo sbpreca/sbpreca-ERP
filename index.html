@@ -2373,17 +2373,27 @@ function renderPL(){
   document.getElementById('pl-note').value=monthlyNotes[pm||'all']||'';
 
   // 납품일(출하일) 기준으로 집계 - 실제 "납품완료"된 것만 매출/매입으로 인식
-  const all=orders.flatMap(o=>o.items).filter(i=>{
+  // 매입: 항상 납품일(출하일) 그대로 (재고로 남기는 개념이라 재지정/제외 대상 아님)
+  const allBuy=orders.flatMap(o=>o.items).filter(i=>{
     if(i.status!=='납품완료') return false;
     if(!pm) return true;
     return i.ship && ym(i.ship)===pm;
   });
-  const salesRaw=all.reduce((s,i)=>s+i.samt,0); // 발주 데이터 기준 매출액 (자동)
-  const purchasesRaw=all.reduce((s,i)=>s+i.bamt,0); // 발주 데이터 기준 당기매입액 (자동)
+  // 매출: 마감제외 표시된 건은 애초에 매출로 안 잡고, 매출 정산월 재지정이 있으면 그 달로 인식 (마감현황/연간현황과 동일 기준)
+  const salesMonthOf=i=>i.closing_month_override||ym(i.ship);
+  const allSell=orders.flatMap(o=>o.items).filter(i=>{
+    if(i.status!=='납품완료') return false;
+    if(i.closing_sell_exclude) return false;
+    if(!pm) return true;
+    return salesMonthOf(i)===pm;
+  });
+  const all=allBuy; // 기존 코드 호환용 (판관비 등 다른 곳에서 참조하지 않음, 매입 계산에만 사용)
+  const salesRaw=allSell.reduce((s,i)=>s+i.samt,0); // 발주 데이터 기준 매출액 (자동, 마감제외/정산월 반영됨)
+  const purchasesRaw=allBuy.reduce((s,i)=>s+i.bamt,0); // 발주 데이터 기준 당기매입액 (자동, 납품일 그대로)
   const salesAdjKey=pm||'all';
   if(!salesAdjData[salesAdjKey]) salesAdjData[salesAdjKey]=[{name:'매출조정',amt:0}];
   const salesAdj=(salesAdjData[salesAdjKey].find(i=>i.name==='매출조정')||{amt:0}).amt||0;
-  const sales=salesRaw+salesAdj; // 매출액(최종) = 발주기준 매출 + 매출조정(선수금 상계 등)
+  const sales=salesRaw+salesAdj; // 매출액(최종) = 발주기준 매출(마감제외/정산월 반영) + 매출조정(그 외 기타 조정)
   const purchaseAdjKey=pm||'all';
   if(!purchaseAdjData[purchaseAdjKey]) purchaseAdjData[purchaseAdjKey]=[{name:'매입조정',amt:0}];
   const purchaseAdj=(purchaseAdjData[purchaseAdjKey].find(i=>i.name==='매입조정')||{amt:0}).amt||0;
