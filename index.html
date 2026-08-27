@@ -248,7 +248,24 @@ input[readonly]{background:#f5f5f5;color:#999}
       <button class="btn btn-save" onclick="newOrderFromList()">+ 새 발주</button>
       <select id="fl-month" onchange="renderList()"><option value="">전체 월</option></select>
       <select id="fl-buyer" onchange="renderList()"><option value="">전체 매입처</option></select>
+      <button class="btn" onclick="document.getElementById('order-upload-file').click()">📤 엑셀로 발주 업로드</button>
+      <input type="file" id="order-upload-file" accept=".xlsx,.xls" style="display:none" onchange="handleOrderUploadFile(event)">
       <button class="btn" style="margin-left:auto" onclick="exportOrdersExcel()">📥 엑셀 다운로드</button>
+    </div>
+    <div id="order-upload-status" style="font-size:12px;color:#888;padding:0 2px"></div>
+    <div class="section-box" id="order-upload-review-box" style="margin-bottom:14px;display:none">
+      <div class="section-title">
+        <span>업로드 검토 - 새로 추가될 <span id="ou-new-count">0</span>건 / 이미 있어서 건너뛸 <span id="ou-dup-count">0</span>건</span>
+        <button class="btn btn-save" onclick="confirmOrderUpload()">이 내용으로 저장</button>
+      </div>
+      <table class="data-tbl">
+        <thead><tr>
+          <th style="width:70px">상태</th><th style="width:80px">발주일</th><th>매입처</th><th>품목</th>
+          <th class="r" style="width:60px">수량</th><th class="r" style="width:80px">매입단가</th><th class="r" style="width:100px">매입금액</th>
+          <th style="width:80px">출하일</th><th>매출처</th><th class="r" style="width:100px">공급가액</th>
+        </tr></thead>
+        <tbody id="order-upload-review-body"></tbody>
+      </table>
     </div>
     <div id="list-area"></div>
   </div>
@@ -2690,6 +2707,165 @@ function renderAnnual(){
   _annualCache={curY,curTab,sellRows,buyRows};
 }
 /* ══════════════ 엑셀 다운로드 (앱 → 엑셀) ══════════════ */
+
+/* ══════════════ 발주 엑셀 업로드 (엑셀 → 앱, 중복 자동 검사) ══════════════ */
+let _orderUploadParsed=null; // {rows:[{...,isDup}], }
+
+function findCol(header, name){
+  return header.findIndex(h=>String(h||'').trim()===name);
+}
+function findColAll(header, name){
+  const idxs=[];
+  header.forEach((h,i)=>{ if(String(h||'').trim()===name) idxs.push(i); });
+  return idxs;
+}
+
+async function handleOrderUploadFile(e){
+  const file=e.target.files[0];
+  if(!file) return;
+  document.getElementById('order-upload-status').textContent='읽는 중...';
+
+  const buf=await file.arrayBuffer();
+  const wb=XLSX.read(buf,{type:'array', cellDates:false});
+  const sheet=wb.Sheets[wb.SheetNames[0]];
+  const rows=XLSX.utils.sheet_to_json(sheet,{header:1,defval:''});
+
+  // 헤더 행 찾기 (필수 컬럼이 다 있는 첫 행)
+  let headerRowIdx=-1, header=null;
+  for(let i=0;i<Math.min(rows.length,10);i++){
+    const h=rows[i].map(c=>String(c||'').trim());
+    if(h.includes('발주일')&&h.includes('매입처')&&h.includes('품목')&&h.includes('매입단가')){
+      headerRowIdx=i; header=h; break;
+    }
+  }
+  if(!header){
+    alert('발주일/매입처/품목/매입단가 컬럼을 찾을 수 없어요. 엑셀 형식을 확인해주세요.');
+    document.getElementById('order-upload-status').textContent='';
+    return;
+  }
+
+  const iDate=findCol(header,'발주일'), iBuyer=findCol(header,'매입처'), iItem=findCol(header,'품목'),
+    iSpec=findCol(header,'규격'), iBPrice=findCol(header,'매입단가'), iBAmt=findCol(header,'매입금액'),
+    iShip=findCol(header,'출하일'), iSeller=findCol(header,'매출처'), iSPrice=findCol(header,'판매단가'),
+    iSAmt=findCol(header,'공급가액');
+  const qtyIdxs=findColAll(header,'수량');
+  const iBQty=qtyIdxs[0]??-1, iSQty=qtyIdxs[1]??-1;
+
+  // 기존 데이터와 중복 체크용 키 셋 (매입처+품목+수량+단가+납품일)
+  const existingKeys=new Set();
+  orders.forEach(o=>o.items.forEach(it=>{
+    existingKeys.add([it.buyer,it.item,it.bqty,it.bprice,it.ship||''].join('|'));
+  }));
+
+  const parsed=[];
+  for(let i=headerRowIdx+1;i<rows.length;i++){
+    const r=rows[i];
+    if(!r || !r[iBuyer] || !r[iItem]) continue;
+    const date=iDate>=0?excelDateToStr(r[iDate]):'';
+    const buyer=String(r[iBuyer]||'').trim();
+    const item=String(r[iItem]||'').trim();
+    const spec=iSpec>=0?String(r[iSpec]||'').trim():'';
+    const bqty=iBQty>=0?(+r[iBQty]||0):0;
+    const bprice=iBPrice>=0?(+r[iBPrice]||0):0;
+    let bamt=iBAmt>=0?(+r[iBAmt]||0):0;
+    if(!bamt) bamt=bqty*bprice;
+    const ship=iShip>=0 && r[iShip] ? excelDateToStr(r[iShip]) : '';
+    const seller=iSeller>=0?String(r[iSeller]||'').trim():'';
+    const sqty=iSQty>=0?(+r[iSQty]||0):0;
+    const sprice=iSPrice>=0?(+r[iSPrice]||0):0;
+    let samt=iSAmt>=0?(+r[iSAmt]||0):0;
+    if(!samt && sqty && sprice) samt=sqty*sprice;
+    const status = ship && ship<=new Date().toISOString().slice(0,10) ? '납품완료' : '미납품';
+    const key=[buyer,item,bqty,bprice,ship].join('|');
+    const isDup=existingKeys.has(key);
+    parsed.push({date,buyer,item,spec,bqty,bprice,bamt,ship,seller,sqty,sprice,samt,status,isDup});
+  }
+
+  if(!parsed.length){
+    alert('읽을 수 있는 발주 데이터가 없어요.');
+    document.getElementById('order-upload-status').textContent='';
+    return;
+  }
+
+  _orderUploadParsed=parsed;
+  const newCount=parsed.filter(r=>!r.isDup).length;
+  const dupCount=parsed.filter(r=>r.isDup).length;
+  document.getElementById('ou-new-count').textContent=newCount;
+  document.getElementById('ou-dup-count').textContent=dupCount;
+  document.getElementById('order-upload-review-body').innerHTML=parsed.map(r=>`<tr style="${r.isDup?'opacity:0.4':''}">
+    <td style="font-size:11px;color:${r.isDup?'#999':'#166534'};font-weight:600">${r.isDup?'중복(건너뜀)':'신규'}</td>
+    <td style="font-size:11px">${r.date}</td>
+    <td>${r.buyer}</td>
+    <td>${r.item}</td>
+    <td class="r">${fmt(r.bqty)}</td>
+    <td class="r">${fmt(r.bprice)}</td>
+    <td class="r">${fmt(r.bamt)}</td>
+    <td style="font-size:11px">${r.ship}</td>
+    <td>${r.seller}</td>
+    <td class="r">${fmt(r.samt)}</td>
+  </tr>`).join('');
+  document.getElementById('order-upload-review-box').style.display='block';
+  document.getElementById('order-upload-status').textContent=`${parsed.length}건 중 신규 ${newCount}건, 중복 ${dupCount}건 발견`;
+}
+
+async function confirmOrderUpload(){
+  if(!_orderUploadParsed) return;
+  const newRows=_orderUploadParsed.filter(r=>!r.isDup);
+  if(!newRows.length){ alert('새로 추가할 항목이 없어요 (전부 이미 있는 데이터예요).'); return; }
+  if(!confirm(`${newRows.length}건을 새로 추가할게요. 계속할까요?`)) return;
+
+  showSyncStatus('저장 중...');
+
+  // 발주일+매입처로 그룹핑
+  const groups={};
+  newRows.forEach(r=>{
+    const key=r.date+'|'+r.buyer;
+    if(!groups[key]) groups[key]=[];
+    groups[key].push(r);
+  });
+
+  // 기존 no와 절대 안 겹치는 접미사(-U01, -U02...) 사용
+  const existingNos=new Set(orders.map(o=>o.no));
+  const seqByDate={};
+  try{
+    for(const key of Object.keys(groups)){
+      const items=groups[key];
+      const date=items[0].date;
+      const yy=date.slice(2,4), mm=date.slice(5,7), dd=date.slice(8,10);
+      seqByDate[date]=(seqByDate[date]||0)+1;
+      let no=`${yy}${mm}${dd}-U${String(seqByDate[date]).padStart(2,'0')}`;
+      while(existingNos.has(no)){
+        seqByDate[date]++;
+        no=`${yy}${mm}${dd}-U${String(seqByDate[date]).padStart(2,'0')}`;
+      }
+      existingNos.add(no);
+
+      const {data:orderData,error:e1}=await sb.from('orders').insert({no,date,note:'엑셀 업로드',manager:'이은진'}).select();
+      if(e1) throw e1;
+      const orderId=orderData[0].id;
+      const itemRows=items.map((it,idx)=>({
+        order_id:orderId, buyer:it.buyer, item:it.item, spec:it.spec||'',
+        bqty:it.bqty, bprice:it.bprice, bamt:it.bamt,
+        seller:it.seller||'', sqty:it.sqty, sprice:it.sprice, samt:it.samt,
+        ship:it.ship||null, status:it.status, sort_order:idx
+      }));
+      const {error:e2}=await sb.from('order_items').insert(itemRows);
+      if(e2) throw e2;
+    }
+    showSyncStatus('저장됨');
+    alert(`${newRows.length}건 저장 완료했어요.`);
+    _orderUploadParsed=null;
+    document.getElementById('order-upload-review-box').style.display='none';
+    document.getElementById('order-upload-status').textContent='';
+    document.getElementById('order-upload-file').value='';
+    orders = await loadOrdersFromDb();
+    renderList();
+  }catch(err){
+    console.error(err);
+    alert('저장 중 오류가 발생했어요. 이미 저장된 부분이 있을 수 있으니, 화면을 새로고침해서 확인해주세요.\n\n오류: '+err.message);
+    showSyncStatus('저장 실패', true);
+  }
+}
 
 function exportOrdersExcel(){
   const rows=[['발주번호','발주일','매입처','품목','규격','매입수량','매입단가','매입금액','출하일','매출처','판매수량','판매단가','공급가액','상태']];
