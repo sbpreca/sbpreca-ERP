@@ -1480,7 +1480,8 @@ function stSel(val,cls){
 function addRow(it={}){
   const tr=document.createElement('tr');
   const bOpts=Object.keys(BUYERS).map(k=>`<option${k===it.buyer?' selected':''}>${k}</option>`).join('');
-  const iOpts=ITEMS.map(k=>`<option${k===it.item?' selected':''}>${k}</option>`).join('');
+  const allItems=[...new Set([...ITEMS, ...Object.keys(ITEM_PRICES)])].sort();
+  const iOpts=allItems.map(k=>`<option${k===it.item?' selected':''}>${k}</option>`).join('');
   const sOpts=Object.keys(SELLERS).map(k=>`<option${k===it.seller?' selected':''}>${k}</option>`).join('');
   tr.innerHTML=`
     <td><select class="bsel" onchange="calcS();autoBPrice(this)" style="width:100%;font-size:12px;border:1px solid #e8e8e8;padding:4px 5px;border-radius:4px"><option></option>${bOpts}</select></td>
@@ -2186,17 +2187,18 @@ function renderClosing(){
   function buyRowHtml(name, v, idx){
     const vat=Math.round(v.amt*0.1);
     const detailId='buy-detail-'+idx;
-    const itemRows=Object.entries(v.items).map(([item,iv])=>'<tr class="'+detailId+'-row" style="display:none;background:#fbfbfb"><td style="padding-left:28px;font-size:12px;color:#666">└ '+item+'</td><td class="r" style="font-size:12px;color:#666;white-space:nowrap">'+fmtW(iv.bamt)+'</td><td colspan="5"></td></tr>').join('');
+    const itemRows=Object.entries(v.items).map(([item,iv])=>'<tr class="'+detailId+'-row" style="display:none;background:#fbfbfb"><td style="padding-left:28px;font-size:12px;color:#666">└ '+item+' <span style="color:#999">('+fmt(iv.bqty)+'개)</span></td><td class="r" style="font-size:12px;color:#666;white-space:nowrap">'+fmtW(iv.bamt)+'</td><td colspan="5"></td></tr>').join('');
     return '<tr style="cursor:pointer" onclick="toggleDetail(\''+detailId+'\',this)"><td style="font-weight:600">▸ '+name+'</td><td class="r" style="white-space:nowrap">'+fmtW(v.amt)+'</td><td class="r" style="white-space:nowrap">'+fmtW(vat)+'</td><td class="r profit-val" style="white-space:nowrap">'+fmtW(v.amt+vat)+'</td><td onclick="event.stopPropagation()">'+dateInput('buy',name)+'</td><td class="c" onclick="event.stopPropagation()">'+stSelect('buy',name,'tax',['미발급','발급완료'])+'</td><td class="c" onclick="event.stopPropagation()">'+stSelect('buy',name,'done',['미완료','완료'])+'</td></tr>'+itemRows;
   }
 
   function sellRowHtml(name, v, idx){
     const vat=Math.round(v.amt*0.1);
     const detailId='sell-detail-'+idx;
-    // 품목이 2개 이상이면 펼치기 화살표, 1개면 그냥 표시
+    // 품목이 2개 이상이면 펼치기 화살표, 1개면 바로 펼쳐서 표시
     const hasMultiple=Object.keys(v.items).length>1;
     const arrow=hasMultiple?'▸ ':'';
-    const itemRows=Object.entries(v.items).map(([item,iv])=>'<tr class="'+detailId+'-row" style="display:none;background:#fbfbfb"><td style="padding-left:28px;font-size:12px;color:#666">└ '+item+'</td><td class="r" style="font-size:12px;color:#666;white-space:nowrap">'+fmtW(iv.samt)+'</td><td colspan="5"></td></tr>').join('');
+    const rowDisplay=hasMultiple?'display:none;':'';
+    const itemRows=Object.entries(v.items).map(([item,iv])=>'<tr class="'+detailId+'-row" style="'+rowDisplay+'background:#fbfbfb"><td style="padding-left:28px;font-size:12px;color:#666">└ '+item+' <span style="color:#999">('+fmt(iv.sqty)+'개)</span></td><td class="r" style="font-size:12px;color:#666;white-space:nowrap">'+fmtW(iv.samt)+'</td><td colspan="5"></td></tr>').join('');
     const clickAttr=hasMultiple?(' style="cursor:pointer" onclick="toggleDetail(\''+detailId+'\',this)"'):'';
     return '<tr'+clickAttr+'><td style="font-weight:600">'+arrow+name+'</td><td class="r" style="white-space:nowrap">'+fmtW(v.amt)+'</td><td class="r" style="white-space:nowrap">'+fmtW(vat)+'</td><td class="r profit-val" style="white-space:nowrap">'+fmtW(v.amt+vat)+'</td><td onclick="event.stopPropagation()">'+dateInput('sell',name)+'</td><td class="c" onclick="event.stopPropagation()">'+stSelect('sell',name,'tax',['미발급','발급완료'])+'</td><td class="c" onclick="event.stopPropagation()">'+stSelect('sell',name,'done',['미완료','완료'])+'</td></tr>'+itemRows;
   }
