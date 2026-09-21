@@ -2122,11 +2122,30 @@ function renderList(){
       <div class="card-btns">
         <button class="btn" style="font-size:12px;padding:5px 12px" onclick="loadOrder('${o.no}')">수정</button>
         <button class="btn btn-po" style="font-size:12px;padding:5px 12px" onclick="loadAndDoc('${o.no}')">발주서 PDF</button>
+        <button class="btn" style="font-size:12px;padding:5px 12px;color:#dc2626;border-color:#fecaca" onclick="deleteOrder('${o.no}')">삭제</button>
       </div>
     </div>`;
   }).join('');
 }
 function loadAndDoc(no){loadOrder(no);setTimeout(()=>showPO(),80);}
+
+async function deleteOrder(no){
+  if(!confirm(`발주번호 ${no} 를 삭제할까요?\n이 작업은 되돌릴 수 없어요.`)) return;
+  showSyncStatus('삭제 중...');
+  try{
+    // DB에서 orders 삭제 (order_items는 cascade로 자동 삭제)
+    const {error} = await sb.from('orders').delete().eq('no', no);
+    if(error) throw error;
+    // 로컬 배열에서도 제거
+    orders = orders.filter(o => o.no !== no);
+    showSyncStatus('삭제됨');
+    renderList();
+    renderDeliver();
+  }catch(err){
+    console.error('deleteOrder error:', err);
+    showSyncStatus('삭제 실패 - 다시 시도해주세요', true);
+  }
+}
 
 /* ── 마감현황 ── */
 function setClosingTab(tab){
