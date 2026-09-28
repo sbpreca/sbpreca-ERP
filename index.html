@@ -311,6 +311,7 @@ input[readonly]{background:#f5f5f5;color:#999}
           <th style="width:60px" class="c">명세서</th>
           <th style="width:60px" class="c">마감제외</th>
           <th style="width:100px" class="c">매출 정산월</th>
+          <th style="width:70px" class="c">성적서</th>
         </tr></thead>
         <tbody id="deliver-body"></tbody>
       </table>
@@ -329,6 +330,7 @@ input[readonly]{background:#f5f5f5;color:#999}
       </div>
       <input type="hidden" id="cl-tab" value="all">
       <button class="btn btn-po" onclick="printClosingReport()">보고서 PDF</button>
+      <button class="btn btn-po" style="background:#166534;border-color:#166534" onclick="printClosingByCompany()">업체별 출력</button>
       <button class="btn" style="margin-left:auto" onclick="exportClosingExcel()">📥 엑셀 다운로드</button>
     </div>
     <div class="metrics" id="cl-metrics"></div>
@@ -642,7 +644,7 @@ input[readonly]{background:#f5f5f5;color:#999}
         <button class="btn btn-save" onclick="addBuyer()">추가</button>
       </div>
       <table class="data-tbl">
-        <thead><tr><th>매입처</th><th>거래처 담당자</th><th style="width:90px">관리자</th><th style="width:100px">분류</th><th style="width:70px;text-align:center">삭제</th></tr></thead>
+        <thead><tr><th>매입처</th><th>거래처 담당자</th><th>이메일</th><th style="width:90px">관리자</th><th style="width:100px">분류</th><th style="width:70px;text-align:center">삭제</th></tr></thead>
         <tbody id="buyer-contact-body"></tbody>
       </table>
     </div>
@@ -660,7 +662,7 @@ input[readonly]{background:#f5f5f5;color:#999}
         <button class="btn btn-save" onclick="addSeller()">추가</button>
       </div>
       <table class="data-tbl">
-        <thead><tr><th>매출처</th><th>거래처 담당자</th><th style="width:90px">관리자</th><th style="width:100px">분류</th><th>사업자번호</th><th style="width:70px;text-align:center">삭제</th></tr></thead>
+        <thead><tr><th>매출처</th><th>거래처 담당자</th><th>이메일</th><th style="width:90px">관리자</th><th style="width:100px">분류</th><th>사업자번호</th><th style="width:70px;text-align:center">삭제</th></tr></thead>
         <tbody id="seller-contact-body"></tbody>
       </table>
     </div>
@@ -672,7 +674,8 @@ input[readonly]{background:#f5f5f5;color:#999}
   <div id="doc-frame">
     <div class="doc-btns">
       <button class="doc-print" onclick="window.print()">프린트 / PDF 저장</button>
-      <button class="doc-close" onclick="document.getElementById('overlay').style.display='none'">닫기</button>
+      <button id="btn-send-mail" class="btn" style="font-size:13px;padding:7px 16px;background:#03c75a;color:#fff;border-color:#03c75a;display:none" onclick="sendMailNaver()">✉ 네이버 메일로 발송</button>
+      <button class="doc-close" onclick="document.getElementById('overlay').style.display='none';hideMailBtn()">닫기</button>
       <span style="font-size:11px;color:#999;align-self:center;margin-left:8px">※ A4 용지로 인쇄해주세요</span>
     </div>
     <div id="doc-content"></div>
@@ -719,27 +722,27 @@ let MY={...DEFAULT_CFG};
 
 // 매입처/매출처 (담당자 별도 관리)
 const DEFAULT_BUYERS={
-  'CFC테라메이트':{contact:'손경민 님',manager:'이은진',category:'원부자재'},
-  '나노신소재':{contact:'배 준근 님',manager:'이은진',category:'원부자재'},
-  '헤펙':{contact:'담당자',manager:'이은진',category:'조명'},
-  '미래씨엔엘':{contact:'담당자',manager:'이은진',category:'조명'},
-  '선우라이팅':{contact:'지 성 훈 님',manager:'이은진',category:'조명'},
-  '라이네트':{contact:'담당자',manager:'이은진',category:'조명'},
-  '이영쎄라켐':{contact:'이현주 부장님',manager:'이은진',category:'원부자재'},
+  'CFC테라메이트':{contact:'손경민 님',manager:'이은진',category:'원부자재',email:''},
+  '나노신소재':{contact:'배 준근 님',manager:'이은진',category:'원부자재',email:''},
+  '헤펙':{contact:'담당자',manager:'이은진',category:'조명',email:''},
+  '미래씨엔엘':{contact:'담당자',manager:'이은진',category:'조명',email:''},
+  '선우라이팅':{contact:'지 성 훈 님',manager:'이은진',category:'조명',email:''},
+  '라이네트':{contact:'담당자',manager:'이은진',category:'조명',email:''},
+  '이영쎄라켐':{contact:'이현주 부장님',manager:'이은진',category:'원부자재',email:''},
 };
 const DEFAULT_SELLERS={
-  '테크피아_CTO-C3':{biz:'129-86-05182',ceo:'정명재',addr:'충청북도 음성군 금왕읍 성본산단1로 187',btype:'제조,도매',bitem:'LCD부품류, 접착테이프',contact:'박 찬근 팀장님 (010-3163-3876)',manager:'이은진',category:'원부자재'},
-  '테크피아_CTO-B2':{biz:'129-86-05182',ceo:'정명재',addr:'충청북도 음성군 금왕읍 성본산단1로 187',btype:'제조,도매',bitem:'LCD부품류, 접착테이프',contact:'박 찬근 팀장님 (010-3163-3876)',manager:'이은진',category:'원부자재'},
-  '테크피아_SR-40M':{biz:'129-86-05182',ceo:'정명재',addr:'충청북도 음성군 금왕읍 성본산단1로 187',btype:'제조,도매',bitem:'LCD부품류, 접착테이프',contact:'박 찬근 팀장님 (010-3163-3876)',manager:'이은진',category:'원부자재'},
-  '테크피아_ITO':{biz:'129-86-05182',ceo:'정명재',addr:'충청북도 음성군 금왕읍 성본산단1로 187',btype:'제조,도매',bitem:'LCD부품류, 접착테이프',contact:'박 찬근 팀장님 (010-3163-3876)',manager:'이은진',category:'원부자재'},
-  '덕산네오룩스_getter':{biz:'312-86-74729',ceo:'이수훈,이범성',addr:'충청남도 천안시 서북구 입장면 쑥골길 21-32, 1층',btype:'제조',bitem:'전자, 전기부품',contact:'담당자',manager:'이은진',category:'원부자재'},
-  '덕산네오룩스_Al Crucible':{biz:'312-86-74729',ceo:'이수훈,이범성',addr:'충청남도 천안시 서북구 입장면 쑥골길 21-32, 1층',btype:'제조',bitem:'전자, 전기부품',contact:'담당자',manager:'이은진',category:'원부자재'},
-  '건국전력':{biz:'418-81-16487',ceo:'이 재 수',addr:'전주시 덕진구 감수길 30-26, 1동 1층',btype:'건설업',bitem:'전기공사',contact:'담당자',manager:'이은진',category:'조명'},
-  '성화전설':{biz:'134-86-35543',ceo:'심병택',addr:'경기도 안산시 단원구 범지기길 75 (원시동)',btype:'건설업',bitem:'전기공사',contact:'조 대식 차장님',manager:'이은진',category:'조명'},
-  '신우이앤씨':{biz:'403-81-39722',ceo:'엄원영',addr:'전북 익산시 오산면 평동로 304',btype:'건설업',bitem:'전기공사',contact:'담당자',manager:'이은진',category:'조명'},
-  '신세기전력':{biz:'134-81-45027',ceo:'최병구',addr:'경기도 안산시 단원구 신길중앙로5길 24-8',btype:'제조',bitem:'전자, 전기부품',contact:'담당자',manager:'이은진',category:'조명'},
-  '오성전자':{biz:'',ceo:'',addr:'',btype:'',bitem:'',contact:'담당자',manager:'이은진',category:'조명'},
-  '대덕전자':{biz:'',ceo:'',addr:'',btype:'',bitem:'',contact:'담당자',manager:'이은진',category:'조명'},
+  '테크피아_CTO-C3':{biz:'129-86-05182',ceo:'정명재',addr:'충청북도 음성군 금왕읍 성본산단1로 187',btype:'제조,도매',bitem:'LCD부품류, 접착테이프',contact:'박 찬근 팀장님 (010-3163-3876)',manager:'이은진',category:'원부자재',email:''},
+  '테크피아_CTO-B2':{biz:'129-86-05182',ceo:'정명재',addr:'충청북도 음성군 금왕읍 성본산단1로 187',btype:'제조,도매',bitem:'LCD부품류, 접착테이프',contact:'박 찬근 팀장님 (010-3163-3876)',manager:'이은진',category:'원부자재',email:''},
+  '테크피아_SR-40M':{biz:'129-86-05182',ceo:'정명재',addr:'충청북도 음성군 금왕읍 성본산단1로 187',btype:'제조,도매',bitem:'LCD부품류, 접착테이프',contact:'박 찬근 팀장님 (010-3163-3876)',manager:'이은진',category:'원부자재',email:''},
+  '테크피아_ITO':{biz:'129-86-05182',ceo:'정명재',addr:'충청북도 음성군 금왕읍 성본산단1로 187',btype:'제조,도매',bitem:'LCD부품류, 접착테이프',contact:'박 찬근 팀장님 (010-3163-3876)',manager:'이은진',category:'원부자재',email:''},
+  '덕산네오룩스_getter':{biz:'312-86-74729',ceo:'이수훈,이범성',addr:'충청남도 천안시 서북구 입장면 쑥골길 21-32, 1층',btype:'제조',bitem:'전자, 전기부품',contact:'담당자',manager:'이은진',category:'원부자재',email:''},
+  '덕산네오룩스_Al Crucible':{biz:'312-86-74729',ceo:'이수훈,이범성',addr:'충청남도 천안시 서북구 입장면 쑥골길 21-32, 1층',btype:'제조',bitem:'전자, 전기부품',contact:'담당자',manager:'이은진',category:'원부자재',email:''},
+  '건국전력':{biz:'418-81-16487',ceo:'이 재 수',addr:'전주시 덕진구 감수길 30-26, 1동 1층',btype:'건설업',bitem:'전기공사',contact:'담당자',manager:'이은진',category:'조명',email:''},
+  '성화전설':{biz:'134-86-35543',ceo:'심병택',addr:'경기도 안산시 단원구 범지기길 75 (원시동)',btype:'건설업',bitem:'전기공사',contact:'조 대식 차장님',manager:'이은진',category:'조명',email:''},
+  '신우이앤씨':{biz:'403-81-39722',ceo:'엄원영',addr:'전북 익산시 오산면 평동로 304',btype:'건설업',bitem:'전기공사',contact:'담당자',manager:'이은진',category:'조명',email:''},
+  '신세기전력':{biz:'134-81-45027',ceo:'최병구',addr:'경기도 안산시 단원구 신길중앙로5길 24-8',btype:'제조',bitem:'전자, 전기부품',contact:'담당자',manager:'이은진',category:'조명',email:''},
+  '오성전자':{biz:'',ceo:'',addr:'',btype:'',bitem:'',contact:'담당자',manager:'이은진',category:'조명',email:''},
+  '대덕전자':{biz:'',ceo:'',addr:'',btype:'',bitem:'',contact:'담당자',manager:'이은진',category:'조명',email:''},
 };
 let BUYERS={...DEFAULT_BUYERS},SELLERS={...DEFAULT_SELLERS};
 
@@ -781,6 +784,36 @@ const sellerKey=s=>s||''; // 매출처명 그대로 사용
 
 const DEFAULT_SAMPLE_ORDERS=[{"no":"260507-01","date":"2026-05-07","note":"COA 메일 송부 요청 必","items":[{"buyer":"CFC테라메이트","item":"CTO-C3","spec":"20KG/CAN","bqty":100,"bprice":277000,"bamt":27700000,"seller":"테크피아_CTO-C3","sqty":100,"sprice":297000,"samt":29700000,"ship":"2026-06-04","status":"납품완료"},{"buyer":"CFC테라메이트","item":"CTO-B2","spec":"20KG/CAN","bqty":120,"bprice":294000,"bamt":35280000,"seller":"테크피아_CTO-B2","sqty":120,"sprice":323000,"samt":38760000,"ship":"2026-06-13","status":"납품완료"},{"buyer":"CFC테라메이트","item":"CTO-C3","spec":"20KG/CAN","bqty":220,"bprice":277000,"bamt":60940000,"seller":"테크피아_CTO-C3","sqty":220,"sprice":297000,"samt":65340000,"ship":"2026-06-16","status":"납품완료"},{"buyer":"CFC테라메이트","item":"CTO-B2","spec":"20KG/CAN","bqty":80,"bprice":294000,"bamt":23520000,"seller":"테크피아_CTO-B2","sqty":80,"sprice":323000,"samt":25840000,"ship":"2026-06-25","status":"납품완료"},{"buyer":"CFC테라메이트","item":"CTO-C3","spec":"20KG/CAN","bqty":150,"bprice":277000,"bamt":41550000,"seller":"테크피아_CTO-C3","sqty":150,"sprice":297000,"samt":44550000,"ship":"2026-07-03","status":"미납품"},{"buyer":"CFC테라메이트","item":"CTO-C3","spec":"20KG/CAN","bqty":50,"bprice":277000,"bamt":13850000,"seller":"테크피아_CTO-C3","sqty":50,"sprice":297000,"samt":14850000,"ship":"2026-07-08","status":"미납품"}],"total_buy":202840000,"total_sell":219040000,"saved_at":"2026-05-07T00:00:00.000Z"},{"no":"260507-02","date":"2026-05-07","note":"COA 메일 송부 요청 必","items":[{"buyer":"나노신소재","item":"SR-40M","spec":"20KG/CAN","bqty":400,"bprice":71000,"bamt":28400000,"seller":"테크피아_SR-40M","sqty":400,"sprice":77000,"samt":30800000,"ship":"2026-06-16","status":"납품완료"},{"buyer":"나노신소재","item":"SR-40M","spec":"20KG/CAN","bqty":400,"bprice":71000,"bamt":28400000,"seller":"테크피아_SR-40M","sqty":400,"sprice":77000,"samt":30800000,"ship":"2026-06-29","status":"납품완료"}],"total_buy":56800000,"total_sell":61600000,"saved_at":"2026-05-07T00:00:00.000Z"},{"no":"260604-03","date":"2026-06-04","note":"COA 메일 송부 요청 必","items":[{"buyer":"헤펙","item":"투광등 w Pole _80W","spec":"U Pole ( 90D )","bqty":3,"bprice":215000,"bamt":645000,"seller":"건국전력","sqty":3,"sprice":235000,"samt":705000,"ship":"2026-06-05","status":"납품완료"},{"buyer":"헤펙","item":"내압방폭등_60W","spec":"60W, 팬던트","bqty":7,"bprice":290000,"bamt":2030000,"seller":"건국전력","sqty":7,"sprice":320000,"samt":2240000,"ship":"2026-06-05","status":"납품완료"},{"buyer":"헤펙","item":"배송비","spec":"","bqty":1,"bprice":40000,"bamt":40000,"seller":"건국전력","sqty":0,"sprice":0,"samt":0,"ship":"2026-06-05","status":"납품완료"}],"total_buy":2715000,"total_sell":2945000,"saved_at":"2026-06-04T00:00:00.000Z"},{"no":"260605-04","date":"2026-06-05","note":"COA 메일 송부 요청 必","items":[{"buyer":"CFC테라메이트","item":"CTO-C3","spec":"20KG/CAN","bqty":100,"bprice":277000,"bamt":27700000,"seller":"테크피아_CTO-C3","sqty":100,"sprice":297000,"samt":29700000,"ship":"2026-07-10","status":"미납품"},{"buyer":"CFC테라메이트","item":"CTO-B2","spec":"20KG/CAN","bqty":60,"bprice":294000,"bamt":17640000,"seller":"테크피아_CTO-B2","sqty":60,"sprice":323000,"samt":19380000,"ship":"2026-07-10","status":"미납품"},{"buyer":"CFC테라메이트","item":"CTO-C3","spec":"20KG/CAN","bqty":100,"bprice":277000,"bamt":27700000,"seller":"테크피아_CTO-C3","sqty":100,"sprice":297000,"samt":29700000,"ship":"2026-07-15","status":"미납품"},{"buyer":"CFC테라메이트","item":"CTO-C3","spec":"20KG/CAN","bqty":100,"bprice":277000,"bamt":27700000,"seller":"테크피아_CTO-C3","sqty":100,"sprice":297000,"samt":29700000,"ship":"2026-07-21","status":"미납품"}],"total_buy":100740000,"total_sell":108480000,"saved_at":"2026-06-05T00:00:00.000Z"},{"no":"260605-05","date":"2026-06-05","note":"COA 메일 송부 요청 必","items":[{"buyer":"나노신소재","item":"SR-40M","spec":"20KG/CAN","bqty":400,"bprice":71000,"bamt":28400000,"seller":"테크피아_SR-40M","sqty":400,"sprice":77000,"samt":30800000,"ship":"2026-07-07","status":"미납품"},{"buyer":"나노신소재","item":"SR-40M","spec":"20KG/CAN","bqty":600,"bprice":71000,"bamt":42600000,"seller":"테크피아_SR-40M","sqty":500,"sprice":77000,"samt":38500000,"ship":"2026-07-23","status":"미납품"}],"total_buy":71000000,"total_sell":69300000,"saved_at":"2026-06-05T00:00:00.000Z"},{"no":"260612-06","date":"2026-06-12","note":"COA 메일 송부 요청 必","items":[{"buyer":"라이네트","item":"CR-25","spec":"60W, 팬던트","bqty":200,"bprice":59000,"bamt":11800000,"seller":"오성전자","sqty":0,"sprice":0,"samt":0,"ship":"2026-06-19","status":"미납품"}],"total_buy":11800000,"total_sell":0,"saved_at":"2026-06-12T00:00:00.000Z"},{"no":"260612-07","date":"2026-06-12","note":"COA 메일 송부 요청 必","items":[{"buyer":"미래씨엔엔","item":"BL 평판등_40W","spec":"1285*320","bqty":200,"bprice":18500,"bamt":3700000,"seller":"대덕전자","sqty":0,"sprice":0,"samt":0,"ship":"2026-06-16","status":"미납품"}],"total_buy":3700000,"total_sell":0,"saved_at":"2026-06-12T00:00:00.000Z"}];
 let orders=[];
+/* ══════════ 네이버 메일 발송 ══════════ */
+let _mailCtx = null; // 현재 열린 PDF의 메일 컨텍스트 저장
+
+function showMailBtn(ctx){
+  // ctx: {to, subject, body} — PDF 생성 시 설정
+  _mailCtx = ctx;
+  const btn = document.getElementById('btn-send-mail');
+  if(btn) btn.style.display = ctx ? 'block' : 'none';
+}
+
+function sendMailNaver(){
+  if(!_mailCtx){ alert('메일 정보가 없어요'); return; }
+  const {to, subject, body} = _mailCtx;
+  // 네이버 메일 웹 compose URL
+  const params = new URLSearchParams({
+    to: to||'',
+    subject: encodeURIComponent(subject||''),
+    body: encodeURIComponent(body||'')
+  });
+  // mailto 방식 — 네이버 메일 앱 또는 기본 메일 앱이 열림
+  const mailtoUrl = `mailto:${to||''}?subject=${encodeURIComponent(subject||'')}&body=${encodeURIComponent(body||'')}`;
+  window.open(mailtoUrl, '_blank');
+}
+
+function hideMailBtn(){
+  const btn = document.getElementById('btn-send-mail');
+  if(btn) btn.style.display = 'none';
+  _mailCtx = null;
+}
+
 /* ══════════ 데이터 저장/불러오기 (Supabase) ══════════ */
 
 // orders 배열 전체를 DB에 동기화 (간단한 방식: 전체 비교 후 upsert/삭제)
@@ -1386,6 +1419,7 @@ async function editBuyer(name){
     <option${(info.category||'')==='원부자재'?' selected':''}>원부자재</option>
     <option${(info.category||'')==='수수료'?' selected':''}>수수료</option>
   </select>`;
+  document.getElementById('buyer-email-'+name).innerHTML=`<input value="${info.email||''}" placeholder="이메일" style="width:100%;border:1px solid #888;border-radius:4px;padding:4px 8px;font-size:13px">`;
   row.querySelector('button').textContent='저장';
   row.querySelector('button').style.background='#111';
   row.querySelector('button').style.color='#fff';
@@ -1434,6 +1468,7 @@ async function editSeller(name){
     <option${(info.category||'')==='원부자재'?' selected':''}>원부자재</option>
     <option${(info.category||'')==='수수료'?' selected':''}>수수료</option>
   </select>`;
+  document.getElementById('seller-email-'+name).innerHTML=`<input value="${info.email||''}" placeholder="이메일" style="width:100%;border:1px solid #888;border-radius:4px;padding:4px 8px;font-size:13px">`;
   row.querySelector('button').textContent='저장';
   row.querySelector('button').style.background='#111';
   row.querySelector('button').style.color='#fff';
@@ -1673,6 +1708,16 @@ function showPO(){
   document.getElementById('doc-content').innerHTML=html;
   document.getElementById('dynamic-page-style').textContent='';
   document.getElementById('doc-frame').style.width='794px';
+  // 발주서 메일 버튼 - 매입처로 발송
+  try{
+    const firstBuyer_=Object.keys(groups)[0]||'';
+    const bi_=BUYERS[firstBuyer_]||{};
+    const mgr_=(MY.managers&&MY.managers[manager])||{};
+    const allItems_=Object.values(groups).flat();
+    const subj_=`[발주서] ${no} - ${MY.name}`;
+    const body_=`안녕하세요, ${firstBuyer_} ${bi_.contact||'담당자'}님.\n\n발주서를 송부드립니다. 확인 부탁드립니다.\n\n■ 발주번호: ${no}\n■ 발주일: ${date}\n■ 품목: ${allItems_.map(r=>r.item).join(', ')}\n■ 총 발주금액: ${fmtW(allItems_.reduce((s,r)=>s+r.bamt,0))}\n\n감사합니다.\n${MY.name} ${manager} (${mgr_.tel||''})`;
+    showMailBtn({to:bi_.email||'', subject:subj_, body:body_});
+  }catch(e){ showMailBtn(null); }
   document.getElementById('overlay').style.display='block';
 }
 
@@ -1798,6 +1843,8 @@ function updateClosingMonthOverride(idx,val){
   o.items[r.item_idx].closing_month_override=val||'';
   persist();
 }
+
+
 function showTSfromDeliver(){
   const manager=MY.contact;
   const checked=[...document.querySelectorAll('.dl-chk:checked')].map(c=>deliverRows[+c.dataset.idx]).filter(Boolean);
@@ -1982,7 +2029,18 @@ function quickTS(idx){
   document.getElementById('doc-content').innerHTML=html;
   document.getElementById('dynamic-page-style').textContent='';
   document.getElementById('doc-frame').style.width='794px';
+  showMailBtn(null); // 일단 숨기고 - 아래서 메일 컨텍스트 설정
   document.getElementById('overlay').style.display='block';
+  // 메일 버튼 설정 (첫 번째 아이템 기준 매출처 이메일)
+  try{
+    const si_=SELLERS[seller]||SELLERS[seller.split('_')[0]]||{};
+    const mgr_=(MY.managers&&MY.managers[manager])||{};
+    const tot_=items.reduce((s,r)=>s+r.samt,0);
+    const totV_=Math.round(tot_*0.1);
+    const subj_=`[거래명세표] ${tsNo} - ${MY.name}`;
+    const body_=`안녕하세요, ${seller.split('_')[0]} 담당자님.\n\n거래명세표를 송부드립니다.\n\n■ 문서번호: ${tsNo}\n■ 발행일: ${dy}년 ${dm}월 ${dd}일\n■ 품목: ${items.map(r=>r.item).join(', ')}\n■ 공급가액: ${fmtW(tot_)}\n■ 부가세: ${fmtW(totV_)}\n■ 합계: ${fmtW(tot_+totV_)}\n${certLinks_?'\n'+certLinks_:''}\n\n감사합니다.\n${MY.name} ${manager} (${mgr_.tel||''})`;
+    showMailBtn({to:si_.email||'', subject:subj_, body:body_});
+  }catch(e){}
   // 미납품이었던 항목만 납품완료로 전환
   items.forEach(r2=>{
     const o=orders.find(x=>x.no===r2.order_no);
@@ -3374,6 +3432,74 @@ function printClosingReport(){
       <tbody>${block(sm,'매출처별','sell')}</tbody></table>
   </div>`;
   document.getElementById('doc-content').innerHTML=html;
+  document.getElementById('dynamic-page-style').textContent='';
+  document.getElementById('doc-frame').style.width='794px';
+  document.getElementById('overlay').style.display='block';
+}
+
+function printClosingByCompany(){
+  // 업체별로 각각 별도 페이지로 출력 (매입처 각 1장 + 매출처 각 1장)
+  renderClosing();
+  if(!_closingCache) return;
+  const {cm,bm,sm,stKey}=_closingCache;
+  const today=new Date().toISOString().slice(0,10).replace(/-/g,'.');
+
+  function companyPage(name, v, type){
+    const vat=Math.round(v.amt*0.1);
+    const due=closingState[stKey(type,name,'date')]||computeDueDate(name,cm);
+    const tax=closingState[stKey(type,name,'tax')]||'미발급';
+    const done=closingState[stKey(type,name,'done')]||'미완료';
+    const label=type==='buy'?'매입처':'매출처';
+    const dateLabel=type==='buy'?'출금예정일':'입금예정일';
+    const amtLabel=type==='buy'?'결제예정액':'청구예정액';
+
+    // 품목별 상세
+    const itemRows=Object.entries(v.items||{}).map(([item,iv])=>{
+      const itemVat=Math.round((iv.samt||iv.bamt||0)*0.1);
+      const itemAmt=iv.samt||iv.bamt||0;
+      return `<tr>
+        <td class="l" style="padding-left:20px">└ ${item}</td>
+        <td>${fmt(itemAmt)}</td><td>${fmt(itemVat)}</td><td>${fmt(itemAmt+itemVat)}</td>
+        <td colspan="3"></td>
+      </tr>`;
+    }).join('');
+
+    return `<div class="report-page" style="width:794px;page-break-after:always">
+      <div class="report-title">${MY.name}</div>
+      <div class="report-sub">마감 기간: ${cm||'전체'}　|　출력일: ${today}</div>
+      <div class="report-section-title">${label} 마감 확인서</div>
+      <table class="report-tbl">
+        <thead><tr>
+          <th>구분</th><th>공급가액</th><th>부가세(10%)</th><th>${amtLabel}</th>
+          <th>${dateLabel}</th><th>계산서</th><th>처리완료</th>
+        </tr></thead>
+        <tbody>
+          <tr class="grp-head"><td colspan="7">${name}</td></tr>
+          ${itemRows}
+          <tr class="grand">
+            <td class="l" style="font-weight:700">${name} 합계</td>
+            <td>${fmt(v.amt)}</td><td>${fmt(vat)}</td><td>${fmt(v.amt+vat)}</td>
+            <td>${due||'-'}</td><td>${tax}</td><td>${done}</td>
+          </tr>
+        </tbody>
+      </table>
+      <div style="margin-top:30px;font-size:12px;color:#555">
+        <p>위와 같이 마감 내역을 확인합니다.</p>
+        <div style="margin-top:40px;display:flex;justify-content:space-between">
+          <div>확인자: ___________________ (인)</div>
+          <div>${MY.name}　담당자: ___________________ (인)</div>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  // 매입처 + 매출처 업체별 페이지 생성
+  const pages=[
+    ...Object.entries(bm).filter(([,v])=>v.amt>0).map(([name,v])=>companyPage(name,v,'buy')),
+    ...Object.entries(sm).filter(([,v])=>v.amt>0).map(([name,v])=>companyPage(name,v,'sell'))
+  ].join('');
+
+  document.getElementById('doc-content').innerHTML=pages;
   document.getElementById('dynamic-page-style').textContent='';
   document.getElementById('doc-frame').style.width='794px';
   document.getElementById('overlay').style.display='block';
