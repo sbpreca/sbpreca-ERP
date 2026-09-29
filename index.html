@@ -187,6 +187,7 @@ input[readonly]{background:#f5f5f5;color:#999}
 <div id="loading-screen" style="position:fixed;inset:0;background:#eee;z-index:9998;display:flex;align-items:center;justify-content:center;font-size:16px;color:#555">불러오는 중...</div>
 <div class="app">
   <h1>㈜ 상보프레카 — 발주 관리 시스템</h1>
+  <div id="delivery-alert" style="display:none;margin-bottom:12px;padding:10px 16px;border-radius:8px;font-size:13px;border:1px solid"></div>
   <div class="nav">
     <button class="nav-btn on" onclick="go('list')">발주 목록</button>
     <button class="nav-btn" onclick="go('deliver')">납품 현황</button>
@@ -246,6 +247,7 @@ input[readonly]{background:#f5f5f5;color:#999}
   <div id="page-list" class="page on">
     <div class="filter-row">
       <button class="btn btn-save" onclick="newOrderFromList()">+ 새 발주</button>
+      <input id="fl-search" type="text" placeholder="🔍 품목명·발주번호 검색" style="width:200px;padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px" oninput="renderList()">
       <select id="fl-month" onchange="renderList()"><option value="">전체 월</option></select>
       <select id="fl-buyer" onchange="renderList()"><option value="">전체 매입처</option></select>
       <button class="btn" onclick="document.getElementById('order-upload-file').click()">📤 엑셀로 발주 업로드</button>
@@ -273,6 +275,7 @@ input[readonly]{background:#f5f5f5;color:#999}
   <!-- 납품 현황 -->
   <div id="page-deliver" class="page">
     <div class="filter-row">
+      <input id="dl-search" type="text" placeholder="🔍 품목명·발주번호 검색" style="width:200px;padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px" oninput="renderDeliver()">
       <select id="dl-month" onchange="renderDeliver()"><option value="">전체 월</option></select>
       <select id="dl-seller" onchange="renderDeliver()"><option value="">전체 매출처</option></select>
       <select id="dl-status" onchange="renderDeliver()">
@@ -2053,6 +2056,7 @@ function renderDeliver(){
   const dm=document.getElementById('dl-month').value;
   const ds=document.getElementById('dl-seller').value;
   const dst=document.getElementById('dl-status').value;
+  const dq=(document.getElementById('dl-search')||{value:''}).value.trim().toLowerCase();
   // 출하일(납품일) 기준으로 월 목록/필터링 (발주일 아님 - 손익계산서/연간현황/마감현황과 동일 기준)
   const months=[...new Set(orders.flatMap(o=>o.items.map(i=>i.ship?ym(i.ship):'')).filter(Boolean))].sort().reverse();
   // 매출처는 정규화된 키로 수집
@@ -2068,6 +2072,7 @@ function renderDeliver(){
       if(!sk)return;
       if(ds&&sk!==ds)return;
       if(dst&&item.status!==dst)return;
+      if(dq&&!(item.item||'').toLowerCase().includes(dq)&&!o.no.toLowerCase().includes(dq)&&!(sk).toLowerCase().includes(dq))return;
       deliverRows.push({...item,seller:sk,order_no:o.no,order_date:o.date,item_idx});
     });
   });
@@ -2146,6 +2151,7 @@ function newOrderFromList(){
 /* ── 발주 목록 ── */
 function renderList(){
   const fm=document.getElementById('fl-month').value,fb=document.getElementById('fl-buyer').value;
+  const fs=(document.getElementById('fl-search')||{value:''}).value.trim().toLowerCase();
   const months=[...new Set(orders.map(o=>ym(o.date)).filter(Boolean))].sort().reverse();
   const buyers=[...new Set(orders.flatMap(o=>o.items.map(i=>i.buyer)).filter(Boolean))].sort();
   document.getElementById('fl-month').innerHTML=`<option value="">전체 월</option>`+months.map(m=>`<option${m===fm?' selected':''}>${m}</option>`).join('');
@@ -2153,6 +2159,7 @@ function renderList(){
   const filtered=orders.filter(o=>{
     if(fm&&ym(o.date)!==fm)return false;
     if(fb&&!o.items.some(i=>i.buyer===fb))return false;
+    if(fs&&!o.no.toLowerCase().includes(fs)&&!o.items.some(i=>(i.item||'').toLowerCase().includes(fs)||(i.buyer||'').toLowerCase().includes(fs)))return false;
     return true;
   }).sort((a,b)=>b.date.localeCompare(a.date));
   const area=document.getElementById('list-area');
@@ -2180,12 +2187,91 @@ function renderList(){
       <div class="card-btns">
         <button class="btn" style="font-size:12px;padding:5px 12px" onclick="loadOrder('${o.no}')">수정</button>
         <button class="btn btn-po" style="font-size:12px;padding:5px 12px" onclick="loadAndDoc('${o.no}')">발주서 PDF</button>
+        <button class="btn" style="font-size:12px;padding:5px 12px;background:#f0fdf4;border-color:#86efac;color:#166534" onclick="copyOrder('${o.no}')">복사</button>
         <button class="btn" style="font-size:12px;padding:5px 12px;color:#dc2626;border-color:#fecaca" onclick="deleteOrder('${o.no}')">삭제</button>
       </div>
     </div>`;
   }).join('');
 }
 function loadAndDoc(no){loadOrder(no);setTimeout(()=>showPO(),80);}
+
+// ── 발주 복사 ──
+async function copyOrder(no){
+  const o=orders.find(x=>x.no===no);
+  if(!o){alert('발주를 찾을 수 없어요');return;}
+  const today=new Date().toISOString().slice(0,10);
+  // 새 발주번호 생성
+  const d=new Date(),y=String(d.getFullYear()).slice(2),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');
+  const pfx=y+m+day+'-';
+  const existing=orders.filter(x=>x.no.startsWith(pfx));
+  const newNo=pfx+String(existing.length+1).padStart(2,'0');
+  // 복사본 생성 (날짜는 오늘, 상태는 미납품으로 초기화)
+  const newOrder={
+    ...o,
+    no:newNo,
+    date:today,
+    saved_at:new Date().toISOString(),
+    items:o.items.map(it=>({...it, ship:'', status:'미납품', closing_sell_exclude:false, closing_month_override:''}))
+  };
+  if(!confirm(`[${o.no}] 발주를 복사할까요?
+새 발주번호: ${newNo}
+날짜: ${today}
+품목 ${newOrder.items.length}개 (납품상태 초기화)`)) return;
+  orders.push(newOrder);
+  persist();
+  renderList();
+  showSyncStatus('복사됨 — '+newNo);
+}
+
+// ── 납품 예정 알림 ──
+function checkDeliveryAlerts(){
+  const today=new Date();
+  today.setHours(0,0,0,0);
+  const tomorrow=new Date(today); tomorrow.setDate(tomorrow.getDate()+1);
+  const fmt=d=>d.toISOString().slice(0,10);
+
+  const todayItems=[], tomorrowItems=[];
+  orders.forEach(o=>{
+    o.items.forEach(it=>{
+      if(!it.ship||it.status==='납품완료') return;
+      const shipDate=new Date(it.ship); shipDate.setHours(0,0,0,0);
+      if(shipDate.getTime()===today.getTime()) todayItems.push({...it, order_no:o.no});
+      else if(shipDate.getTime()===tomorrow.getTime()) tomorrowItems.push({...it, order_no:o.no});
+    });
+  });
+
+  const banner=document.getElementById('delivery-alert');
+  if(!banner) return;
+
+  if(!todayItems.length && !tomorrowItems.length){
+    banner.style.display='none';
+    return;
+  }
+
+  const parts=[];
+  if(todayItems.length){
+    const names=[...new Set(todayItems.map(i=>i.item))].join(', ');
+    parts.push(`🚚 <strong>오늘 납품 예정 ${todayItems.length}건</strong> — ${names}`);
+  }
+  if(tomorrowItems.length){
+    const names=[...new Set(tomorrowItems.map(i=>i.item))].join(', ');
+    parts.push(`📅 <strong>내일 납품 예정 ${tomorrowItems.length}건</strong> — ${names}`);
+  }
+
+  banner.innerHTML=parts.join('&nbsp;&nbsp;|&nbsp;&nbsp;')
+    +`&nbsp;&nbsp;<a href="#" style="font-size:12px;color:inherit;opacity:0.7" onclick="document.getElementById('delivery-alert').style.display='none';return false">✕</a>`;
+  banner.style.display='block';
+
+  if(todayItems.length){
+    banner.style.background='#fef9c3';
+    banner.style.borderColor='#fde047';
+    banner.style.color='#713f12';
+  } else {
+    banner.style.background='#eff6ff';
+    banner.style.borderColor='#93c5fd';
+    banner.style.color='#1e3a5f';
+  }
+}
 
 async function deleteOrder(no){
   if(!confirm(`발주번호 ${no} 를 삭제할까요?\n이 작업은 되돌릴 수 없어요.`)) return;
@@ -3727,6 +3813,7 @@ async function startApp(){
   await loadAll();
   initForm();
   renderList();
+  checkDeliveryAlerts();
   const loadingEl = document.getElementById('loading-screen');
   if(loadingEl) loadingEl.style.display='none';
 }
