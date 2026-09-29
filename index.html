@@ -347,7 +347,6 @@ input[readonly]{background:#f5f5f5;color:#999}
           <th style="width:60px" class="c">명세서</th>
           <th style="width:60px" class="c">마감제외</th>
           <th style="width:100px" class="c">매출 정산월</th>
-          <th style="width:70px" class="c">성적서</th>
         </tr></thead>
         <tbody id="deliver-body"></tbody>
       </table>
@@ -363,6 +362,7 @@ input[readonly]{background:#f5f5f5;color:#999}
         <button id="cl-tab-all" class="btn" style="font-size:12px;padding:5px 14px;background:#111;color:#fff;border-color:#111" onclick="setClosingTab('all')">전체</button>
         <button id="cl-tab-light" class="btn" style="font-size:12px;padding:5px 14px" onclick="setClosingTab('조명')">조명</button>
         <button id="cl-tab-material" class="btn" style="font-size:12px;padding:5px 14px" onclick="setClosingTab('원부자재')">원부자재</button>
+        <button id="cl-tab-fee" class="btn" style="font-size:12px;padding:5px 14px" onclick="setClosingTab('수수료')">수수료</button>
       </div>
       <input type="hidden" id="cl-tab" value="all">
       <button class="btn btn-po" onclick="printClosingReport()">보고서 PDF</button>
@@ -1765,7 +1765,19 @@ function saveOrder(){
   const manager=document.getElementById('f-manager').value;
   const items=getRows();
   if(!date||!items.length){alert('날짜와 품목을 입력해주세요');return;}
-  const o={no,date,note,manager,items,total_buy:items.reduce((s,i)=>s+i.bamt,0),total_sell:items.reduce((s,i)=>s+i.samt,0),saved_at:new Date().toISOString()};
+  // 기존 발주가 있으면 납품 관련 필드(ship, status, closing 등) 보존
+  const existingOrder=orders.find(x=>x.no===no);
+  const mergedItems=items.map((it,i)=>{
+    const prev=existingOrder&&existingOrder.items[i];
+    return {
+      ...it,
+      ship: it.ship||((prev&&prev.ship)||''),
+      status: it.status||(prev&&prev.status)||'미납품',
+      closing_sell_exclude: (prev&&prev.closing_sell_exclude)||false,
+      closing_month_override: (prev&&prev.closing_month_override)||''
+    };
+  });
+  const o={no,date,note,manager,items:mergedItems,total_buy:mergedItems.reduce((s,i)=>s+i.bamt,0),total_sell:mergedItems.reduce((s,i)=>s+i.samt,0),saved_at:new Date().toISOString()};
   const idx=orders.findIndex(x=>x.no===no);
   if(idx>=0)orders[idx]=o;else orders.push(o);
   persist();
@@ -2279,7 +2291,7 @@ function renderDeliver(){
         </td>
       </tr>`;
     }).join('')
-    :'<tr><td colspan="13" style="text-align:center;color:#bbb;padding:2rem">납품 내역이 없어요</td></tr>';
+    :'<tr><td colspan="15" style="text-align:center;color:#bbb;padding:2rem">납품 내역이 없어요</td></tr>';
   // TS 메일 발송 뱃지 업데이트
   updateTsBadgesForDeliver(deliverRows);
 }
@@ -2617,26 +2629,31 @@ function renderClosing(){
 
   const lightBuyEntries=Object.entries(bm).filter(([n])=>(BUYERS[n]&&BUYERS[n].category)==='조명');
   const matBuyEntries=Object.entries(bm).filter(([n])=>(BUYERS[n]&&BUYERS[n].category)==='원부자재');
-  const otherBuyEntries=Object.entries(bm).filter(([n])=>!BUYERS[n]||!BUYERS[n].category);
+  const feeBuyEntries=Object.entries(bm).filter(([n])=>(BUYERS[n]&&BUYERS[n].category)==='수수료');
+  const otherBuyEntries=Object.entries(bm).filter(([n])=>!BUYERS[n]||!['조명','원부자재','수수료'].includes(BUYERS[n].category));
 
   const lightSellEntries=Object.entries(sm).filter(([n])=>getSellerCategory(n)==='조명');
   const matSellEntries=Object.entries(sm).filter(([n])=>getSellerCategory(n)==='원부자재');
-  const otherSellEntries=Object.entries(sm).filter(([n])=>!getSellerCategory(n));
+  const feeSellEntries=Object.entries(sm).filter(([n])=>getSellerCategory(n)==='수수료');
+  const otherSellEntries=Object.entries(sm).filter(([n])=>!['조명','원부자재','수수료'].includes(getSellerCategory(n)));
 
   let buyHtml='', sellHtml='';
   if(tab==='all'){
-    buyHtml=renderBuyGroup(lightBuyEntries,'조명')+renderBuyGroup(matBuyEntries,'원부자재')+renderBuyGroup(otherBuyEntries,'미분류');
-    sellHtml=renderSellGroup(lightSellEntries,'조명')+renderSellGroup(matSellEntries,'원부자재')+renderSellGroup(otherSellEntries,'미분류');
+    buyHtml=renderBuyGroup(lightBuyEntries,'조명')+renderBuyGroup(matBuyEntries,'원부자재')+renderBuyGroup(feeBuyEntries,'수수료')+renderBuyGroup(otherBuyEntries,'미분류');
+    sellHtml=renderSellGroup(lightSellEntries,'조명')+renderSellGroup(matSellEntries,'원부자재')+renderSellGroup(feeSellEntries,'수수료')+renderSellGroup(otherSellEntries,'미분류');
   }else if(tab==='조명'){
     buyHtml=renderBuyGroup(lightBuyEntries,'조명');
     sellHtml=renderSellGroup(lightSellEntries,'조명');
   }else if(tab==='원부자재'){
     buyHtml=renderBuyGroup(matBuyEntries,'원부자재');
     sellHtml=renderSellGroup(matSellEntries,'원부자재');
+  }else if(tab==='수수료'){
+    buyHtml=renderBuyGroup(feeBuyEntries,'수수료');
+    sellHtml=renderSellGroup(feeSellEntries,'수수료');
   }
 
-  const shownBuyTotal=tab==='all'?totBuy:(tab==='조명'?lightBuyEntries.reduce((s,[,v])=>s+v.amt,0):matBuyEntries.reduce((s,[,v])=>s+v.amt,0));
-  const shownSellTotal=tab==='all'?totSell:(tab==='조명'?lightSellEntries.reduce((s,[,v])=>s+v.amt,0):matSellEntries.reduce((s,[,v])=>s+v.amt,0));
+  const shownBuyTotal=tab==='all'?totBuy:(tab==='조명'?lightBuyEntries.reduce((s,[,v])=>s+v.amt,0):(tab==='원부자재'?matBuyEntries.reduce((s,[,v])=>s+v.amt,0):feeBuyEntries.reduce((s,[,v])=>s+v.amt,0)));
+  const shownSellTotal=tab==='all'?totSell:(tab==='조명'?lightSellEntries.reduce((s,[,v])=>s+v.amt,0):(tab==='원부자재'?matSellEntries.reduce((s,[,v])=>s+v.amt,0):feeSellEntries.reduce((s,[,v])=>s+v.amt,0)));
   const shownMargin=shownSellTotal-shownBuyTotal;
 
   const prepaidBal=advancePayments.filter(a=>a.type==='선급금'&&!a.settled).reduce((s,a)=>s+(+a.amount||0),0);
