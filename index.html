@@ -2616,7 +2616,7 @@ function renderClosing(){
     const rowDisplay=hasMultiple?'display:none;':'';
     const itemRows=Object.entries(v.items).map(([item,iv])=>'<tr class="'+detailId+'-row" style="'+rowDisplay+'background:#fbfbfb"><td style="padding-left:28px;font-size:12px;color:#666">└ '+item+' <span style="color:#999">('+fmt(iv.sqty)+'개)</span></td><td class="r" style="font-size:12px;color:#666;white-space:nowrap">'+fmtW(iv.samt)+'</td><td colspan="5"></td></tr>').join('');
     const clickAttr=hasMultiple?(' style="cursor:pointer" onclick="toggleDetail(\''+detailId+'\',this)"'):'';
-    return '<tr'+clickAttr+'><td style="font-weight:600">'+arrow+name+'</td><td class="r" style="white-space:nowrap">'+fmtW(v.amt)+'</td><td class="r" style="white-space:nowrap">'+fmtW(vat)+'</td><td class="r profit-val" style="white-space:nowrap">'+fmtW(v.amt+vat)+'</td><td onclick="event.stopPropagation()">'+dateInput('sell',name)+'</td><td class="c" onclick="event.stopPropagation()">'+stSelect('sell',name,'tax',['미발급','발급완료'])+'</td><td class="c" onclick="event.stopPropagation()">'+stSelect('sell',name,'done',['미완료','완료'])+'</td></tr>'+itemRows;
+    return '<tr'+clickAttr+'><td style="font-weight:600">'+arrow+name+'</td><td class="r" style="white-space:nowrap">'+fmtW(v.amt)+'</td><td class="r" style="white-space:nowrap">'+fmtW(vat)+'</td><td class="r profit-val" style="white-space:nowrap">'+netStr+'</td><td onclick="event.stopPropagation()">'+dateInput('sell',name)+'</td><td class="c" onclick="event.stopPropagation()">'+stSelect('sell',name,'tax',['미발급','발급완료'])+'</td><td class="c" onclick="event.stopPropagation()">'+stSelect('sell',name,'done',['미완료','완료'])+'</td></tr>'+itemRows;
   }
 
   const renderBuyGroup=(entries,label)=>{
@@ -2694,8 +2694,18 @@ function renderClosing(){
 let _closingCache=null;
 
 function renderAdvancePayments(){
-  const prepaid=advancePayments.filter(a=>a.type==='선급금');
-  const advance=advancePayments.filter(a=>a.type==='선수금');
+  const cm=document.getElementById('cl-month').value;
+  // 정산완료된 건은 pay_date 기준으로 해당 월 이전이면 숨김
+  // (정산완료 + 이미 지난 달 → 다음 달 마감에서 표시 안 함)
+  const isVisible = a => {
+    if(!a.settled) return true; // 미정산은 항상 표시
+    if(!cm) return true; // 전체 보기면 항상 표시
+    // 정산완료이고 pay_date가 조회월 이전이면 숨김
+    if(a.pay_date && a.pay_date.slice(0,7) < cm) return false;
+    return true;
+  };
+  const prepaid=advancePayments.filter(a=>a.type==='선급금' && isVisible(a));
+  const advance=advancePayments.filter(a=>a.type==='선수금' && isVisible(a));
 
   function rowHtml(a,idx){
     return `<tr>
