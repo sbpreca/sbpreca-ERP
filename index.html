@@ -1101,7 +1101,16 @@ async function loadBuyersFromDb(){
     return {...DEFAULT_BUYERS};
   }
   const out={};
-  data.forEach(r=>{ out[r.name]={contact:r.contact,manager:r.manager,category:r.category}; });
+  data.forEach(r=>{
+    // DB의 category가 null이면 DEFAULT_BUYERS의 값으로 폴백
+    const defCat = (DEFAULT_BUYERS[r.name]&&DEFAULT_BUYERS[r.name].category)||null;
+    out[r.name]={
+      contact:r.contact,
+      manager:r.manager,
+      category:r.category||defCat,
+      email:r.email||''
+    };
+  });
   return out;
 }
 
@@ -1214,7 +1223,15 @@ async function loadSellersFromDb(){
     return {...DEFAULT_SELLERS};
   }
   const out={};
-  data.forEach(r=>{ out[r.name]={biz:r.biz,ceo:r.ceo,addr:r.addr,btype:r.btype,bitem:r.bitem,contact:r.contact,manager:r.manager,category:r.category}; });
+  data.forEach(r=>{
+    const defCat = (DEFAULT_SELLERS[r.name]&&DEFAULT_SELLERS[r.name].category)||null;
+    out[r.name]={
+      biz:r.biz,ceo:r.ceo,addr:r.addr,btype:r.btype,bitem:r.bitem,
+      contact:r.contact,manager:r.manager,
+      category:r.category||defCat,
+      email:r.email||''
+    };
+  });
   return out;
 }
 
