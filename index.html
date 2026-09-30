@@ -439,7 +439,7 @@ input[readonly]{background:#f5f5f5;color:#999}
       <select id="cf-month" onchange="renderCashflow()" style="padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px"></select>
       <span style="font-size:12px;color:#888">기준월의 실제 입출금 예정 금액</span>
       <div style="margin-left:auto">
-        <a href="https://biz.shinhan.com" target="_blank" class="btn btn-save" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;padding:7px 16px;font-size:13px">
+        <a href="https://bizbank.shinhan.com/main.html" target="_blank" class="btn btn-save" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;padding:7px 16px;font-size:13px">
           🏦 신한은행 기업뱅킹
         </a>
       </div>
@@ -568,10 +568,10 @@ input[readonly]{background:#f5f5f5;color:#999}
   <div id="page-txclass" class="page">
     <!-- 바로가기 버튼 -->
     <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
-      <a href="https://biz.shinhan.com" target="_blank" class="btn btn-save" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;padding:7px 16px;font-size:13px">
+      <a href="https://bizbank.shinhan.com/main.html" target="_blank" class="btn btn-save" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;padding:7px 16px;font-size:13px">
         🏦 신한은행 기업뱅킹
       </a>
-      <a href="https://www.shinhancard.com/mob/MOBFM0662N/MOBFM0662N001M.do" target="_blank" class="btn" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;padding:7px 16px;font-size:13px;background:#0046ab;color:#fff;border-color:#0046ab">
+      <a href="https://www.shinhancard.com/cconts/html/main.html" target="_blank" class="btn" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;padding:7px 16px;font-size:13px;background:#0046ab;color:#fff;border-color:#0046ab">
         💳 신한카드 기업
       </a>
     </div>
@@ -2762,10 +2762,11 @@ function renderCashflow(){
   // 마감현황 데이터 기반으로 실입출금 계산
   // 월 목록은 마감현황과 동일
   const allItems = orders.flatMap(o=>o.items);
-  const months=[...new Set(allItems.map(i=>i.ship?ym(i.ship):'')).filter(Boolean)].sort().reverse();
+  const months=[...new Set(allItems.map(i=>i.ship?ym(i.ship):'').filter(Boolean))].sort().reverse();
   const sel = document.getElementById('cf-month');
   const cm = sel.value || months[0] || '';
-  sel.innerHTML = '<option value="">전체</option>' + months.map(m=>`<option${m===cm?' selected':''}>${m}</option>`).join('');
+  sel.innerHTML = months.map(m=>`<option value="${m}"${m===cm?' selected':''}>${m}</option>`).join('');
+  if(!sel.value && months[0]) sel.value = months[0];
 
   const sellMonthOf = i => i.closing_month_override || ym(i.ship);
 
@@ -2818,13 +2819,13 @@ function renderCashflow(){
       const prepaid = prepaidMap[name] || 0;
       const net = total - prepaid;
       totalPay += net;
-      const due = closingState[stKey('buy',name,'date')] || '';
+      const due = closingState[stKey('buy',name,'date')] || computeDueDate(name, cm) || '';
       return `<tr>
         <td style="font-weight:600">${name}</td>
         <td class="r">${fmtW(total)}</td>
         <td class="r" style="color:#dc2626">${prepaid > 0 ? '-'+fmtW(prepaid) : '-'}</td>
         <td class="r" style="font-weight:700;color:#dc2626">${fmtW(net)}</td>
-        <td style="font-size:12px;color:#666">${due||'-'}</td>
+        <td style="font-size:12px;color:#555;white-space:nowrap">${due||'-'}</td>
       </tr>`;
     }).join('');
 
@@ -2843,13 +2844,13 @@ function renderCashflow(){
       const advance = advanceMap[name] || 0;
       const net = total - advance;
       totalRecv += net;
-      const due = closingState[stKey('sell',name,'date')] || '';
+      const due = closingState[stKey('sell',name,'date')] || computeDueDate(name, cm) || '';
       return `<tr>
         <td style="font-weight:600">${name}</td>
         <td class="r">${fmtW(total)}</td>
         <td class="r" style="color:#166534">${advance > 0 ? '-'+fmtW(advance) : '-'}</td>
         <td class="r" style="font-weight:700;color:#166534">${fmtW(net)}</td>
-        <td style="font-size:12px;color:#666">${due||'-'}</td>
+        <td style="font-size:12px;color:#555;white-space:nowrap">${due||'-'}</td>
       </tr>`;
     }).join('');
 
