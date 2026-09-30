@@ -2545,14 +2545,13 @@ function renderClosing(){
     if(i.closing_sell_exclude) return false;
     if(!cm) return true; // 전체 보기
     if(!(i.ship && ym(i.ship)===cm)) return false; // 이번 달 건만
-    if(i.buyer && isPrevMonthDone('buy', i.buyer)) return false; // 이전 달 처리완료 업체 제외
+    // ※ 이전 달 처리완료 여부와 무관 — 해당 월에 거래가 있으면 항상 표시
     return true;
   });
   const all=allItems.filter(i=>{
     if(!cm) return true;
     if(sellMonthOf(i)!==cm) return false;
-    const company=(i.seller||'').split('_')[0];
-    if(company && isPrevMonthDone('sell', company)) return false; // 이전 달 처리완료 매출처 제외
+    // ※ 이전 달 처리완료 여부와 무관 — 해당 월에 거래가 있으면 항상 표시
     return true;
   }); // 매출처 집계용
 
