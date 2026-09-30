@@ -225,6 +225,7 @@ input[readonly]{background:#f5f5f5;color:#999}
     <button class="nav-btn on" onclick="go('list')">발주 목록</button>
     <button class="nav-btn" onclick="go('deliver')">납품 현황</button>
     <button class="nav-btn" onclick="go('closing')">마감현황</button>
+    <button class="nav-btn" onclick="go('cashflow')">실입출금</button>
     <button class="nav-btn" onclick="go('pl')">손익계산서</button>
     <button class="nav-btn" onclick="go('balance')">대차대조표</button>
     <button class="nav-btn" onclick="go('txclass')">지출분류</button>
@@ -432,6 +433,60 @@ input[readonly]{background:#f5f5f5;color:#999}
     </div>
   </div>
 
+  <!-- 실입출금 -->
+  <div id="page-cashflow" class="page">
+    <div style="display:flex;gap:8px;margin-bottom:14px;align-items:center;flex-wrap:wrap">
+      <select id="cf-month" onchange="renderCashflow()" style="padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px"></select>
+      <span style="font-size:12px;color:#888">기준월의 실제 입출금 예정 금액</span>
+      <div style="margin-left:auto">
+        <a href="https://biz.shinhan.com" target="_blank" class="btn btn-save" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;padding:7px 16px;font-size:13px">
+          🏦 신한은행 기업뱅킹
+        </a>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <!-- 지급 (매입처) -->
+      <div class="section-box">
+        <div class="section-title" style="justify-content:space-between">
+          <span>📤 지급 예정 (매입처)</span>
+          <span id="cf-pay-total" style="font-size:14px;font-weight:700;color:#dc2626"></span>
+        </div>
+        <table class="data-tbl">
+          <thead><tr>
+            <th>매입처</th>
+            <th class="r" style="width:130px">결제예정액(VAT포함)</th>
+            <th class="r" style="width:120px">선급금 차감</th>
+            <th class="r" style="width:130px" style="color:#dc2626">실지급액</th>
+            <th style="width:110px">출금예정일</th>
+          </tr></thead>
+          <tbody id="cf-pay-body"></tbody>
+        </table>
+      </div>
+      <!-- 수령 (매출처) -->
+      <div class="section-box">
+        <div class="section-title" style="justify-content:space-between">
+          <span>📥 수령 예정 (매출처)</span>
+          <span id="cf-recv-total" style="font-size:14px;font-weight:700;color:#166534"></span>
+        </div>
+        <table class="data-tbl">
+          <thead><tr>
+            <th>매출처</th>
+            <th class="r" style="width:130px">청구예정액(VAT포함)</th>
+            <th class="r" style="width:120px">선수금 차감</th>
+            <th class="r" style="width:130px">실수령액</th>
+            <th style="width:110px">입금예정일</th>
+          </tr></thead>
+          <tbody id="cf-recv-body"></tbody>
+        </table>
+      </div>
+    </div>
+    <!-- 순현금흐름 요약 -->
+    <div class="section-box" style="margin-top:16px">
+      <div class="section-title">💰 순현금흐름 요약</div>
+      <div class="metrics" id="cf-metrics"></div>
+    </div>
+  </div>
+
   <!-- 손익계산서 -->
   <div id="page-pl" class="page">
     <div class="filter-row">
@@ -511,6 +566,15 @@ input[readonly]{background:#f5f5f5;color:#999}
 
   <!-- 지출분류 -->
   <div id="page-txclass" class="page">
+    <!-- 바로가기 버튼 -->
+    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+      <a href="https://biz.shinhan.com" target="_blank" class="btn btn-save" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;padding:7px 16px;font-size:13px">
+        🏦 신한은행 기업뱅킹
+      </a>
+      <a href="https://www.shinhancard.com/mob/MOBFM0662N/MOBFM0662N001M.do" target="_blank" class="btn" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;padding:7px 16px;font-size:13px;background:#0046ab;color:#fff;border-color:#0046ab">
+        💳 신한카드 기업
+      </a>
+    </div>
     <div class="section-box" style="margin-bottom:14px">
       <div class="section-title">은행/카드 엑셀 업로드</div>
       <div style="padding:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
@@ -2315,8 +2379,8 @@ function renderDeliver(){
 
 /* ── 탭 전환 ── */
 function go(p){
-  const navIds=['list','deliver','closing','pl','balance','txclass','annual','settings'];
-  const allIds=['list','deliver','closing','pl','balance','txclass','annual','new','settings'];
+  const navIds=['list','deliver','closing','cashflow','pl','balance','txclass','annual','settings'];
+  const allIds=['list','deliver','closing','cashflow','pl','balance','txclass','annual','new','settings'];
   allIds.forEach(id=>{
     document.getElementById('page-'+id).classList.toggle('on',id===p);
   });
@@ -2327,6 +2391,7 @@ function go(p){
   if(p==='list')renderList();
   if(p==='deliver')renderDeliver();
   if(p==='closing')renderClosing();
+  if(p==='cashflow')renderCashflow();
   if(p==='pl')renderPL();
   if(p==='balance')renderBalance();
   if(p==='txclass')renderTxSummary();
@@ -2693,16 +2758,128 @@ function renderClosing(){
 }
 let _closingCache=null;
 
+function renderCashflow(){
+  // 마감현황 데이터 기반으로 실입출금 계산
+  // 월 목록은 마감현황과 동일
+  const allItems = orders.flatMap(o=>o.items);
+  const months=[...new Set(allItems.map(i=>i.ship?ym(i.ship):'')).filter(Boolean)].sort().reverse();
+  const sel = document.getElementById('cf-month');
+  const cm = sel.value || months[0] || '';
+  sel.innerHTML = '<option value="">전체</option>' + months.map(m=>`<option${m===cm?' selected':''}>${m}</option>`).join('');
+
+  const sellMonthOf = i => i.closing_month_override || ym(i.ship);
+
+  // 해당 월 매입/매출 집계 (마감현황과 동일 기준)
+  const buyItems = allItems.filter(i => !i.closing_sell_exclude && (!cm || (i.ship && ym(i.ship)===cm)));
+  const sellItems = allItems.filter(i => !i.closing_sell_exclude && (!cm || sellMonthOf(i)===cm));
+
+  // 매입처별 집계
+  const bm = {};
+  buyItems.forEach(i => {
+    if(!i.buyer) return;
+    if(!bm[i.buyer]) bm[i.buyer] = {amt:0};
+    bm[i.buyer].amt += i.bamt;
+  });
+
+  // 매출처별 집계 (회사 단위)
+  const sm = {};
+  sellItems.forEach(i => {
+    if(!i.seller) return;
+    const company = i.seller.split('_')[0];
+    if(!sm[company]) sm[company] = {amt:0};
+    sm[company].amt += i.samt;
+  });
+
+  const stKey = (type,name,field) => `${cm||'all'}_${type}_${name}_${field}`;
+
+  // 해당 월 선급금/선수금 (pay_date 기준 해당 월만)
+  const prepaidMap = {};
+  const advanceMap = {};
+  advancePayments.forEach(a => {
+    const payMonth = a.pay_date ? a.pay_date.slice(0,7) : null;
+    if(cm && payMonth !== cm) return;
+    if(a.type==='선급금'){
+      if(!prepaidMap[a.company]) prepaidMap[a.company] = 0;
+      prepaidMap[a.company] += (+a.amount||0);
+    } else {
+      if(!advanceMap[a.company]) advanceMap[a.company] = 0;
+      advanceMap[a.company] += (+a.amount||0);
+    }
+  });
+
+  // 매입처 지급 테이블
+  let totalPay = 0;
+  const payRows = Object.entries(bm)
+    .filter(([,v]) => v.amt > 0)
+    .sort((a,b) => b[1].amt - a[1].amt)
+    .map(([name, v]) => {
+      const vat = Math.round(v.amt * 0.1);
+      const total = v.amt + vat;
+      const prepaid = prepaidMap[name] || 0;
+      const net = total - prepaid;
+      totalPay += net;
+      const due = closingState[stKey('buy',name,'date')] || '';
+      return `<tr>
+        <td style="font-weight:600">${name}</td>
+        <td class="r">${fmtW(total)}</td>
+        <td class="r" style="color:#dc2626">${prepaid > 0 ? '-'+fmtW(prepaid) : '-'}</td>
+        <td class="r" style="font-weight:700;color:#dc2626">${fmtW(net)}</td>
+        <td style="font-size:12px;color:#666">${due||'-'}</td>
+      </tr>`;
+    }).join('');
+
+  document.getElementById('cf-pay-body').innerHTML = payRows ||
+    '<tr><td colspan="5" style="text-align:center;color:#bbb;padding:1.5rem">내역 없음</td></tr>';
+  document.getElementById('cf-pay-total').textContent = '총 ' + fmtW(totalPay);
+
+  // 매출처 수령 테이블
+  let totalRecv = 0;
+  const recvRows = Object.entries(sm)
+    .filter(([,v]) => v.amt > 0)
+    .sort((a,b) => b[1].amt - a[1].amt)
+    .map(([name, v]) => {
+      const vat = Math.round(v.amt * 0.1);
+      const total = v.amt + vat;
+      const advance = advanceMap[name] || 0;
+      const net = total - advance;
+      totalRecv += net;
+      const due = closingState[stKey('sell',name,'date')] || '';
+      return `<tr>
+        <td style="font-weight:600">${name}</td>
+        <td class="r">${fmtW(total)}</td>
+        <td class="r" style="color:#166534">${advance > 0 ? '-'+fmtW(advance) : '-'}</td>
+        <td class="r" style="font-weight:700;color:#166534">${fmtW(net)}</td>
+        <td style="font-size:12px;color:#666">${due||'-'}</td>
+      </tr>`;
+    }).join('');
+
+  document.getElementById('cf-recv-body').innerHTML = recvRows ||
+    '<tr><td colspan="5" style="text-align:center;color:#bbb;padding:1.5rem">내역 없음</td></tr>';
+  document.getElementById('cf-recv-total').textContent = '총 ' + fmtW(totalRecv);
+
+  // 순현금흐름 요약
+  const net = totalRecv - totalPay;
+  document.getElementById('cf-metrics').innerHTML = `
+    <div class="metric"><div class="metric-lbl">📥 실수령 합계</div><div class="metric-val g">${fmtW(totalRecv)}</div></div>
+    <div class="metric"><div class="metric-lbl">📤 실지급 합계</div><div class="metric-val b">${fmtW(totalPay)}</div></div>
+    <div class="metric"><div class="metric-lbl">💰 순현금흐름</div><div class="metric-val ${net>=0?'g':'b'}">${net>=0?'+':''}${fmtW(net)}</div></div>`;
+}
+
 function renderAdvancePayments(){
   const cm=document.getElementById('cl-month').value;
   // 정산완료된 건은 pay_date 기준으로 해당 월 이전이면 숨김
   // (정산완료 + 이미 지난 달 → 다음 달 마감에서 표시 안 함)
   const isVisible = a => {
-    if(!a.settled) return true; // 미정산은 항상 표시
     if(!cm) return true; // 전체 보기면 항상 표시
-    // 정산완료이고 pay_date가 조회월 이전이면 숨김
-    if(a.pay_date && a.pay_date.slice(0,7) < cm) return false;
-    return true;
+    const payMonth = a.pay_date ? a.pay_date.slice(0,7) : null;
+    if(!a.settled){
+      // 미정산: pay_date가 조회월과 같을 때만 표시 (없으면 전체 표시)
+      if(!payMonth) return true;
+      return payMonth === cm;
+    } else {
+      // 정산완료: pay_date가 조회월과 같을 때만 표시 (정산한 달에만)
+      return payMonth === cm;
+    }
   };
   const prepaid=advancePayments.filter(a=>a.type==='선급금' && isVisible(a));
   const advance=advancePayments.filter(a=>a.type==='선수금' && isVisible(a));
