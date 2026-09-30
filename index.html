@@ -456,8 +456,9 @@ input[readonly]{background:#f5f5f5;color:#999}
             <th>매입처</th>
             <th class="r" style="width:130px">결제예정액(VAT포함)</th>
             <th class="r" style="width:120px">선급금 차감</th>
-            <th class="r" style="width:130px" style="color:#dc2626">실지급액</th>
+            <th class="r" style="width:130px">실지급액</th>
             <th style="width:110px">출금예정일</th>
+            <th style="width:70px;text-align:center">출금확인</th>
           </tr></thead>
           <tbody id="cf-pay-body"></tbody>
         </table>
@@ -475,6 +476,7 @@ input[readonly]{background:#f5f5f5;color:#999}
             <th class="r" style="width:120px">선수금 차감</th>
             <th class="r" style="width:130px">실수령액</th>
             <th style="width:110px">입금예정일</th>
+            <th style="width:70px;text-align:center">입금확인</th>
           </tr></thead>
           <tbody id="cf-recv-body"></tbody>
         </table>
@@ -943,6 +945,12 @@ function hideMailBtn(){
   _mailCtx = null;
   const btn = document.getElementById('btn-send-mail');
   if(btn) btn.style.display = 'none';
+}
+
+function saveCfCheck(key, checked){
+  // 확인용이므로 로컬 메모리에만 저장 (새로고침 시 초기화)
+  if(checked) closingState[key] = '확인';
+  else delete closingState[key];
 }
 
 async function updateTsBadgesForDeliver(rows){
@@ -2820,12 +2828,18 @@ function renderCashflow(){
       const net = total - prepaid;
       totalPay += net;
       const due = closingState[stKey('buy',name,'date')] || computeDueDate(name, cm) || '';
-      return `<tr>
-        <td style="font-weight:600">${name}</td>
-        <td class="r">${fmtW(total)}</td>
+      const cfPayKey = `cf_${cm}_buy_${name}`;
+      const cfPayChecked = closingState[cfPayKey] === '확인';
+      return `<tr style="${cfPayChecked?'background:#f0fdf4;':''}">
+        <td style="font-weight:600;${cfPayChecked?'color:#166534;text-decoration:line-through':''}">${name}</td>
+        <td class="r" style="${cfPayChecked?'color:#166534':''}">${fmtW(total)}</td>
         <td class="r" style="color:#dc2626">${prepaid > 0 ? '-'+fmtW(prepaid) : '-'}</td>
-        <td class="r" style="font-weight:700;color:#dc2626">${fmtW(net)}</td>
+        <td class="r" style="font-weight:700;color:${cfPayChecked?'#166534':'#dc2626'}">${fmtW(net)}</td>
         <td style="font-size:12px;color:#555;white-space:nowrap">${due||'-'}</td>
+        <td style="text-align:center">
+          <input type="checkbox" ${cfPayChecked?'checked':''} title="출금확인"
+            onchange="saveCfCheck('${cfPayKey}',this.checked);renderCashflow()">
+        </td>
       </tr>`;
     }).join('');
 
@@ -2845,12 +2859,18 @@ function renderCashflow(){
       const net = total - advance;
       totalRecv += net;
       const due = closingState[stKey('sell',name,'date')] || computeDueDate(name, cm) || '';
-      return `<tr>
-        <td style="font-weight:600">${name}</td>
-        <td class="r">${fmtW(total)}</td>
+      const cfRecvKey = `cf_${cm}_sell_${name}`;
+      const cfRecvChecked = closingState[cfRecvKey] === '확인';
+      return `<tr style="${cfRecvChecked?'background:#f0fdf4;':''}">
+        <td style="font-weight:600;${cfRecvChecked?'color:#166534;text-decoration:line-through':''}">${name}</td>
+        <td class="r" style="${cfRecvChecked?'color:#166534':''}">${fmtW(total)}</td>
         <td class="r" style="color:#166534">${advance > 0 ? '-'+fmtW(advance) : '-'}</td>
         <td class="r" style="font-weight:700;color:#166534">${fmtW(net)}</td>
         <td style="font-size:12px;color:#555;white-space:nowrap">${due||'-'}</td>
+        <td style="text-align:center">
+          <input type="checkbox" ${cfRecvChecked?'checked':''} title="입금확인"
+            onchange="saveCfCheck('${cfRecvKey}',this.checked);renderCashflow()">
+        </td>
       </tr>`;
     }).join('');
 
