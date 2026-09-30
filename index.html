@@ -2282,7 +2282,7 @@ function renderDeliver(){
         </select></td>
         <td class="c">${isPend?`<button class="btn" style="font-size:11px;padding:3px 8px" onclick="splitItem(${idx})">분할</button>`:'　'}</td>
         <td class="c">${r.samt>0?`<button class="btn btn-ts" style="font-size:11px;padding:3px 8px" onclick="quickTS(${idx})">${isPend?'명세서':'재발행'}</button>`:'　'}
-          ${(()=>{const rec=getMailSentRecord(r.order_no,'ts');return rec?`<span style="font-size:10px;color:#166534;display:block">✉${rec.sentAt.slice(5,10)}</span>`:'';})()}</td>
+          <span id="mail-badge-ts-${r.order_no}-${r.item_idx}" style="font-size:10px;color:#166534;display:block"></span></td>
         <td class="c" title="반품예정 등으로 이번 마감현황(외상매출금) 집계에서 이 매출만 빼고 싶을 때 체크">
           <input type="checkbox" ${r.closing_sell_exclude?'checked':''} onchange="updateClosingExclude(${idx},this.checked)">
         </td>
@@ -2395,28 +2395,27 @@ function goToDeliver(orderNo){
 async function copyOrder(no){
   const o=orders.find(x=>x.no===no);
   if(!o){alert('발주를 찾을 수 없어요');return;}
-  const today=new Date().toISOString().slice(0,10);
+  if(!confirm(`[${o.no}] 발주를 복사할까요?\n품목 ${o.items.length}개가 복사되고\n발주번호·날짜는 새 화면에서 수정할 수 있어요.`)) return;
   // 새 발주번호 생성
-  const d=new Date(),y=String(d.getFullYear()).slice(2),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');
-  const pfx=y+m+day+'-';
+  const d=new Date(),y=String(d.getFullYear()).slice(2),m2=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');
+  const pfx=y+m2+day+'-';
   const existing=orders.filter(x=>x.no.startsWith(pfx));
   const newNo=pfx+String(existing.length+1).padStart(2,'0');
-  // 복사본 생성 (날짜는 오늘, 상태는 미납품으로 초기화)
-  const newOrder={
-    ...o,
-    no:newNo,
-    date:today,
-    saved_at:new Date().toISOString(),
-    items:o.items.map(it=>({...it, ship:'', status:'미납품', closing_sell_exclude:false, closing_month_override:''}))
-  };
-  if(!confirm(`[${o.no}] 발주를 복사할까요?
-새 발주번호: ${newNo}
-날짜: ${today}
-품목 ${newOrder.items.length}개 (납품상태 초기화)`)) return;
-  orders.push(newOrder);
-  persist();
-  renderList();
-  showSyncStatus('복사됨 — '+newNo);
+  // 새 발주 화면으로 이동
+  go('new');
+  initForm();
+  document.getElementById('f-no').value = newNo;
+  document.getElementById('f-date').value = '';  // 날짜 비움 → 직접 입력
+  document.getElementById('f-note').value = o.note||'';
+  document.getElementById('f-manager').value = o.manager||'이은진';
+  // 품목 행 추가 (납품 관련 필드 초기화)
+  document.getElementById('items-body').innerHTML='';
+  o.items.forEach(it=>{
+    addRow({...it, ship:'', status:'미납품', closing_sell_exclude:false, closing_month_override:''});
+  });
+  calcS();
+  showSyncStatus('복사됨 — 날짜 입력 후 저장해주세요');
+  setTimeout(()=>{ document.getElementById('f-date').focus(); }, 100);
 }
 
 // ── 납품 예정 알림 ──
@@ -2865,6 +2864,49 @@ function renderPL(){
     plRow('⑧ 세전이익',preIncome,'total');
 
   // 부가세 현황
+  // 분기 마지막 달(3,6,9,12월)이면 해당 분기 누계 부가세 합계 계산
+  const quarterMonths={3:['01','02','03'],6:['04','05','06'],9:['07','08','09'],12:['10','11','12']};
+  const curMo = pm ? +pm.slice(5,7) : 0;
+  const curYr = pm ? pm.slice(0,4) : '';
+  let quarterVatHtml = '';
+  if(pm && [3,6,9,12].includes(curMo)){
+    const qMos = quarterMonths[curMo];
+    let qOutVat=0, qInVatCogs=0, qOtherVat=0;
+    qMos.forEach(mo=>{
+      const mKey = curYr+'-'+mo;
+      // 해당 월 매출/매입 집계
+      const mItems = orders.flatMap(o=>o.items);
+      const mSales = mItems.filter(i=>ym(i.ship)===mKey).reduce((s,i)=>s+(i.samt||0),0);
+      const mPurch = mItems.filter(i=>ym(i.ship)===mKey).reduce((s,i)=>s+(i.bamt||0),0);
+      qOutVat += Math.round(mSales*0.1);
+      qInVatCogs += Math.round(mPurch*0.1);
+      const mVatKey = mKey;
+      if(vatData[mVatKey]){
+        qOtherVat += (vatData[mVatKey].find(i=>i.name==='기타매입세액')||{amt:0}).amt||0;
+      }
+    });
+    const qVatPayable = qOutVat - qInVatCogs - qOtherVat;
+    const qLabel = vatPeriodLabel(pm);
+    quarterVatHtml = `
+    <tr style="background:#eff6ff;border-top:2px solid #3b82f6">
+      <td colspan="2" style="padding:6px 12px;font-size:12px;font-weight:700;color:#1d4ed8">
+        📋 ${qLabel} 분기 합계
+      </td>
+    </tr>
+    <tr style="background:#eff6ff">
+      <td style="padding:6px 12px;font-size:12px;color:#1d4ed8">분기 매출세액 합계</td>
+      <td class="r" style="padding:6px 12px;font-size:12px;color:#1d4ed8">${fmtW(qOutVat)}</td>
+    </tr>
+    <tr style="background:#eff6ff">
+      <td style="padding:6px 12px;font-size:12px;color:#1d4ed8">분기 매입세액 합계</td>
+      <td class="r" style="padding:6px 12px;font-size:12px;color:#1d4ed8">-${fmtW(qInVatCogs+qOtherVat)}</td>
+    </tr>
+    <tr style="background:#dbeafe;border-top:1px solid #93c5fd">
+      <td style="padding:8px 12px;font-size:13px;font-weight:700;color:#1e40af">${qVatPayable>=0?'📤 분기 납부예상세액':'📥 분기 환급예상세액'}</td>
+      <td class="r" style="padding:8px 12px;font-size:13px;font-weight:700;color:${qVatPayable>=0?'#dc2626':'#166534'}">${qVatPayable<0?'-':''}${fmtW(Math.abs(qVatPayable))}</td>
+    </tr>`;
+  }
+
   document.getElementById('vat-period').textContent=vatPeriodLabel(pm);
   document.getElementById('vat-body').innerHTML=`
     <tr><td style="padding:8px 12px">매출세액 (매출액×10%)</td><td class="r" style="padding:8px 12px">${fmtW(outputVat)}</td></tr>
@@ -2875,8 +2917,9 @@ function renderPL(){
     </td></tr>
     <tr class="tot" style="font-weight:700;background:#f5f5f5;border-top:2px solid #ddd">
       <td style="padding:10px 12px">${vatPayable>=0?'납부예상세액':'환급예상세액'}</td>
-      <td class="r" style="padding:10px 12px;color:${vatPayable>=0?'#dc2626':'#166534'}">${fmtW(Math.abs(vatPayable))}</td>
-    </tr>`;
+      <td class="r" style="padding:10px 12px;color:${vatPayable>=0?'#dc2626':'#166534'};font-weight:700">${vatPayable<0?'-':''}${fmtW(Math.abs(vatPayable))}</td>
+    </tr>
+    ${quarterVatHtml}`;
 
   // 판관비 테이블
   document.getElementById('sga-body').innerHTML=sgaList.map((item,i)=>`<tr>
