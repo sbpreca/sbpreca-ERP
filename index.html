@@ -405,7 +405,7 @@ input[readonly]{background:#f5f5f5;color:#999}
     <div class="section-box" style="margin-bottom:14px">
       <div class="section-title"><span>선급금 지급 내역 (매입처에 미리 준 돈)</span><span style="font-size:13px;color:#dc2626;font-weight:600" id="cl-prepaid-sum"></span></div>
       <table class="data-tbl">
-        <thead><tr><th>매입처</th><th class="r" style="width:130px">금액</th><th style="width:110px">지급일</th><th>비고</th><th style="width:70px;text-align:center">정산완료</th><th style="width:36px"></th></tr></thead>
+        <thead><tr><th>매입처</th><th class="r" style="width:130px">금액</th><th style="width:110px">지급일</th><th style="width:110px">세금계산서<br>발행월</th><th>비고</th><th style="width:70px;text-align:center">정산완료</th><th style="width:36px"></th></tr></thead>
         <tbody id="cl-prepaid-body"></tbody>
       </table>
       <div style="padding:10px 12px;display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid #eee">
@@ -420,7 +420,7 @@ input[readonly]{background:#f5f5f5;color:#999}
     <div class="section-box" style="margin-bottom:14px">
       <div class="section-title"><span>선수금 수령 내역 (매출처에서 미리 받은 돈)</span><span style="font-size:13px;color:#166534;font-weight:600" id="cl-advance-sum"></span></div>
       <table class="data-tbl">
-        <thead><tr><th>매출처</th><th class="r" style="width:130px">금액</th><th style="width:110px">수령일</th><th>비고</th><th style="width:70px;text-align:center">정산완료</th><th style="width:36px"></th></tr></thead>
+        <thead><tr><th>매출처</th><th class="r" style="width:130px">금액</th><th style="width:110px">수령일</th><th style="width:110px">세금계산서<br>발행월</th><th>비고</th><th style="width:70px;text-align:center">정산완료</th><th style="width:36px"></th></tr></thead>
         <tbody id="cl-advance-body"></tbody>
       </table>
       <div style="padding:10px 12px;display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid #eee">
@@ -2896,6 +2896,11 @@ function renderAdvancePayments(){
         <input type="date" value="${a.pay_date||''}" style="width:100%;font-size:12px" onchange="saveAdvanceField('${a.id}','pay_date',this.value)">
       </td>
       <td style="padding:4px 8px">
+        <input type="month" value="${a.tax_date?a.tax_date.slice(0,7):''}" style="width:100%;font-size:12px"
+          title="세금계산서 발행월 — 손익계산서 부가세 반영 기준"
+          onchange="saveAdvanceField('${a.id}','tax_date',this.value?this.value+'-01':'')">
+      </td>
+      <td style="padding:4px 8px">
         <input value="${(a.note||'').replace(/"/g,'&quot;')}" style="width:100%;border:1px solid #ddd;border-radius:4px;padding:4px 6px;font-size:12px" onchange="saveAdvanceField('${a.id}','note',this.value)">
       </td>
       <td style="text-align:center"><input type="checkbox" ${a.settled?'checked':''} onchange="saveAdvanceField('${a.id}','settled',this.checked)"></td>
@@ -3018,7 +3023,17 @@ function renderPL(){
   const vatKey=pm||'all';
   if(!vatData[vatKey]) vatData[vatKey]=[{name:'기타매입세액',amt:0}];
   const otherInputVat=(vatData[vatKey].find(i=>i.name==='기타매입세액')||{amt:0}).amt||0;
-  const vatPayable=outputVat-inputVatCogs-otherInputVat;
+  // 선급금/선수금 중 해당 월에 세금계산서 발행된 건의 부가세
+  // tax_date 기준으로 해당 월에 발행된 건만 집계
+  const taxDateKey = pm || 'all';
+  const advTaxSell = advancePayments.filter(a=>
+    a.type==='선수금' && a.tax_date && (pm ? a.tax_date.slice(0,7)===pm : true)
+  ).reduce((s,a)=>s+Math.round((+a.amount||0)*0.1),0); // 선수금 세금계산서 → 매출세액 추가
+  const advTaxBuy = advancePayments.filter(a=>
+    a.type==='선급금' && a.tax_date && (pm ? a.tax_date.slice(0,7)===pm : true)
+  ).reduce((s,a)=>s+Math.round((+a.amount||0)*0.1),0); // 선급금 세금계산서 → 매입세액 추가
+
+  const vatPayable=outputVat+advTaxSell-inputVatCogs-advTaxBuy-otherInputVat;
 
   document.getElementById('pl-metrics').innerHTML=`
     <div class="metric"><div class="metric-lbl">매출액</div><div class="metric-val">${fmtW(sales)}</div></div>
@@ -3113,8 +3128,10 @@ function renderPL(){
 
   document.getElementById('vat-period').textContent=vatPeriodLabel(pm);
   document.getElementById('vat-body').innerHTML=`
-    <tr><td style="padding:8px 12px">매출세액 (매출액×10%)</td><td class="r" style="padding:8px 12px">${fmtW(outputVat)}</td></tr>
+    <tr><td style="padding:8px 12px">매출세액 (납품기준 매출액×10%)</td><td class="r" style="padding:8px 12px">${fmtW(outputVat)}</td></tr>
+    ${advTaxSell>0?`<tr style="background:#fef9c3"><td style="padding:6px 12px;color:#854d0e">└ 선수금 세금계산서 발행분 (${pm||'전체'})</td><td class="r" style="padding:6px 12px;color:#854d0e">+${fmtW(advTaxSell)}</td></tr>`:''}
     <tr><td style="padding:8px 12px">매입세액 - 매입원가분 (당기매입×10%)</td><td class="r" style="padding:8px 12px">${fmtW(inputVatCogs)}</td></tr>
+    ${advTaxBuy>0?`<tr style="background:#fef9c3"><td style="padding:6px 12px;color:#854d0e">└ 선급금 세금계산서 발행분 (${pm||'전체'})</td><td class="r" style="padding:6px 12px;color:#854d0e">+${fmtW(advTaxBuy)}</td></tr>`:''}
     <tr><td style="padding:4px 12px">기타매입세액 (판관비 등)</td><td class="r" style="padding:3px 12px">
       <input type="number" value="${otherInputVat}" style="width:130px;text-align:right;border:1px solid #ddd;border-radius:4px;padding:4px 8px"
         onchange="saveVat('${vatKey}','기타매입세액',this.value)">
@@ -3147,7 +3164,7 @@ function renderPL(){
 
   _plCache={pm,sales,salesRaw,salesAdj,purchases,purchasesRaw,purchaseAdj,beginInv,endInv,cogs,gross,
     totalSga,sgaList,opIncome,otherInc,otherExp,otherList,preIncome,
-    outputVat,inputVatCogs,otherInputVat,vatPayable};
+    outputVat,advTaxSell,inputVatCogs,advTaxBuy,otherInputVat,vatPayable};
 }
 let _plCache=null;
 
