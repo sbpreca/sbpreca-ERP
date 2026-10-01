@@ -821,12 +821,24 @@ async function logoutApp(){
 
 let _currentUserEmail = '';
 
+// 권한 설정
+const ADMIN_EMAILS = ['flyingej@naver.com'];
+const READONLY_TABS = ['closing','cashflow','pl','balance','txclass','annual','settings']; // 일반 사용자 조회만
+function isAdmin(){ return ADMIN_EMAILS.includes(_currentUserEmail); }
+
 function showApp(user){
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app-wrap').style.display = 'block';
   _currentUserEmail = user.email || '';
   const emailEl = document.getElementById('current-user-email');
-  if(emailEl) emailEl.textContent = user.email;
+  if(emailEl){
+    emailEl.textContent = user.email;
+    // 관리자/일반 표시
+    const roleTag = isAdmin()
+      ? '<span style="font-size:11px;background:#1F4E79;color:#fff;padding:2px 8px;border-radius:10px;margin-left:6px">관리자</span>'
+      : '<span style="font-size:11px;background:#888;color:#fff;padding:2px 8px;border-radius:10px;margin-left:6px">일반</span>';
+    emailEl.innerHTML = user.email + roleTag;
+  }
 }
 
 // 저장 상태 표시용 (화면 우측 상단에 작게)
@@ -949,6 +961,48 @@ function hideMailBtn(){
   _mailCtx = null;
   const btn = document.getElementById('btn-send-mail');
   if(btn) btn.style.display = 'none';
+}
+
+function applyRoleRestrictions(currentPage){
+  if(isAdmin()) return; // 관리자는 제한 없음
+
+  // 조회 전용 탭에 안내 배너 표시
+  // 기존 배너 제거
+  document.querySelectorAll('.readonly-banner').forEach(el=>el.remove());
+
+  if(READONLY_TABS.includes(currentPage)){
+    const pageEl = document.getElementById('page-'+currentPage);
+    if(pageEl){
+      const banner = document.createElement('div');
+      banner.className = 'readonly-banner';
+      banner.style.cssText = 'background:#fef9c3;border:1px solid #fde047;border-radius:8px;padding:8px 16px;margin-bottom:12px;font-size:13px;color:#854d0e;display:flex;align-items:center;gap:8px';
+      banner.innerHTML = '🔒 조회 전용 — 이 탭은 관리자만 수정할 수 있어요.';
+      pageEl.insertBefore(banner, pageEl.firstChild);
+
+      // 입력 요소 비활성화
+      pageEl.querySelectorAll('input:not([type="radio"]):not([type="checkbox"]), select, textarea, button.btn-save, button.btn-po, button.del-btn').forEach(el=>{
+        // 검색/필터 입력은 허용
+        const id = el.id || '';
+        const cls = el.className || '';
+        if(id.includes('month') || id.includes('year') || id.includes('tab') ||
+           id.includes('search') || id.includes('seller') || id.includes('status') ||
+           cls.includes('nav-btn') || el.type==='radio') return;
+        el.disabled = true;
+        el.style.opacity = '0.5';
+        el.style.cursor = 'not-allowed';
+      });
+    }
+  }else{
+    // 발주/납품 탭은 수정 가능 - 비활성화 해제
+    const pageEl = document.getElementById('page-'+currentPage);
+    if(pageEl){
+      pageEl.querySelectorAll('[disabled]').forEach(el=>{
+        el.disabled = false;
+        el.style.opacity = '';
+        el.style.cursor = '';
+      });
+    }
+  }
 }
 
 function toggleAnnualGroup(groupId){
@@ -2413,6 +2467,8 @@ function go(p){
   if(p==='closing')renderClosing();
   if(p==='cashflow')renderCashflow();
   if(p==='pl')renderPL();
+  // 일반 사용자 조회 전용 탭 안내 배너 표시
+  applyRoleRestrictions(p);
   if(p==='balance')renderBalance();
   if(p==='txclass')renderTxSummary();
   if(p==='annual')renderAnnual();
