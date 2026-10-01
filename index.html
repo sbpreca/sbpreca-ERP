@@ -3415,12 +3415,14 @@ function renderAnnual(){
       body.innerHTML=order.map(cat=>{
         const grp=rows.filter(r=>r.cat===cat);
         if(!grp.length) return '';
+        const parties=[...new Set(grp.map(r=>r.party))];
         return `<tr style="background:#f8f8f8"><td colspan="14" style="padding:6px 12px;font-size:11px;font-weight:700;color:#555">${cat}</td></tr>`
-          +grp.map(r=>rowHtml(r,category)).join('')
+          +parties.map(p=>partyGroupHtml(grp.filter(r=>r.party===p),category)).join('')
           +subtotalRow(grp,cat+' 소계');
       }).join('');
     }else{
-      body.innerHTML=rows.map(r=>rowHtml(r,category)).join('');
+      const parties=[...new Set(rows.map(r=>r.party))];
+      body.innerHTML=parties.map(p=>partyGroupHtml(rows.filter(r=>r.party===p),category)).join('');
     }
     document.getElementById(footId).innerHTML=subtotalRow(rows,(curTab==='all'?'전체':curTab)+' 합계','tot');
   }
@@ -3728,14 +3730,27 @@ async function upsertTxRule(keyword,account){
   return data&&data[0];
 }
 async function saveBankTxRows(rows){
-  // 50건씩 나눠서 저장
+  // 업로드 전 동일 source+account_label 기존 데이터 삭제 후 재삽입 (완전한 중복 방지)
+  if(!rows.length) return true;
+  const source = rows[0].source;
+  const accountLabel = rows[0].account_label;
+  const months = [...new Set(rows.map(r=>r.year_month))];
+
+  // 해당 source+account_label+month 기존 데이터 삭제
+  for(const ym of months){
+    const {error:delErr} = await sb.from('bank_tx')
+      .delete()
+      .eq('source', source)
+      .eq('account_label', accountLabel)
+      .eq('year_month', ym);
+    if(delErr){ console.error('삭제 에러:', delErr); }
+  }
+
+  // 50건씩 나눠서 새로 삽입
   const chunkSize = 50;
   for(let i=0; i<rows.length; i+=chunkSize){
     const chunk = rows.slice(i, i+chunkSize);
-    const {error} = await sb.from('bank_tx').upsert(chunk, {
-      onConflict: 'source,account_label,tx_date,description,amount,direction',
-      ignoreDuplicates: true
-    });
+    const {error} = await sb.from('bank_tx').insert(chunk);
     if(error){
       console.error('bank_tx 저장 에러:', JSON.stringify(error));
       alert('저장 오류: ' + (error.message||JSON.stringify(error)));
