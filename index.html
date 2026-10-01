@@ -3379,9 +3379,8 @@ function renderAnnual(){
 
     // 품목별 상세 행 (기본 숨김)
     const detailRows = partyRows.map(r=>`<tr class="${groupId}-row" style="display:none;background:#f7f9fc">
-        <td style="padding-left:28px;font-size:12px;color:#555">└ ${r.item||'(전체)'}</td>
-        <td></td>
-        <td></td>
+        <td colspan="2" style="padding-left:28px;font-size:12px;color:#333;font-weight:500">└ ${r.item||'(전체)'}</td>
+        <td style="font-size:11px;color:#aaa">-</td>
         <td class="r" style="padding:3px 8px">
           <input type="number" value="${r.h1}" style="width:90px;text-align:right;border:1px solid #ddd;border-radius:4px;padding:3px 5px;font-size:11px"
             onchange="saveAnnualH1('${category}','${r.party.replace(/'/g,"\\'")}','${r.item.replace(/'/g,"\\'")}',this.value)">
@@ -3717,6 +3716,16 @@ const ACCOUNT_PLTYPE={
 };
 const ACCOUNT_LIST=Object.keys(ACCOUNT_PLTYPE);
 
+// 부가세 공제 여부 (판관비 중 접대비/기업업무추진비는 불공제)
+const ACCOUNT_VAT_TYPE={
+  '급여':'면세',        // 급여는 부가세 없음
+  '보험료':'면세',
+  '접대비':'불공제',
+  '기업업무추진비':'불공제',
+  '급여':'면세',
+};
+// 나머지 판관비는 기본 공제
+
 let txRules=[]; // {id,keyword,account}
 let txRowsPending=[]; // 업로드 후 저장 전 검토중인 행들
 let txAll=[]; // DB에 저장된 전체 bank_tx (요약용, lazy load)
@@ -3871,7 +3880,8 @@ async function handleTxFile(e){
     }
     const matched=matchTxRule(p.description);
     const defaultAccount = matched ? matched.account : (p.source==='card' ? '복리후생비' : '');
-    return {...p, account: defaultAccount, ruleKeyword: matched?matched.keyword:p.description, saveRule: !matched};
+    const vatType = ACCOUNT_VAT_TYPE[defaultAccount] || (ACCOUNT_PLTYPE[defaultAccount]==='판관비' ? '공제' : '해당없음');
+    return {...p, account: defaultAccount, vat_type: vatType, ruleKeyword: matched?matched.keyword:p.description, saveRule: !matched};
   });
   document.getElementById('tx-file-status').textContent=`${parsed.length}건 불러옴 (${isBank?'은행':'카드'} 형식)`;
   renderTxReview();
@@ -3892,6 +3902,9 @@ function renderTxReview(){
       <select style="width:100%;font-size:12px;padding:3px" onchange="txRowsPending[${i}].account=this.value;renderTxReviewRowState(${i})">
         <option value="">선택...</option>${optHtml.replace(`value="${r.account}"`, `value="${r.account}" selected`)}
       </select>
+    </td>
+    <td style="text-align:center;font-size:11px" id="vat-type-${i}">
+      <span style="color:${r.vat_type==='불공제'?'#dc2626':r.vat_type==='면세'?'#888':'#166534'}">${r.vat_type||'공제'}</span>
     </td>
     <td style="padding:2px 4px">
       <input value="${r.ruleKeyword.replace(/"/g,'&quot;')}" style="width:100%;font-size:11px;padding:3px" onchange="txRowsPending[${i}].ruleKeyword=this.value">
@@ -3919,6 +3932,7 @@ async function saveTxReview(){
   const rows=txRowsPending.map(r=>({
     source:r.source, account_label:r.account_label, tx_date:r.tx_date, description:r.description,
     amount:r.amount, direction:r.direction, account:r.account, pl_type:ACCOUNT_PLTYPE[r.account]||'비손익',
+    vat_type:r.vat_type||(ACCOUNT_PLTYPE[r.account]==='판관비'?(ACCOUNT_VAT_TYPE[r.account]||'공제'):'해당없음'),
     year_month:r.tx_date.slice(0,7)
   }));
   const ok=await saveBankTxRows(rows);
@@ -3985,11 +3999,24 @@ async function applyTxToPL(){
     if(t.direction==='in') byAccount[t.account].in+=+t.amount; else byAccount[t.account].out+=+t.amount;
   });
   const sgaList=[], otherList=[];
+  let vatDeductible = 0; // 부가세 공제 가능 판관비 합계
   Object.values(byAccount).forEach(a=>{
-    if(a.pl_type==='판관비') sgaList.push({name:a.account, amt:a.out});
+    if(a.pl_type==='판관비'){
+      sgaList.push({name:a.account, amt:a.out, vat_type:a.vat_type||'공제'});
+      if((a.vat_type||'공제')==='공제') vatDeductible += a.out;
+    }
     else if(a.pl_type==='영업외수익') otherList.push({name:a.account, type:'inc', amt:a.in});
     else if(a.pl_type==='영업외비용') otherList.push({name:a.account, type:'exp', amt:a.out});
   });
+  // 기타매입세액 자동계산 (공제 가능 판관비 × 10%)
+  if(vatDeductible > 0){
+    const autoVat = Math.round(vatDeductible * 0.1);
+    if(!vatData[ym]) vatData[ym]=[{name:'기타매입세액',amt:0}];
+    const vatItem = vatData[ym].find(i=>i.name==='기타매입세액');
+    if(vatItem) vatItem.amt = autoVat;
+    else vatData[ym].push({name:'기타매입세액', amt:autoVat});
+    persistVat();
+  }
   sgaData[ym]=sgaList;
   otherData[ym]=otherList;
   persistSga(); persistOther();
