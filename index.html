@@ -3753,10 +3753,19 @@ async function saveBankTxRows(rows){
     if(delErr){ console.error('삭제 에러:', delErr); }
   }
 
+  // 파일 내 중복 제거 (같은 source+account_label+tx_date+description+amount+direction)
+  const seen = new Set();
+  const dedupedRows = rows.filter(r=>{
+    const key = `${r.source}|${r.account_label}|${r.tx_date}|${r.description}|${r.amount}|${r.direction}`;
+    if(seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
   // 50건씩 나눠서 새로 삽입
   const chunkSize = 50;
-  for(let i=0; i<rows.length; i+=chunkSize){
-    const chunk = rows.slice(i, i+chunkSize);
+  for(let i=0; i<dedupedRows.length; i+=chunkSize){
+    const chunk = dedupedRows.slice(i, i+chunkSize);
     const {error} = await sb.from('bank_tx').insert(chunk);
     if(error){
       console.error('bank_tx 저장 에러:', JSON.stringify(error));
