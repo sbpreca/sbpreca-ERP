@@ -641,7 +641,8 @@ input[readonly]{background:#f5f5f5;color:#999}
       <table class="data-tbl">
         <thead><tr>
           <th>매출처</th><th>품목</th><th style="width:70px">분류</th>
-          <th class="r" style="width:110px">상반기(수동)</th>
+          <th class="r" style="width:100px">1~5월(수동)</th>
+          <th class="r" style="width:80px">6월</th>
           <th class="r">7월</th><th class="r">8월</th><th class="r">9월</th><th class="r" style="background:#f0f0f0">3Q</th>
           <th class="r">10월</th><th class="r">11월</th><th class="r">12월</th><th class="r" style="background:#f0f0f0">4Q</th>
           <th class="r">연계</th><th style="width:36px"></th>
@@ -665,7 +666,8 @@ input[readonly]{background:#f5f5f5;color:#999}
       <table class="data-tbl">
         <thead><tr>
           <th>매입처</th><th>품목</th><th style="width:70px">분류</th>
-          <th class="r" style="width:110px">상반기(수동)</th>
+          <th class="r" style="width:100px">1~5월(수동)</th>
+          <th class="r" style="width:80px">6월</th>
           <th class="r">7월</th><th class="r">8월</th><th class="r">9월</th><th class="r" style="background:#f0f0f0">3Q</th>
           <th class="r">10월</th><th class="r">11월</th><th class="r">12월</th><th class="r" style="background:#f0f0f0">4Q</th>
           <th class="r">연계</th><th style="width:36px"></th>
@@ -945,6 +947,14 @@ function hideMailBtn(){
   _mailCtx = null;
   const btn = document.getElementById('btn-send-mail');
   if(btn) btn.style.display = 'none';
+}
+
+function toggleAnnualGroup(groupId){
+  const rows = document.querySelectorAll(`.${groupId}-row`);
+  const arrow = document.getElementById(`${groupId}-arrow`);
+  const isOpen = rows.length && rows[0].style.display !== 'none';
+  rows.forEach(r => r.style.display = isOpen ? 'none' : 'table-row');
+  if(arrow) arrow.textContent = isOpen ? '▸' : '▾';
 }
 
 function saveCfCheck(key, checked){
@@ -3275,7 +3285,7 @@ function renderAnnual(){
         const effShip=(category==='매출' && i.closing_month_override) ? i.closing_month_override+'-01' : i.ship;
         if(!effShip || yr(effShip)!==curY) return;
         const mo=+effShip.slice(5,7);
-        if(mo<7) return; // 1~6월은 수동 입력 영역이라 자동집계 제외
+        if(mo<6) return; // 1~5월은 수동 입력 영역, 6월부터 자동집계
         const party=i[buyerOrSellerKey];
         if(!party) return;
         const item=isLightParty(category,party) ? '' : (i.item||'');
@@ -3300,12 +3310,13 @@ function renderAnnual(){
       const mrow=manualMap[key];
       const h1=mrow?(+mrow.amount||0):0;
       const mo=monthAgg[key]||{};
+      const m6=mo[6]||0;
       const m7=mo[7]||0,m8=mo[8]||0,m9=mo[9]||0;
       const m10=mo[10]||0,m11=mo[11]||0,m12=mo[12]||0;
       const q3=m7+m8+m9, q4=m10+m11+m12;
-      const ttl=h1+q3+q4;
+      const ttl=h1+m6+q3+q4;
       const cat=partyCategory(category,party);
-      return {key,party,item,cat,h1,m7,m8,m9,q3,m10,m11,m12,q4,ttl,manualId:mrow?mrow.id:null};
+      return {key,party,item,cat,h1,m6,m7,m8,m9,q3,m10,m11,m12,q4,ttl,manualId:mrow?mrow.id:null};
     }).sort((a,b)=>(a.party+a.item).localeCompare(b.party+b.item));
     return rows;
   }
@@ -3315,29 +3326,77 @@ function renderAnnual(){
   const sellRows=curTab==='all'?sellRowsAll:sellRowsAll.filter(r=>r.cat===curTab);
   const buyRows=curTab==='all'?buyRowsAll:buyRowsAll.filter(r=>r.cat===curTab);
 
-  function rowHtml(r,category){
-    const itemLabel = r.item || (r.cat==='조명' ? '<span style="color:#bbb">(업체 전체)</span>' : '');
-    return `<tr>
-        <td>${r.party}</td><td>${itemLabel}</td>
-        <td style="font-size:11px;color:${r.cat==='미분류'?'#bbb':'#666'}">${r.cat}</td>
-        <td class="r" style="padding:4px 8px">
-          <input type="number" value="${r.h1}" style="width:100px;text-align:right;border:1px solid #ddd;border-radius:4px;padding:4px 6px;font-size:12px"
+  // 업체별 그룹 렌더링 (클릭으로 품목 펼치기)
+  function partyGroupHtml(partyRows, category){
+    const party = partyRows[0].party;
+    const cat = partyRows[0].cat;
+    const groupId = 'ag-' + category + '-' + party.replace(/[^a-zA-Z0-9]/g,'_');
+
+    // 업체 합계
+    const sumH1 = partyRows.reduce((s,r)=>s+r.h1,0);
+    const sumM6 = partyRows.reduce((s,r)=>s+r.m6,0);
+    const sumM7 = partyRows.reduce((s,r)=>s+r.m7,0);
+    const sumM8 = partyRows.reduce((s,r)=>s+r.m8,0);
+    const sumM9 = partyRows.reduce((s,r)=>s+r.m9,0);
+    const sumM10 = partyRows.reduce((s,r)=>s+r.m10,0);
+    const sumM11 = partyRows.reduce((s,r)=>s+r.m11,0);
+    const sumM12 = partyRows.reduce((s,r)=>s+r.m12,0);
+    const sumQ3 = sumM7+sumM8+sumM9;
+    const sumQ4 = sumM10+sumM11+sumM12;
+    const sumTtl = sumH1+sumM6+sumQ3+sumQ4;
+
+    // 업체 헤더 행 (클릭으로 펼치기)
+    const headerRow = `<tr style="cursor:pointer;background:#fafafa" onclick="toggleAnnualGroup('${groupId}')">
+        <td colspan="2" style="font-weight:600;padding:8px 12px">
+          <span id="${groupId}-arrow" style="margin-right:6px;font-size:11px">▸</span>${party}
+        </td>
+        <td style="font-size:11px;color:${cat==='미분류'?'#bbb':'#666'}">${cat}</td>
+        <td class="r" style="font-weight:600">${sumH1?fmt(sumH1):'-'}</td>
+        <td class="r" style="font-weight:600">${sumM6?fmt(sumM6):'-'}</td>
+        <td class="r" style="font-weight:600">${sumM7?fmt(sumM7):'-'}</td>
+        <td class="r" style="font-weight:600">${sumM8?fmt(sumM8):'-'}</td>
+        <td class="r" style="font-weight:600">${sumM9?fmt(sumM9):'-'}</td>
+        <td class="r" style="background:#fafafa;font-weight:700">${fmt(sumQ3)}</td>
+        <td class="r" style="font-weight:600">${sumM10?fmt(sumM10):'-'}</td>
+        <td class="r" style="font-weight:600">${sumM11?fmt(sumM11):'-'}</td>
+        <td class="r" style="font-weight:600">${sumM12?fmt(sumM12):'-'}</td>
+        <td class="r" style="background:#fafafa;font-weight:700">${fmt(sumQ4)}</td>
+        <td class="r" style="font-weight:700;color:#1F4E79">${fmt(sumTtl)}</td>
+        <td></td>
+      </tr>`;
+
+    // 품목별 상세 행 (기본 숨김)
+    const detailRows = partyRows.map(r=>`<tr class="${groupId}-row" style="display:none;background:#f7f9fc">
+        <td style="padding-left:28px;font-size:12px;color:#555">└ ${r.item||'(전체)'}</td>
+        <td></td>
+        <td></td>
+        <td class="r" style="padding:3px 8px">
+          <input type="number" value="${r.h1}" style="width:90px;text-align:right;border:1px solid #ddd;border-radius:4px;padding:3px 5px;font-size:11px"
             onchange="saveAnnualH1('${category}','${r.party.replace(/'/g,"\\'")}','${r.item.replace(/'/g,"\\'")}',this.value)">
         </td>
-        <td class="r">${fmt(r.m7)}</td><td class="r">${fmt(r.m8)}</td><td class="r">${fmt(r.m9)}</td>
-        <td class="r" style="background:#fafafa;font-weight:600">${fmt(r.q3)}</td>
-        <td class="r">${fmt(r.m10)}</td><td class="r">${fmt(r.m11)}</td><td class="r">${fmt(r.m12)}</td>
-        <td class="r" style="background:#fafafa;font-weight:600">${fmt(r.q4)}</td>
-        <td class="r" style="font-weight:700">${fmt(r.ttl)}</td>
+        <td class="r" style="font-size:12px;color:#555">${fmt(r.m6)}</td>
+        <td class="r" style="font-size:12px;color:#555">${fmt(r.m7)}</td>
+        <td class="r" style="font-size:12px;color:#555">${fmt(r.m8)}</td>
+        <td class="r" style="font-size:12px;color:#555">${fmt(r.m9)}</td>
+        <td class="r" style="background:#fafafa;font-size:12px">${fmt(r.q3)}</td>
+        <td class="r" style="font-size:12px;color:#555">${fmt(r.m10)}</td>
+        <td class="r" style="font-size:12px;color:#555">${fmt(r.m11)}</td>
+        <td class="r" style="font-size:12px;color:#555">${fmt(r.m12)}</td>
+        <td class="r" style="background:#fafafa;font-size:12px">${fmt(r.q4)}</td>
+        <td class="r" style="font-size:12px;font-weight:600">${fmt(r.ttl)}</td>
         <td style="text-align:center">${r.h1?`<button class="del-btn" onclick="delAnnualRow('${category}','${r.party.replace(/'/g,"\\'")}','${r.item.replace(/'/g,"\\'")}')">×</button>`:''}</td>
-      </tr>`;
+      </tr>`).join('');
+
+    return headerRow + detailRows;
   }
+
 
   const tot=(rows,k)=>rows.reduce((s,r)=>s+r[k],0);
   function subtotalRow(rows,label,cls){
     return `<tr class="${cls||''}" style="background:${cls==='tot'?'':'#f0f0f0'}">
       <td colspan="3" style="padding:8px 12px;font-weight:600">${label}</td>
       <td class="r">${fmt(tot(rows,'h1'))}</td>
+      <td class="r">${fmt(tot(rows,'m6'))}</td>
       <td class="r">${fmt(tot(rows,'m7'))}</td><td class="r">${fmt(tot(rows,'m8'))}</td><td class="r">${fmt(tot(rows,'m9'))}</td>
       <td class="r">${fmt(tot(rows,'q3'))}</td>
       <td class="r">${fmt(tot(rows,'m10'))}</td><td class="r">${fmt(tot(rows,'m11'))}</td><td class="r">${fmt(tot(rows,'m12'))}</td>
@@ -3669,8 +3728,20 @@ async function upsertTxRule(keyword,account){
   return data&&data[0];
 }
 async function saveBankTxRows(rows){
-  const {error}=await sb.from('bank_tx').upsert(rows,{onConflict:'source,account_label,tx_date,description,amount,direction'});
-  if(error){ console.error(error); alert('저장 중 오류가 발생했어요: '+error.message); return false; }
+  // 50건씩 나눠서 저장
+  const chunkSize = 50;
+  for(let i=0; i<rows.length; i+=chunkSize){
+    const chunk = rows.slice(i, i+chunkSize);
+    const {error} = await sb.from('bank_tx').upsert(chunk, {
+      onConflict: 'source,account_label,tx_date,description,amount,direction',
+      ignoreDuplicates: true
+    });
+    if(error){
+      console.error('bank_tx 저장 에러:', JSON.stringify(error));
+      alert('저장 오류: ' + (error.message||JSON.stringify(error)));
+      return false;
+    }
+  }
   return true;
 }
 
