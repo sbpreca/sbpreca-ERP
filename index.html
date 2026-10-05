@@ -1618,6 +1618,7 @@ async function saveConfig(){
   const m2email=document.getElementById('cfg-mgr2-email').value;
   MY.managers['이은진']={tel:m1tel||'010-5501-4883',email:m1email||'flyingej@naver.com'};
   MY.managers['김은희']={tel:m2tel||'',email:m2email||'okehkim@naver.com'};
+  MY.managers['신창수']={tel:'010-5437-6809',email:'qasn@naver.com'};
   await saveConfigToDb();
   document.getElementById('cfg-msg').textContent='저장 완료!';
   setTimeout(()=>document.getElementById('cfg-msg').textContent='',1500);
@@ -2038,7 +2039,7 @@ function showPO(){
     const mgr_=(MY.managers&&MY.managers[manager])||{};
     const allItems_=Object.values(groups).flat();
     const subj_=`[발주서] ${no} - ${MY.name}`;
-    const body_=`안녕하세요, ${firstBuyer_} ${bi_.contact||'담당자'}님.\n\n발주서를 송부드립니다. 확인 부탁드립니다.\n\n■ 발주번호: ${no}\n■ 발주일: ${date}\n■ 품목: ${allItems_.map(r=>r.item).join(', ')}\n■ 총 발주금액: ${fmtW(allItems_.reduce((s,r)=>s+r.bamt,0))}\n\n감사합니다.\n${MY.name} ${manager}\\n이메일: ${_currentUserEmail||mgr_.email||''}\\n연락처: ${mgr_.tel||''}`;
+    const body_=`안녕하세요, ${firstBuyer_} ${bi_.contact||'담당자'}님.\n\n발주서를 송부드립니다. 확인 부탁드립니다.\n\n■ 발주번호: ${no}\n■ 발주일: ${date}\n■ 품목: ${allItems_.map(r=>r.item).join(', ')}\n■ 총 발주금액: ${fmtW(allItems_.reduce((s,r)=>s+r.bamt,0))}\n\n감사합니다.\n${MY.name} ${loginManager}\\n연락처: ${mgr_.tel||''}`;
     showMailBtn({to:bi_.email||'', subject:subj_, body:body_, orderNo:no, type:'po'});
   }catch(e){
     console.error('showPO mail ctx error:', e);
@@ -2288,8 +2289,10 @@ function splitItem(idx){
 function quickTS(idx){
   // 해당 항목만 바로 거래명세표 생성
   const r=deliverRows[idx];if(!r)return;
-  const managerInfo=(MY.managers&&MY.managers[MY.contact])||{email:MY.email};
-  const manager=MY.contact;
+  const EMAIL_MGR_MAP_TS = {'flyingej@naver.com':'이은진','okehkim@naver.com':'김은희','qasn@naver.com':'신창수'};
+  const loginMgr = EMAIL_MGR_MAP_TS[_currentUserEmail] || MY.contact;
+  const fo=(MY.managers&&MY.managers[loginMgr])||{email:MY.email};
+  const manager=loginMgr;
   if(!r.samt){alert('공급가액이 없는 항목은 거래명세표를 발행할 수 없어요');return;}
   const today=new Date().toISOString().slice(0,10);
   // 같은 출하일+매출처 항목 자동으로 묶기
@@ -2364,7 +2367,7 @@ function quickTS(idx){
     const tot_=items.reduce((s,r)=>s+r.samt,0);
     const totV_=Math.round(tot_*0.1);
     const subj_=`[거래명세표] ${tsNo} - ${MY.name}`;
-    const body_=`안녕하세요, ${seller.split('_')[0]} 담당자님.\n\n거래명세표를 송부드립니다.\n\n■ 문서번호: ${tsNo}\n■ 발행일: ${dy}년 ${dm}월 ${dd}일\n■ 품목: ${items.map(r=>r.item).join(', ')}\n■ 공급가액: ${fmtW(tot_)}\n■ 부가세: ${fmtW(totV_)}\n■ 합계: ${fmtW(tot_+totV_)}\n${certLinks_?'\n'+certLinks_:''}\n\n감사합니다.\n${MY.name} ${manager}\\n이메일: ${_currentUserEmail||mgr_.email||''}\\n연락처: ${mgr_.tel||''}`;
+    const body_=`안녕하세요, ${seller.split('_')[0]} 담당자님.\n\n거래명세표를 송부드립니다.\n\n■ 문서번호: ${tsNo}\n■ 발행일: ${dy}년 ${dm}월 ${dd}일\n■ 품목: ${items.map(r=>r.item).join(', ')}\n■ 공급가액: ${fmtW(tot_)}\n■ 부가세: ${fmtW(totV_)}\n■ 합계: ${fmtW(tot_+totV_)}\n${certLinks_?'\n'+certLinks_:''}\n\n감사합니다.\n${MY.name} ${manager}\\n연락처: ${mgr_.tel||''}`;
     showMailBtn({to:si_.email||'', subject:subj_, body:body_, orderNo:r.order_no, type:'ts'});
   }catch(e){
     console.error('quickTS mail ctx error:', e);
