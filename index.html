@@ -902,6 +902,7 @@ const DEFAULT_SELLERS={
   '덕산네오룩스_Al Crucible':{biz:'312-86-74729',ceo:'이수훈,이범성',addr:'충청남도 천안시 서북구 입장면 쑥골길 21-32, 1층',btype:'제조',bitem:'전자, 전기부품',contact:'담당자',manager:'이은진',category:'원부자재',email:''},
   '덕산네오룩스_Getter':{biz:'312-86-74729',ceo:'이수훈,이범성',addr:'충청남도 천안시 서북구 입장면 쑥골길 21-32, 1층',btype:'제조',bitem:'전자, 전기부품',contact:'담당자',manager:'이은진',category:'원부자재',email:''},
   '덕산네오룩스_중간체':{biz:'312-86-74729',ceo:'이수훈,이범성',addr:'충청남도 천안시 서북구 입장면 쑥골길 21-32, 1층',btype:'제조',bitem:'전자, 전기부품',contact:'담당자',manager:'이은진',category:'원부자재',email:''},
+  '덕산네오룩스_Quartz Crystal':{biz:'312-86-74729',ceo:'이수훈,이범성',addr:'충청남도 천안시 서북구 입장면 쑥골길 21-32, 1층',btype:'제조',bitem:'전자, 전기부품',contact:'담당자',manager:'이은진',category:'원부자재',email:''},
 };
 let BUYERS={...DEFAULT_BUYERS},SELLERS={...DEFAULT_SELLERS};
 
@@ -3407,6 +3408,73 @@ function renderAnnual(){
   const buyRows=curTab==='all'?buyRowsAll:buyRowsAll.filter(r=>r.cat===curTab);
 
   // 업체별 그룹 렌더링 (클릭으로 품목 펼치기)
+  // _ 기준으로 상위 업체 그룹핑 (테크피아_CTO-C3 → 테크피아 아래 묶기)
+  function renderPartyGroups(rows, category){
+    const parentOf = p => p.includes('_') ? p.split('_')[0] : p;
+    const parents = [...new Set(rows.map(r=>parentOf(r.party)))];
+    return parents.map(parent=>{
+      const childParties = [...new Set(rows.filter(r=>parentOf(r.party)===parent).map(r=>r.party))];
+      if(childParties.length===1 && childParties[0]===parent){
+        // 단일 업체 (테크피아_* 없이 그냥 테크피아인 경우)
+        return partyGroupHtml(rows.filter(r=>r.party===parent), category);
+      }
+      // 여러 하위 품목이 있는 경우 - 상위 업체로 묶기
+      const allRows = rows.filter(r=>parentOf(r.party)===parent);
+      const cat = allRows[0].cat;
+      const showQty = cat==='원부자재';
+      const groupId = 'pg-'+category+'-'+parent.replace(/[^a-zA-Z0-9]/g,'_');
+
+      // 상위 업체 합계
+      const sumH1=allRows.reduce((s,r)=>s+r.h1,0);
+      const sumM6=allRows.reduce((s,r)=>s+r.m6,0);
+      const sumQ3=allRows.reduce((s,r)=>s+r.q3,0);
+      const sumQ4=allRows.reduce((s,r)=>s+r.q4,0);
+      const sumTtl=allRows.reduce((s,r)=>s+r.ttl,0);
+      const sumM6q=showQty?allRows.reduce((s,r)=>s+r.m6q,0):0;
+      const sumQ3q=showQty?allRows.reduce((s,r)=>s+r.q3q,0):0;
+      const sumQ4q=showQty?allRows.reduce((s,r)=>s+r.q4q,0):0;
+      const sumTtlq=sumM6q+sumQ3q+sumQ4q;
+
+      // 상위 업체 헤더 행
+      const parentHeader = `<tr style="cursor:pointer;background:#f0f4ff" onclick="toggleAnnualGroup('${groupId}')">
+        <td colspan="2" style="font-weight:700;padding:8px 12px;color:#1F4E79">
+          <span id="${groupId}-arrow" style="margin-right:6px;font-size:11px">▸</span>${parent}
+        </td>
+        <td style="font-size:11px;color:#666">${cat}</td>
+        <td class="r" style="font-weight:600">${sumH1?fmt(sumH1):'-'}</td>
+        <td class="r" style="font-weight:700;background:#e8eef8">${sumM6?fmt(sumM6)+(showQty&&sumM6q?`<br><span style="font-size:10px;color:#888">${sumM6q}개</span>`:''):'- '}</td>
+        <td class="r" style="font-weight:700;background:#e8eef8">${sumQ3?fmt(sumQ3)+(showQty&&sumQ3q?`<br><span style="font-size:10px;color:#888">${sumQ3q}개</span>`:''):'- '}</td>
+        <td class="r" style="font-weight:700;background:#e8eef8">${sumQ4?fmt(sumQ4)+(showQty&&sumQ4q?`<br><span style="font-size:10px;color:#888">${sumQ4q}개</span>`:''):'- '}</td>
+        <td class="r" style="font-weight:700;color:#1F4E79">${fmt(sumTtl)}</td>
+        <td class="r" style="font-size:12px;color:#666">${showQty&&sumTtlq?sumTtlq+'개':'-'}</td>
+        <td></td>
+      </tr>`;
+
+      // 하위 품목 행들 (기본 숨김)
+      const childRows = childParties.map(cp=>{
+        const cpRows = rows.filter(r=>r.party===cp);
+        const itemName = cp; // 전체 이름 표시 (테크피아_CTO-C3)
+        // partyGroupHtml을 호출하되 groupId를 상위에 연결
+        return cpRows.map(r=>`<tr class="${groupId}-row" style="display:none;background:#f7f9ff">
+          <td colspan="2" style="padding-left:28px;font-size:12px;color:#333;font-weight:500">└ ${itemName}</td>
+          <td style="font-size:11px;color:#aaa">-</td>
+          <td class="r" style="padding:3px 8px">
+            <input type="number" value="${r.h1}" style="width:90px;text-align:right;border:1px solid #ddd;border-radius:4px;padding:3px 5px;font-size:11px"
+              onchange="saveAnnualH1('${category}','${r.party.replace(/'/g,"\\'")}','${r.item.replace(/'/g,"\\'")}',this.value)">
+          </td>
+          <td class="r" style="font-size:12px;color:#555;background:#f9f9f9">${fmt(r.m6)}${(showQty&&r.m6q)?`<br><span style="color:#999;font-size:10px">${r.m6q}개</span>`:''}</td>
+          <td class="r" style="font-size:12px;color:#555;background:#f9f9f9">${fmt(r.q3)}${(showQty&&r.q3q)?`<br><span style="color:#999;font-size:10px">${r.q3q}개</span>`:''}</td>
+          <td class="r" style="font-size:12px;color:#555;background:#f9f9f9">${fmt(r.q4)}${(showQty&&r.q4q)?`<br><span style="color:#999;font-size:10px">${r.q4q}개</span>`:''}</td>
+          <td class="r" style="font-size:12px;font-weight:600">${fmt(r.ttl)}</td>
+          <td class="r" style="font-size:12px;color:#666">${(showQty&&r.ttlq)?r.ttlq+'개':'-'}</td>
+          <td style="text-align:center">${r.h1?`<button class="del-btn" onclick="delAnnualRow('${category}','${r.party.replace(/'/g,"\\'")}','${r.item.replace(/'/g,"\\'")}')">×</button>`:''}</td>
+        </tr>`).join('');
+      }).join('');
+
+      return parentHeader + childRows;
+    }).join('');
+  }
+
   function partyGroupHtml(partyRows, category){
     const party = partyRows[0].party;
     const cat = partyRows[0].cat;
@@ -3485,19 +3553,16 @@ function renderAnnual(){
     if(!rows.length){
       body.innerHTML=`<tr><td colspan="14" style="text-align:center;color:#bbb;padding:1.5rem">데이터가 없어요. 아래에서 행을 추가해주세요</td></tr>`;
     }else if(curTab==='all'){
-      // 전체 보기: 조명 → 원부자재 → 수수료 → 미분류 순으로 그룹핑 + 그룹별 소계
       const order=['조명','원부자재','수수료','미분류'];
       body.innerHTML=order.map(cat=>{
         const grp=rows.filter(r=>r.cat===cat);
         if(!grp.length) return '';
-        const parties=[...new Set(grp.map(r=>r.party))];
         return `<tr style="background:#f8f8f8"><td colspan="14" style="padding:6px 12px;font-size:11px;font-weight:700;color:#555">${cat}</td></tr>`
-          +parties.map(p=>partyGroupHtml(grp.filter(r=>r.party===p),category)).join('')
+          +renderPartyGroups(grp,category)
           +subtotalRow(grp,cat+' 소계');
       }).join('');
     }else{
-      const parties=[...new Set(rows.map(r=>r.party))];
-      body.innerHTML=parties.map(p=>partyGroupHtml(rows.filter(r=>r.party===p),category)).join('');
+      body.innerHTML=renderPartyGroups(rows,category);
     }
     document.getElementById(footId).innerHTML=subtotalRow(rows,(curTab==='all'?'전체':curTab)+' 합계','tot');
   }
