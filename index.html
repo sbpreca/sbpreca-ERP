@@ -899,7 +899,7 @@ const DEFAULT_SELLERS={
   '신세기':{biz:'',ceo:'',addr:'',btype:'',bitem:'',contact:'담당자',manager:'이은진',category:'조명',email:''},
   '탑이앤씨':{biz:'',ceo:'',addr:'',btype:'',bitem:'',contact:'담당자',manager:'이은진',category:'조명',email:''},
   'SG E&C':{biz:'',ceo:'',addr:'',btype:'',bitem:'',contact:'담당자',manager:'이은진',category:'수수료',email:''},
-  '덕산네오룩스_Crucible':{biz:'312-86-74729',ceo:'이수훈,이범성',addr:'충청남도 천안시 서북구 입장면 쑥골길 21-32, 1층',btype:'제조',bitem:'전자, 전기부품',contact:'담당자',manager:'이은진',category:'원부자재',email:''},
+  '덕산네오룩스_Al Crucible':{biz:'312-86-74729',ceo:'이수훈,이범성',addr:'충청남도 천안시 서북구 입장면 쑥골길 21-32, 1층',btype:'제조',bitem:'전자, 전기부품',contact:'담당자',manager:'이은진',category:'원부자재',email:''},
   '덕산네오룩스_Getter':{biz:'312-86-74729',ceo:'이수훈,이범성',addr:'충청남도 천안시 서북구 입장면 쑥골길 21-32, 1층',btype:'제조',bitem:'전자, 전기부품',contact:'담당자',manager:'이은진',category:'원부자재',email:''},
   '덕산네오룩스_중간체':{biz:'312-86-74729',ceo:'이수훈,이범성',addr:'충청남도 천안시 서북구 입장면 쑥골길 21-32, 1층',btype:'제조',bitem:'전자, 전기부품',contact:'담당자',manager:'이은진',category:'원부자재',email:''},
 };
@@ -3360,9 +3360,12 @@ function renderAnnual(){
         if(!monthAgg[key]) monthAgg[key]={};
         if(!monthAgg[key][mo]) monthAgg[key][mo]={amt:0,qty:0};
         monthAgg[key][mo].amt+=(i[amtKey]||0);
-        // 수량: 매입은 bqty, 매출은 sqty
-        const qtyKey=category==='매입'?'bqty':'sqty';
-        monthAgg[key][mo].qty+=(i[qtyKey]||0);
+        // 수량: 원부자재만 집계 (조명/수수료는 수량 없음)
+        const partycat=partyCategory(category,party);
+        if(partycat==='원부자재'){
+          const qtyKey=category==='매입'?'bqty':'sqty';
+          monthAgg[key][mo].qty+=(i[qtyKey]||0);
+        }
       });
     });
     // 수동입력 (상반기) - 조명 업체는 저장된 품목명과 무관하게 업체 단위로 합산
@@ -3424,9 +3427,10 @@ function renderAnnual(){
 
     // 업체 헤더 행 (클릭으로 펼치기)
     const sumQ2=sumM6;
-    const sumQ2q=partyRows.reduce((s,r)=>s+r.m6q,0);
-    const sumQ3q=partyRows.reduce((s,r)=>s+r.q3q,0);
-    const sumQ4q=partyRows.reduce((s,r)=>s+r.q4q,0);
+    const showQty = cat==='원부자재'; // 원부자재만 수량 표시
+    const sumQ2q=showQty?partyRows.reduce((s,r)=>s+r.m6q,0):0;
+    const sumQ3q=showQty?partyRows.reduce((s,r)=>s+r.q3q,0):0;
+    const sumQ4q=showQty?partyRows.reduce((s,r)=>s+r.q4q,0):0;
     const sumTtlq=sumQ2q+sumQ3q+sumQ4q;
     const headerRow = `<tr style="cursor:pointer;background:#fafafa" onclick="toggleAnnualGroup('${groupId}')">
         <td colspan="2" style="font-weight:600;padding:8px 12px">
@@ -3434,11 +3438,11 @@ function renderAnnual(){
         </td>
         <td style="font-size:11px;color:${cat==='미분류'?'#bbb':'#666'}">${cat}</td>
         <td class="r" style="font-weight:600;background:#fafafa">${sumH1?fmt(sumH1):'-'}</td>
-        <td class="r" style="font-weight:700;background:#f0f0f0">${sumQ2?fmt(sumQ2)+`<br><span style="font-size:10px;color:#888">${sumQ2q}개</span>`:'- '}</td>
-        <td class="r" style="font-weight:700;background:#f0f0f0">${sumQ3?fmt(sumQ3)+`<br><span style="font-size:10px;color:#888">${sumQ3q}개</span>`:'- '}</td>
-        <td class="r" style="font-weight:700;background:#f0f0f0">${sumQ4?fmt(sumQ4)+`<br><span style="font-size:10px;color:#888">${sumQ4q}개</span>`:'- '}</td>
+        <td class="r" style="font-weight:700;background:#f0f0f0">${sumQ2?fmt(sumQ2)+(showQty&&sumQ2q?`<br><span style="font-size:10px;color:#888">${sumQ2q}개</span>`:''):'- '}</td>
+        <td class="r" style="font-weight:700;background:#f0f0f0">${sumQ3?fmt(sumQ3)+(showQty&&sumQ3q?`<br><span style="font-size:10px;color:#888">${sumQ3q}개</span>`:''):'- '}</td>
+        <td class="r" style="font-weight:700;background:#f0f0f0">${sumQ4?fmt(sumQ4)+(showQty&&sumQ4q?`<br><span style="font-size:10px;color:#888">${sumQ4q}개</span>`:''):'- '}</td>
         <td class="r" style="font-weight:700;color:#1F4E79">${fmt(sumTtl)}</td>
-        <td class="r" style="font-size:12px;color:#666">${sumTtlq?sumTtlq+'개':'-'}</td>
+        <td class="r" style="font-size:12px;color:#666">${showQty&&sumTtlq?sumTtlq+'개':'-'}</td>
         <td></td>
       </tr>`;
 
@@ -3450,11 +3454,11 @@ function renderAnnual(){
           <input type="number" value="${r.h1}" style="width:90px;text-align:right;border:1px solid #ddd;border-radius:4px;padding:3px 5px;font-size:11px"
             onchange="saveAnnualH1('${category}','${r.party.replace(/'/g,"\\'")}','${r.item.replace(/'/g,"\\'")}',this.value)">
         </td>
-        <td class="r" style="font-size:12px;color:#555;background:#f9f9f9">${fmt(r.m6)}${r.m6q?`<br><span style="color:#999;font-size:10px">${r.m6q}개</span>`:''}</td>
-        <td class="r" style="font-size:12px;color:#555;background:#f9f9f9">${fmt(r.q3)}${r.q3q?`<br><span style="color:#999;font-size:10px">${r.q3q}개</span>`:''}</td>
-        <td class="r" style="font-size:12px;color:#555;background:#f9f9f9">${fmt(r.q4)}${r.q4q?`<br><span style="color:#999;font-size:10px">${r.q4q}개</span>`:''}</td>
+        <td class="r" style="font-size:12px;color:#555;background:#f9f9f9">${fmt(r.m6)}${(showQty&&r.m6q)?`<br><span style="color:#999;font-size:10px">${r.m6q}개</span>`:''}</td>
+        <td class="r" style="font-size:12px;color:#555;background:#f9f9f9">${fmt(r.q3)}${(showQty&&r.q3q)?`<br><span style="color:#999;font-size:10px">${r.q3q}개</span>`:''}</td>
+        <td class="r" style="font-size:12px;color:#555;background:#f9f9f9">${fmt(r.q4)}${(showQty&&r.q4q)?`<br><span style="color:#999;font-size:10px">${r.q4q}개</span>`:''}</td>
         <td class="r" style="font-size:12px;font-weight:600">${fmt(r.ttl)}</td>
-        <td class="r" style="font-size:12px;color:#666">${r.ttlq?r.ttlq+'개':'-'}</td>
+        <td class="r" style="font-size:12px;color:#666">${(showQty&&r.ttlq)?r.ttlq+'개':'-'}</td>
         <td style="text-align:center">${r.h1?`<button class="del-btn" onclick="delAnnualRow('${category}','${r.party.replace(/'/g,"\\'")}','${r.item.replace(/'/g,"\\'")}')">×</button>`:''}</td>
       </tr>`).join('');
 
