@@ -2819,6 +2819,11 @@ function renderClosing(){
     const auto=computeDueDate(name, cm);
     const val=closingState[key]||auto||'';
     const isAuto=!closingState[key] && auto;
+    // 자동계산 날짜가 있으면 자동 저장
+    if(isAuto && auto && !closingState[key]){
+      closingState[key]=auto;
+      persistClosing();
+    }
     return `<input type="date" value="${val}" style="width:110px;font-size:12px;padding:4px 7px;border:1px solid ${isAuto?'#c7d2e0':'#ddd'};border-radius:4px;background:${isAuto?'#f7f9fc':'#fff'}" title="${isAuto?'자동계산(결제조건 기준) - 직접 수정 가능':''}" onchange="closingState['${key}']=this.value;persistClosing()">`;
   }
 
@@ -2919,12 +2924,6 @@ function renderCashflow(){
   const allItems = orders.flatMap(o=>o.items);
   const sellMonthOf = i => i.closing_month_override || ym(i.ship);
 
-  // 디버그: closingState date 키 확인
-  const dateKeys = Object.entries(closingState).filter(([k])=>k.endsWith('_date'));
-  console.log('closingState date 키 수:', dateKeys.length);
-  console.log('date 키 예시:', dateKeys.slice(0,5).map(([k,v])=>k+'='+v));
-  console.log('buyByTradeMo 계산 전 allItems 수:', allItems.length);
-
   // 1. 먼저 거래월별 매입/매출 집계
   const buyByTradeMo = {}; // {거래월: {업체: amt}}
   const sellByTradeMo = {}; // {거래월: {업체: amt}}
@@ -2978,8 +2977,6 @@ function renderCashflow(){
   if(!sel.value && allMos[0]) sel.value = allMos[0];
 
   // 4. cm 월에 해당하는 매입 집계
-  console.log('cm:', cm, 'buyDueMap keys:', Object.keys(buyDueMap).slice(0,5), 'sellDueMap keys:', Object.keys(sellDueMap).slice(0,5));
-  console.log('buyByTradeMo keys:', Object.keys(buyByTradeMo), 'sellByTradeMo keys:', Object.keys(sellByTradeMo));
   const bm = {};
   Object.entries(buyByTradeMo).forEach(([tradeMo, companies])=>{
     Object.entries(companies).forEach(([buyer, amt])=>{
