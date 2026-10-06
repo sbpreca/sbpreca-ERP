@@ -554,6 +554,20 @@ input[readonly]{background:#f5f5f5;color:#999}
       <div class="section-title">🔍 부가세 대사 요약</div>
       <div class="metrics" id="ht-metrics"></div>
     </div>
+    <!-- 분기별 납부세액 -->
+    <div class="section-box" style="margin-top:16px">
+      <div class="section-title">📋 분기별 납부세액 (홈택스 기준)</div>
+      <table class="data-tbl" id="ht-quarter-table">
+        <thead><tr>
+          <th>신고기간</th>
+          <th class="r">매출세액</th>
+          <th class="r">매입세액</th>
+          <th class="r" style="font-weight:700">납부예상세액</th>
+        </tr></thead>
+        <tbody id="ht-quarter-body"></tbody>
+        <tfoot id="ht-quarter-foot"></tfoot>
+      </table>
+    </div>
   </div>
 
   <!-- 손익계산서 -->
@@ -3230,6 +3244,33 @@ async function renderHometax(){
     <div class="metric"><div class="metric-lbl">매출세액 (홈택스)</div><div class="metric-val g">${fmtW(sellVat)}</div></div>
     <div class="metric"><div class="metric-lbl">매입세액 (홈택스)</div><div class="metric-val b">${fmtW(buyVat)}</div></div>
     <div class="metric"><div class="metric-lbl">${netVat>=0?'📤 납부예상세액':'📥 환급예상세액'}</div><div class="metric-val ${netVat>=0?'b':'g'}">${netVat<0?'-':''}${fmtW(Math.abs(netVat))}</div></div>`;
+
+  // 분기별 납부세액 계산 (홈택스 전체 데이터 기준)
+  const quarters = {
+    '1기 예정 (1~3월)': ['2026-01','2026-02','2026-03'],
+    '1기 확정 (1~6월)': ['2026-01','2026-02','2026-03','2026-04','2026-05','2026-06'],
+    '2기 예정 (7~9월)': ['2026-07','2026-08','2026-09'],
+    '2기 확정 (7~12월)': ['2026-07','2026-08','2026-09','2026-10','2026-11','2026-12'],
+  };
+
+  const qRows = Object.entries(quarters).map(([label, mos])=>{
+    const qSellVat = taxInvoices.filter(t=>t.type==='sell'&&mos.includes(t.year_month))
+      .reduce((s,t)=>s+(+t.vat_amt||0),0);
+    const qBuyVat = taxInvoices.filter(t=>t.type==='buy'&&mos.includes(t.year_month))
+      .reduce((s,t)=>s+(+t.vat_amt||0),0);
+    const qNet = qSellVat - qBuyVat;
+    const hasData = taxInvoices.some(t=>mos.includes(t.year_month));
+    if(!hasData) return '';
+    return `<tr>
+      <td style="font-weight:600">${label}</td>
+      <td class="r">${fmtW(qSellVat)}</td>
+      <td class="r">${fmtW(qBuyVat)}</td>
+      <td class="r" style="font-weight:700;color:${qNet>=0?'#dc2626':'#166534'}">${qNet<0?'-':''}${fmtW(Math.abs(qNet))}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('ht-quarter-body').innerHTML = qRows ||
+    '<tr><td colspan="4" style="text-align:center;color:#bbb;padding:1rem">업로드된 데이터 없음</td></tr>';
 }
 
 
