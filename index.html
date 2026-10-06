@@ -781,7 +781,6 @@ input[readonly]{background:#f5f5f5;color:#999}
   <div id="doc-frame">
     <div class="doc-btns">
       <button class="doc-print" onclick="window.print()">프린트 / PDF 저장</button>
-      <button id="btn-send-mail" class="btn" style="font-size:13px;padding:7px 16px;background:#03c75a;color:#fff;border-color:#03c75a;display:none" onclick="sendMailNaver()">✉ 네이버 메일로 발송</button>
       <button class="doc-close" onclick="document.getElementById('overlay').style.display='none';hideMailBtn()">닫기</button>
       <span style="font-size:11px;color:#999;align-self:center;margin-left:8px">※ A4 용지로 인쇄해주세요</span>
     </div>
@@ -2447,7 +2446,7 @@ function renderDeliver(){
         </select></td>
         <td class="c">${isPend?`<button class="btn" style="font-size:11px;padding:3px 8px" onclick="splitItem(${idx})">분할</button>`:'　'}</td>
         <td class="c">${r.samt>0?`<button class="btn btn-ts" style="font-size:11px;padding:3px 8px" onclick="quickTS(${idx})">${isPend?'명세서':'재발행'}</button>`:'　'}
-          <span id="mail-badge-ts-${r.order_no}-${r.item_idx}" style="font-size:10px;color:#166534;display:block"></span></td>
+          </td>
         <td class="c" title="반품예정 등으로 이번 마감현황(외상매출금) 집계에서 이 매출만 빼고 싶을 때 체크">
           <input type="checkbox" ${r.closing_sell_exclude?'checked':''} onchange="updateClosingExclude(${idx},this.checked)">
         </td>
@@ -2457,8 +2456,7 @@ function renderDeliver(){
       </tr>`;
     }).join('')
     :'<tr><td colspan="15" style="text-align:center;color:#bbb;padding:2rem">납품 내역이 없어요</td></tr>';
-  // TS 메일 발송 뱃지 업데이트
-  updateTsBadgesForDeliver(deliverRows);
+
 }
 
 /* ── 탭 전환 ── */
@@ -2527,7 +2525,7 @@ function renderList(){
         <div class="card-amt"><span class="card-amt-lbl">이익</span><span class="card-amt-val" style="color:#1d4ed8">${fmtW(m)} (${r}%)</span></div>
       </div>
       <div style="display:flex;align-items:center;gap:8px;margin-top:6px;margin-bottom:4px">
-        <span id="mail-badge-po-${o.no}" style="font-size:11px;padding:3px 8px;border-radius:4px;background:#f3f4f6;color:#9ca3af"></span>
+        
       </div>
       <div class="card-btns">
         <button class="btn" style="font-size:12px;padding:5px 12px" onclick="loadOrder('${o.no}')">수정</button>
@@ -2537,8 +2535,7 @@ function renderList(){
       </div>
     </div>`;
   }).join('');
-  // 메일 발송 뱃지 업데이트 (비동기)
-  updateMailBadgesForOrders(filtered.map(o=>o.no));
+
 }
 function loadAndDoc(no){loadOrder(no);setTimeout(()=>showPO(),80);}
 
