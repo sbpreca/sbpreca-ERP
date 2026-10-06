@@ -523,6 +523,7 @@ input[readonly]{background:#f5f5f5;color:#999}
             <th class="r">공급가액</th>
             <th class="r">세액</th>
             <th style="width:70px;text-align:center">상태</th>
+            <th style="width:60px;text-align:center">확인</th>
           </tr></thead>
           <tbody id="ht-sell-body"></tbody>
           <tfoot id="ht-sell-foot"></tfoot>
@@ -541,6 +542,7 @@ input[readonly]{background:#f5f5f5;color:#999}
             <th class="r">공급가액</th>
             <th class="r">세액</th>
             <th style="width:70px;text-align:center">상태</th>
+            <th style="width:60px;text-align:center">확인</th>
           </tr></thead>
           <tbody id="ht-buy-body"></tbody>
           <tfoot id="ht-buy-foot"></tfoot>
@@ -3093,6 +3095,14 @@ function renderCashflow(){
 
 let taxInvoices = [];
 
+async function confirmTaxInvoice(id, confirmed){
+  const {error} = await sb.from('tax_invoices').update({confirmed}).eq('id', id);
+  if(error){ console.error(error); return; }
+  const item = taxInvoices.find(t=>t.id===id);
+  if(item) item.confirmed = confirmed;
+  showSyncStatus(confirmed ? '✅ 확인 완료' : '확인 해제');
+}
+
 async function loadTaxInvoices(){
   const {data,error} = await sb.from('tax_invoices').select('*').order('issue_date');
   if(error){ console.error(error); return []; }
@@ -3180,7 +3190,8 @@ async function renderHometax(){
           <td style="font-size:12px">${t.company}</td>
           <td class="r">${fmtW(t.supply_amt)}</td>
           <td class="r">${fmtW(t.vat_amt)}</td>
-          <td style="text-align:center">${badge}</td></tr>`;
+          <td style="text-align:center">${badge}</td>
+          <td style="text-align:center"><input type="checkbox" ${t.confirmed?'checked':''} onchange="confirmTaxInvoice('${t.id}',this.checked)"></td></tr>`;
       }).join('')
     : '<tr><td colspan="5" style="text-align:center;color:#bbb;padding:1.5rem">데이터 없음</td></tr>';
 
@@ -3204,7 +3215,8 @@ async function renderHometax(){
           <td style="font-size:12px">${t.company}</td>
           <td class="r">${fmtW(t.supply_amt)}</td>
           <td class="r">${fmtW(t.vat_amt)}</td>
-          <td style="text-align:center">${badge}</td></tr>`;
+          <td style="text-align:center">${badge}</td>
+          <td style="text-align:center"><input type="checkbox" ${t.confirmed?'checked':''} onchange="confirmTaxInvoice('${t.id}',this.checked)"></td></tr>`;
       }).join('')
     : '<tr><td colspan="5" style="text-align:center;color:#bbb;padding:1.5rem">데이터 없음</td></tr>';
 
@@ -3388,12 +3400,25 @@ function renderPL(){
   const taxDateKey = pm || 'all';
   const advTaxSell = advancePayments.filter(a=>
     a.type==='선수금' && a.tax_date && (pm ? a.tax_date.slice(0,7)===pm : true)
-  ).reduce((s,a)=>s+Math.round((+a.amount||0)*0.1),0); // 선수금 세금계산서 → 매출세액 추가
+  ).reduce((s,a)=>s+Math.round((+a.amount||0)*0.1),0);
+
+  const advTaxSellDeduct = advancePayments.filter(a=>
+    a.type==='선수금' && a.tax_date && a.pay_date &&
+    (pm ? a.pay_date.slice(0,7)===pm : true) &&
+    a.tax_date.slice(0,7) !== a.pay_date.slice(0,7)
+  ).reduce((s,a)=>s+Math.round((+a.amount||0)*0.1),0);
+
   const advTaxBuy = advancePayments.filter(a=>
     a.type==='선급금' && a.tax_date && (pm ? a.tax_date.slice(0,7)===pm : true)
-  ).reduce((s,a)=>s+Math.round((+a.amount||0)*0.1),0); // 선급금 세금계산서 → 매입세액 추가
+  ).reduce((s,a)=>s+Math.round((+a.amount||0)*0.1),0);
 
-  const vatPayable=outputVat+advTaxSell-inputVatCogs-advTaxBuy-otherInputVat;
+  const advTaxBuyDeduct = advancePayments.filter(a=>
+    a.type==='선급금' && a.tax_date && a.pay_date &&
+    (pm ? a.pay_date.slice(0,7)===pm : true) &&
+    a.tax_date.slice(0,7) !== a.pay_date.slice(0,7)
+  ).reduce((s,a)=>s+Math.round((+a.amount||0)*0.1),0);
+
+  const vatPayable=outputVat+advTaxSell-advTaxSellDeduct-inputVatCogs-advTaxBuy+advTaxBuyDeduct-otherInputVat;
 
   document.getElementById('pl-metrics').innerHTML=`
     <div class="metric"><div class="metric-lbl">매출액</div><div class="metric-val">${fmtW(sales)}</div></div>
