@@ -985,27 +985,16 @@ function applyRoleRestrictions(currentPage){
       banner.innerHTML = '🔒 조회 전용 — 이 탭은 관리자만 수정할 수 있어요.';
       pageEl.insertBefore(banner, pageEl.firstChild);
 
-      // 버튼만 비활성화 (input은 readonly로 - 금액 조회 가능하게)
-      pageEl.querySelectorAll('button.btn-save, button.btn-po, button.del-btn, button.stsel').forEach(el=>{
+      // 데이터 변경 버튼만 비활성화 (저장, 삭제만 막음)
+      pageEl.querySelectorAll('button.btn-save, button.del-btn').forEach(el=>{
         el.disabled = true;
-        el.style.opacity = '0.5';
+        el.style.opacity = '0.4';
         el.style.cursor = 'not-allowed';
       });
-      // 입력 필드는 readonly로 (보이되 수정 불가)
-      pageEl.querySelectorAll('input:not([type="radio"]):not([type="checkbox"]):not([type="search"]), textarea').forEach(el=>{
-        const id = el.id || '';
-        if(id.includes('month') || id.includes('year') || id.includes('search')) return;
+      // 입력 필드만 readonly (금액 입력 등)
+      pageEl.querySelectorAll('input[type="number"], input[type="text"]:not([id*="search"]):not([id*="month"]):not([id*="year"]), textarea').forEach(el=>{
         el.readOnly = true;
-        el.style.cursor = 'not-allowed';
         el.style.background = '#f9f9f9';
-      });
-      // select는 pointer-events 없애기 (드롭다운 필터 제외)
-      pageEl.querySelectorAll('select').forEach(el=>{
-        const id = el.id || '';
-        if(id.includes('month') || id.includes('year') || id.includes('tab') ||
-           id.includes('seller') || id.includes('status')) return;
-        el.disabled = true;
-        el.style.opacity = '0.7';
       });
     }
   }else{
