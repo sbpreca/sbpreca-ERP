@@ -3093,6 +3093,12 @@ function renderCashflow(){
 
 let taxInvoices = [];
 
+async function loadTaxInvoices(){
+  const {data,error} = await sb.from('tax_invoices').select('*').order('issue_date');
+  if(error){ console.error(error); return []; }
+  return data || [];
+}
+
 async function handleHometaxFile(event){
   const file = event.target.files[0];
   if(!file) return;
@@ -3289,8 +3295,12 @@ async function addAdvancePayment(type){
 async function saveAdvanceField(id,field,value){
   const a=advancePayments.find(x=>x.id===id);
   if(!a) return;
-  a[field]= field==='amount' ? (+value||0) : (field==='settled'?value:value);
-  const row=await upsertAdvancePayment({id:a.id,type:a.type,company:a.company,amount:a.amount,pay_date:a.pay_date||null,note:a.note||'',settled:a.settled||false});
+  a[field]= field==='amount' ? (+value||0) : value;
+  const row=await upsertAdvancePayment({
+    id:a.id, type:a.type, company:a.company, amount:a.amount,
+    pay_date:a.pay_date||null, note:a.note||'',
+    settled:a.settled||false, tax_date:a.tax_date||null
+  });
   renderAdvancePayments();
 }
 async function delAdvancePayment(id){
