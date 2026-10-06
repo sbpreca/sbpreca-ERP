@@ -2978,6 +2978,8 @@ function renderCashflow(){
   if(!sel.value && allMos[0]) sel.value = allMos[0];
 
   // 4. cm 월에 해당하는 매입 집계
+  console.log('cm:', cm, 'buyDueMap keys:', Object.keys(buyDueMap).slice(0,5), 'sellDueMap keys:', Object.keys(sellDueMap).slice(0,5));
+  console.log('buyByTradeMo keys:', Object.keys(buyByTradeMo), 'sellByTradeMo keys:', Object.keys(sellByTradeMo));
   const bm = {};
   Object.entries(buyByTradeMo).forEach(([tradeMo, companies])=>{
     Object.entries(companies).forEach(([buyer, amt])=>{
