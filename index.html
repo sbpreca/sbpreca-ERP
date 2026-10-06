@@ -2919,76 +2919,92 @@ function renderCashflow(){
   const allItems = orders.flatMap(o=>o.items);
   const sellMonthOf = i => i.closing_month_override || ym(i.ship);
 
-  // 출금/입금 예정일 기준 월 목록 생성
-  // closingState에서 date 키만 추출해서 value(예정일)의 월을 목록으로
-  const dueMoSet = new Set();
-  Object.entries(closingState).forEach(([key, val])=>{
-    if(key.endsWith('_date') && val) dueMoSet.add(val.slice(0,7));
+  // 디버그: closingState date 키 확인
+  const dateKeys = Object.entries(closingState).filter(([k])=>k.endsWith('_date'));
+  console.log('closingState date 키 수:', dateKeys.length);
+  console.log('date 키 예시:', dateKeys.slice(0,5).map(([k,v])=>k+'='+v));
+  console.log('buyByTradeMo 계산 전 allItems 수:', allItems.length);
+
+  // 1. 먼저 거래월별 매입/매출 집계
+  const buyByTradeMo = {}; // {거래월: {업체: amt}}
+  const sellByTradeMo = {}; // {거래월: {업체: amt}}
+
+  allItems.forEach(i=>{
+    if(i.closing_sell_exclude) return;
+    if(i.buyer && i.bamt && i.ship){
+      const mo = ym(i.ship);
+      if(!buyByTradeMo[mo]) buyByTradeMo[mo]={};
+      if(!buyByTradeMo[mo][i.buyer]) buyByTradeMo[mo][i.buyer]=0;
+      buyByTradeMo[mo][i.buyer]+=i.bamt;
+    }
+    if(i.seller && i.samt){
+      const mo = sellMonthOf(i);
+      if(!mo) return;
+      const co = i.seller.split('_')[0];
+      if(!sellByTradeMo[mo]) sellByTradeMo[mo]={};
+      if(!sellByTradeMo[mo][co]) sellByTradeMo[mo][co]=0;
+      sellByTradeMo[mo][co]+=i.samt;
+    }
   });
-  // 거래 발생월도 포함 (예정일 미입력 건 대비)
-  allItems.forEach(i=>{ if(i.ship) dueMoSet.add(ym(i.ship)); });
-  const allMos = [...dueMoSet].sort().reverse();
+
+  // 2. closingState에서 예정일 추출
+  // 키: {거래월}_buy_{업체}_date, 값: 예정일(yyyy-mm-dd)
+  const buyDueMap = {}; // {거래월_업체: 예정일월}
+  const sellDueMap = {};
+  Object.entries(closingState).forEach(([key, val])=>{
+    if(!key.endsWith('_date') || !val) return;
+    const underscores = key.split('_');
+    if(underscores.length < 4) return;
+    const tradeMo = underscores[0]; // 2026-09
+    const type = underscores[1];    // buy or sell
+    const name = underscores.slice(2, underscores.length-1).join('_'); // 업체명
+    const dueMo = val.slice(0,7);
+    if(type==='buy') buyDueMap[`${tradeMo}|${name}`] = dueMo;
+    else if(type==='sell') sellDueMap[`${tradeMo}|${name}`] = dueMo;
+  });
+
+  // 3. 조회월(cm) 기준으로 표시할 거래 목록 생성
+  // 예정일이 cm인 거래 + 예정일 미입력이면 거래발생월=cm인 거래
+  const dueMoSet = new Set();
+  Object.values(buyDueMap).forEach(mo=>dueMoSet.add(mo));
+  Object.values(sellDueMap).forEach(mo=>dueMoSet.add(mo));
+  Object.keys(buyByTradeMo).forEach(mo=>dueMoSet.add(mo));
+  Object.keys(sellByTradeMo).forEach(mo=>dueMoSet.add(mo));
+  const allMos = [...dueMoSet].filter(Boolean).sort().reverse();
 
   const sel = document.getElementById('cf-month');
   const cm = sel.value || allMos[0] || '';
   sel.innerHTML = allMos.map(m=>`<option value="${m}"${m===cm?' selected':''}>${m}</option>`).join('');
   if(!sel.value && allMos[0]) sel.value = allMos[0];
 
-  // cm(조회월)에 출금/입금 예정인 업체 찾기
-  // closingState에서 value가 cm 월인 키를 추출
-  const buyDueCompanies = {}; // 이번 달 출금 예정 매입처 → 거래월
-  const sellDueCompanies = {}; // 이번 달 입금 예정 매출처 → 거래월
-  Object.entries(closingState).forEach(([key, val])=>{
-    if(!key.endsWith('_date') || !val) return;
-    if(val.slice(0,7) !== cm) return;
-    // 키: {거래월}_buy_{업체명}_date
-    const parts = key.split('_');
-    if(parts.length < 4) return;
-    const type = parts[1]; // buy or sell
-    const tradeMo = parts[0]; // 거래월
-    const name = parts.slice(2, parts.length-1).join('_'); // 업체명
-    if(type==='buy') buyDueCompanies[name] = tradeMo;
-    else if(type==='sell') sellDueCompanies[name] = tradeMo;
-  });
-
-  // 해당 거래월의 매입/매출 집계
+  // 4. cm 월에 해당하는 매입 집계
   const bm = {};
-  Object.entries(buyDueCompanies).forEach(([buyer, tradeMo])=>{
-    allItems.filter(i=>!i.closing_sell_exclude && i.buyer===buyer && ym(i.ship)===tradeMo)
-      .forEach(i=>{
-        if(!bm[buyer]) bm[buyer]={amt:0, tradeMo};
-        bm[buyer].amt += i.bamt;
-      });
-  });
-
-  const sm = {};
-  Object.entries(sellDueCompanies).forEach(([company, tradeMo])=>{
-    allItems.filter(i=>{
-      if(i.closing_sell_exclude) return false;
-      const co = (i.seller||'').split('_')[0];
-      return co===company && sellMonthOf(i)===tradeMo;
-    }).forEach(i=>{
-      if(!sm[company]) sm[company]={amt:0, tradeMo};
-      sm[company].amt += i.samt;
+  Object.entries(buyByTradeMo).forEach(([tradeMo, companies])=>{
+    Object.entries(companies).forEach(([buyer, amt])=>{
+      const key = `${tradeMo}|${buyer}`;
+      const dueMo = buyDueMap[key] || tradeMo; // 예정일 없으면 거래발생월
+      if(dueMo !== cm) return;
+      if(!bm[buyer]) bm[buyer]={amt:0, tradeMo, dueDate: closingState[`${tradeMo}_buy_${buyer}_date`]||''};
+      bm[buyer].amt+=amt;
     });
   });
 
-  // 예정일 미입력 업체 → 거래발생월=cm인 건도 포함
-  allItems.filter(i=>!i.closing_sell_exclude && i.buyer && ym(i.ship)===cm).forEach(i=>{
-    const hasKey = Object.keys(closingState).some(k=>k===`${cm}_buy_${i.buyer}_date`);
-    if(!hasKey){
-      if(!bm[i.buyer]) bm[i.buyer]={amt:0, tradeMo:cm};
-      bm[i.buyer].amt += i.bamt;
-    }
+  // 5. cm 월에 해당하는 매출 집계
+  const sm = {};
+  Object.entries(sellByTradeMo).forEach(([tradeMo, companies])=>{
+    Object.entries(companies).forEach(([company, amt])=>{
+      const key = `${tradeMo}|${company}`;
+      const dueMo = sellDueMap[key] || tradeMo;
+      if(dueMo !== cm) return;
+      if(!sm[company]) sm[company]={amt:0, tradeMo, dueDate: closingState[`${tradeMo}_sell_${company}_date`]||''};
+      sm[company].amt+=amt;
+    });
   });
-  allItems.filter(i=>!i.closing_sell_exclude && i.seller && sellMonthOf(i)===cm).forEach(i=>{
-    const company=(i.seller||'').split('_')[0];
-    const hasKey = Object.keys(closingState).some(k=>k===`${cm}_sell_${company}_date`);
-    if(!hasKey){
-      if(!sm[company]) sm[company]={amt:0, tradeMo:cm};
-      sm[company].amt += i.samt;
-    }
-  });
+
+  const stKey=(type,name,field)=>{
+    const tradeMo = type==='buy'?(bm[name]?.tradeMo||cm):(sm[name]?.tradeMo||cm);
+    return `${tradeMo}_${type}_${name}_${field}`;
+  };
 
   // 선급금/선수금 (pay_date 기준 해당 월만)
   const prepaidMap = {};
@@ -3016,7 +3032,7 @@ function renderCashflow(){
       const prepaid = prepaidMap[name] || 0;
       const net = total - prepaid;
       totalPay += net;
-      const due = closingState[stKey('buy',name,'date')] || computeDueDate(name, cm) || '';
+      const due = v.dueDate || '';
       const cfPayKey = `cf_${cm}_buy_${name}`;
       const cfPayChecked = closingState[cfPayKey] === '확인';
       return `<tr style="${cfPayChecked?'background:#f0fdf4;':''}">
@@ -3047,7 +3063,7 @@ function renderCashflow(){
       const advance = advanceMap[name] || 0;
       const net = total - advance;
       totalRecv += net;
-      const due = closingState[stKey('sell',name,'date')] || computeDueDate(name, cm) || '';
+      const due = v.dueDate || '';
       const cfRecvKey = `cf_${cm}_sell_${name}`;
       const cfRecvChecked = closingState[cfRecvKey] === '확인';
       return `<tr style="${cfRecvChecked?'background:#f0fdf4;':''}">
@@ -3075,6 +3091,8 @@ function renderCashflow(){
     <div class="metric"><div class="metric-lbl">💰 순현금흐름</div><div class="metric-val ${net>=0?'g':'b'}">${net>=0?'+':''}${fmtW(net)}</div></div>`;
 }
 
+
+let taxInvoices = [];
 
 async function handleHometaxFile(event){
   const file = event.target.files[0];
@@ -3194,7 +3212,7 @@ async function renderHometax(){
   document.getElementById('ht-metrics').innerHTML = `
     <div class="metric"><div class="metric-lbl">매출세액 (홈택스)</div><div class="metric-val g">${fmtW(sellVat)}</div></div>
     <div class="metric"><div class="metric-lbl">매입세액 (홈택스)</div><div class="metric-val b">${fmtW(buyVat)}</div></div>
-    <div class="metric"><div class="metric-lbl">납부예상세액</div><div class="metric-val ${netVat>=0?'b':'g'}">${fmtW(netVat)}</div></div>`;
+    <div class="metric"><div class="metric-lbl">${netVat>=0?'📤 납부예상세액':'📥 환급예상세액'}</div><div class="metric-val ${netVat>=0?'b':'g'}">${netVat<0?'-':''}${fmtW(Math.abs(netVat))}</div></div>`;
 }
 
 
