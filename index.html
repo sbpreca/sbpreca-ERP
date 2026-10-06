@@ -887,8 +887,8 @@ const DEFAULT_SELLERS={
   '테크피아_CTO-B2':{biz:'129-86-05182',ceo:'정명재',addr:'충청북도 음성군 금왕읍 성본산단1로 187',btype:'제조,도매',bitem:'LCD부품류, 접착테이프',contact:'박 찬근 팀장님 (010-3163-3876)',manager:'이은진',category:'원부자재',email:''},
   '테크피아_SR-40M':{biz:'129-86-05182',ceo:'정명재',addr:'충청북도 음성군 금왕읍 성본산단1로 187',btype:'제조,도매',bitem:'LCD부품류, 접착테이프',contact:'박 찬근 팀장님 (010-3163-3876)',manager:'이은진',category:'원부자재',email:''},
   '테크피아_ITO':{biz:'129-86-05182',ceo:'정명재',addr:'충청북도 음성군 금왕읍 성본산단1로 187',btype:'제조,도매',bitem:'LCD부품류, 접착테이프',contact:'박 찬근 팀장님 (010-3163-3876)',manager:'이은진',category:'원부자재',email:''},
-  '덕산네오룩스_getter':{biz:'312-86-74729',ceo:'이수훈,이범성',addr:'충청남도 천안시 서북구 입장면 쑥골길 21-32, 1층',btype:'제조',bitem:'전자, 전기부품',contact:'담당자',manager:'이은진',category:'원부자재',email:''},
-  '덕산네오룩스_Al Crucible':{biz:'312-86-74729',ceo:'이수훈,이범성',addr:'충청남도 천안시 서북구 입장면 쑥골길 21-32, 1층',btype:'제조',bitem:'전자, 전기부품',contact:'담당자',manager:'이은진',category:'원부자재',email:''},
+  '덕산네오룩스_Getter':{biz:'312-86-74729',ceo:'이수훈,이범성',addr:'충청남도 천안시 서북구 입장면 쑥골길 21-32, 1층',btype:'제조',bitem:'전자, 전기부품',contact:'담당자',manager:'이은진',category:'원부자재',email:''},
+  '덕산네오룩스_Al₂O₃ Crucible':{biz:'312-86-74729',ceo:'이수훈,이범성',addr:'충청남도 천안시 서북구 입장면 쑥골길 21-32, 1층',btype:'제조',bitem:'전자, 전기부품',contact:'담당자',manager:'이은진',category:'원부자재',email:''},
   '건국전력':{biz:'418-81-16487',ceo:'이 재 수',addr:'전주시 덕진구 감수길 30-26, 1동 1층',btype:'건설업',bitem:'전기공사',contact:'담당자',manager:'이은진',category:'조명',email:''},
   '성화전설':{biz:'134-86-35543',ceo:'심병택',addr:'경기도 안산시 단원구 범지기길 75 (원시동)',btype:'건설업',bitem:'전기공사',contact:'조 대식 차장님',manager:'이은진',category:'조명',email:''},
   '신우이앤씨':{biz:'403-81-39722',ceo:'엄원영',addr:'전북 익산시 오산면 평동로 304',btype:'건설업',bitem:'전기공사',contact:'담당자',manager:'이은진',category:'조명',email:''},
@@ -898,7 +898,7 @@ const DEFAULT_SELLERS={
   '신세기':{biz:'',ceo:'',addr:'',btype:'',bitem:'',contact:'담당자',manager:'이은진',category:'조명',email:''},
   '탑이앤씨':{biz:'',ceo:'',addr:'',btype:'',bitem:'',contact:'담당자',manager:'이은진',category:'조명',email:''},
   'SG E&C':{biz:'',ceo:'',addr:'',btype:'',bitem:'',contact:'담당자',manager:'이은진',category:'수수료',email:''},
-  '덕산네오룩스_Al Crucible':{biz:'312-86-74729',ceo:'이수훈,이범성',addr:'충청남도 천안시 서북구 입장면 쑥골길 21-32, 1층',btype:'제조',bitem:'전자, 전기부품',contact:'담당자',manager:'이은진',category:'원부자재',email:''},
+  '덕산네오룩스_Al₂O₃ Crucible':{biz:'312-86-74729',ceo:'이수훈,이범성',addr:'충청남도 천안시 서북구 입장면 쑥골길 21-32, 1층',btype:'제조',bitem:'전자, 전기부품',contact:'담당자',manager:'이은진',category:'원부자재',email:''},
   '덕산네오룩스_Getter':{biz:'312-86-74729',ceo:'이수훈,이범성',addr:'충청남도 천안시 서북구 입장면 쑥골길 21-32, 1층',btype:'제조',bitem:'전자, 전기부품',contact:'담당자',manager:'이은진',category:'원부자재',email:''},
   '덕산네오룩스_중간체':{biz:'312-86-74729',ceo:'이수훈,이범성',addr:'충청남도 천안시 서북구 입장면 쑥골길 21-32, 1층',btype:'제조',bitem:'전자, 전기부품',contact:'담당자',manager:'이은진',category:'원부자재',email:''},
   '덕산네오룩스_Quartz Crystal':{biz:'312-86-74729',ceo:'이수훈,이범성',addr:'충청남도 천안시 서북구 입장면 쑥골길 21-32, 1층',btype:'제조',bitem:'전자, 전기부품',contact:'담당자',manager:'이은진',category:'원부자재',email:''},
@@ -2846,39 +2846,82 @@ function renderClosing(){
 let _closingCache=null;
 
 function renderCashflow(){
-  // 마감현황 데이터 기반으로 실입출금 계산
-  // 월 목록은 마감현황과 동일
+  // 실입출금 탭 - 출금/입금 예정일 기준으로 집계
+  // closingState의 date 값(출금/입금예정일) 기준으로 해당 월에 표시
   const allItems = orders.flatMap(o=>o.items);
-  const months=[...new Set(allItems.map(i=>i.ship?ym(i.ship):'').filter(Boolean))].sort().reverse();
-  const sel = document.getElementById('cf-month');
-  const cm = sel.value || months[0] || '';
-  sel.innerHTML = months.map(m=>`<option value="${m}"${m===cm?' selected':''}>${m}</option>`).join('');
-  if(!sel.value && months[0]) sel.value = months[0];
 
-  const sellMonthOf = i => i.closing_month_override || ym(i.ship);
+  // closingState에서 업체별 예정일 추출
+  // 키 형식: {월}_{buy/sell}_{업체명}_date
+  const getDueMonth = (type, name) => {
+    // 모든 월의 closingState에서 해당 업체의 date 찾기
+    for(const key of Object.keys(closingState)){
+      if(key.includes(`_${type}_${name}_date`)){
+        const dateVal = closingState[key];
+        if(dateVal) return dateVal.slice(0,7); // yyyy-mm
+      }
+    }
+    return null;
+  };
 
-  // 해당 월 매입/매출 집계 (마감현황과 동일 기준)
-  const buyItems = allItems.filter(i => !i.closing_sell_exclude && (!cm || (i.ship && ym(i.ship)===cm)));
-  const sellItems = allItems.filter(i => !i.closing_sell_exclude && (!cm || sellMonthOf(i)===cm));
-
-  // 매입처별 집계
+  // 매입처별 집계 (출하일 기준으로 거래 묶기, 표시는 출금예정일 기준)
   const bm = {};
-  buyItems.forEach(i => {
-    if(!i.buyer) return;
-    if(!bm[i.buyer]) bm[i.buyer] = {amt:0};
+  allItems.forEach(i=>{
+    if(!i.buyer || i.closing_sell_exclude) return;
+    if(!i.ship) return;
+    const shipMo = ym(i.ship);
+    const stKeyBase = `${shipMo}_buy_${i.buyer}_date`;
+    const dueDate = closingState[stKeyBase] || computeDueDate(i.buyer, shipMo) || '';
+    const dueMo = dueDate ? dueDate.slice(0,7) : shipMo;
+    if(!bm[i.buyer]) bm[i.buyer] = {shipMonth: shipMo, dueMo, dueDate, amt:0};
     bm[i.buyer].amt += i.bamt;
+    if(dueDate && (!bm[i.buyer].dueDate || dueDate > bm[i.buyer].dueDate)){
+      bm[i.buyer].dueDate = dueDate;
+      bm[i.buyer].dueMo = dueMo;
+    }
   });
 
-  // 매출처별 집계 (회사 단위)
+  // 매출처별 집계
   const sm = {};
-  sellItems.forEach(i => {
-    if(!i.seller) return;
+  allItems.forEach(i=>{
+    if(!i.seller || i.closing_sell_exclude) return;
+    const sellMo = i.closing_month_override || ym(i.ship) || '';
+    if(!sellMo) return;
     const company = i.seller.split('_')[0];
-    if(!sm[company]) sm[company] = {amt:0};
+    const stKeyBase = `${sellMo}_sell_${company}_date`;
+    const dueDate = closingState[stKeyBase] || computeDueDate(company, sellMo) || '';
+    const dueMo = dueDate ? dueDate.slice(0,7) : sellMo;
+    if(!sm[company]) sm[company] = {shipMonth: sellMo, dueMo, dueDate, amt:0};
     sm[company].amt += i.samt;
+    if(dueDate && (!sm[company].dueDate || dueDate > sm[company].dueDate)){
+      sm[company].dueDate = dueDate;
+      sm[company].dueMo = dueMo;
+    }
   });
+
+  // 월 목록: 출금/입금 예정일 기준
+  const dueMos = [...new Set([
+    ...Object.values(bm).map(v=>v.dueMo).filter(Boolean),
+    ...Object.values(sm).map(v=>v.dueMo).filter(Boolean)
+  ])].sort().reverse();
+  // 거래 발생월도 포함
+  const allMos = [...new Set([
+    ...dueMos,
+    ...allItems.map(i=>i.ship?ym(i.ship):'').filter(Boolean)
+  ])].sort().reverse();
+
+  const sel = document.getElementById('cf-month');
+  const cm = sel.value || dueMos[0] || '';
+  sel.innerHTML = allMos.map(m=>`<option value="${m}"${m===cm?' selected':''}>${m}</option>`).join('');
+  if(!sel.value && dueMos[0]) sel.value = dueMos[0];
+
+  // 해당 월에 출금/입금 예정인 업체만 필터
+  const buyItems = Object.entries(bm).filter(([,v])=>!cm || v.dueMo===cm);
+  const sellItems = Object.entries(sm).filter(([,v])=>!cm || v.dueMo===cm);
+
+  
 
   const stKey = (type,name,field) => `${cm||'all'}_${type}_${name}_${field}`;
+
 
   // 해당 월 선급금/선수금 (pay_date 기준 해당 월만)
   const prepaidMap = {};
@@ -2895,9 +2938,9 @@ function renderCashflow(){
     }
   });
 
-  // 매입처 지급 테이블
+  // 매입처 지급 테이블 (출금예정일 기준 필터된 buyItems 사용)
   let totalPay = 0;
-  const payRows = Object.entries(bm)
+  const payRows = buyItems
     .filter(([,v]) => v.amt > 0)
     .sort((a,b) => b[1].amt - a[1].amt)
     .map(([name, v]) => {
@@ -2906,8 +2949,8 @@ function renderCashflow(){
       const prepaid = prepaidMap[name] || 0;
       const net = total - prepaid;
       totalPay += net;
-      const due = closingState[stKey('buy',name,'date')] || computeDueDate(name, cm) || '';
-      const cfPayKey = `cf_${cm}_buy_${name}`;
+      const due = v.dueDate || '';
+      const cfPayKey = `cf_${v.dueMo||cm}_buy_${name}`;
       const cfPayChecked = closingState[cfPayKey] === '확인';
       return `<tr style="${cfPayChecked?'background:#f0fdf4;':''}">
         <td style="font-weight:600;${cfPayChecked?'color:#166534;text-decoration:line-through':''}">${name}</td>
@@ -2926,9 +2969,9 @@ function renderCashflow(){
     '<tr><td colspan="5" style="text-align:center;color:#bbb;padding:1.5rem">내역 없음</td></tr>';
   document.getElementById('cf-pay-total').textContent = '총 ' + fmtW(totalPay);
 
-  // 매출처 수령 테이블
+  // 매출처 수령 테이블 (입금예정일 기준 필터된 sellItems 사용)
   let totalRecv = 0;
-  const recvRows = Object.entries(sm)
+  const recvRows = sellItems
     .filter(([,v]) => v.amt > 0)
     .sort((a,b) => b[1].amt - a[1].amt)
     .map(([name, v]) => {
@@ -2937,8 +2980,8 @@ function renderCashflow(){
       const advance = advanceMap[name] || 0;
       const net = total - advance;
       totalRecv += net;
-      const due = closingState[stKey('sell',name,'date')] || computeDueDate(name, cm) || '';
-      const cfRecvKey = `cf_${cm}_sell_${name}`;
+      const due = v.dueDate || '';
+      const cfRecvKey = `cf_${v.dueMo||cm}_sell_${name}`;
       const cfRecvChecked = closingState[cfRecvKey] === '확인';
       return `<tr style="${cfRecvChecked?'background:#f0fdf4;':''}">
         <td style="font-weight:600;${cfRecvChecked?'color:#166534;text-decoration:line-through':''}">${name}</td>
@@ -3454,7 +3497,7 @@ function renderAnnual(){
       // 하위 품목 행들 (기본 숨김)
       const childRows = childParties.map(cp=>{
         const cpRows = rows.filter(r=>r.party===cp);
-        const itemName = cp; // 전체 이름 표시 (테크피아_CTO-C3)
+        const itemName = cp.includes('_') ? cp.split('_').slice(1).join('_') : cp; // 업체명_ 제거하고 품목명만 표시
         // partyGroupHtml을 호출하되 groupId를 상위에 연결
         return cpRows.map(r=>`<tr class="${groupId}-row" style="display:none;background:#f7f9ff">
           <td colspan="2" style="padding-left:28px;font-size:12px;color:#333;font-weight:500">└ ${itemName}</td>
