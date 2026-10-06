@@ -3490,8 +3490,10 @@ function renderPL(){
   document.getElementById('vat-body').innerHTML=`
     <tr><td style="padding:8px 12px">매출세액 (납품기준 매출액×10%)</td><td class="r" style="padding:8px 12px">${fmtW(outputVat)}</td></tr>
     ${advTaxSell>0?`<tr style="background:#fef9c3"><td style="padding:6px 12px;color:#854d0e">└ 선수금 세금계산서 발행분 (${pm||'전체'})</td><td class="r" style="padding:6px 12px;color:#854d0e">+${fmtW(advTaxSell)}</td></tr>`:''}
+    ${advTaxSellDeduct>0?`<tr style="background:#fef0f0"><td style="padding:6px 12px;padding-left:24px;font-size:12px;color:#991b1b">└ 선수금 기납부세액 차감 (타월 발행분)</td><td class="r" style="padding:6px 12px;color:#991b1b">-${fmtW(advTaxSellDeduct)}</td></tr>`:''}
     <tr><td style="padding:8px 12px">매입세액 - 매입원가분 (당기매입×10%)</td><td class="r" style="padding:8px 12px">${fmtW(inputVatCogs)}</td></tr>
     ${advTaxBuy>0?`<tr style="background:#fef9c3"><td style="padding:6px 12px;color:#854d0e">└ 선급금 세금계산서 발행분 (${pm||'전체'})</td><td class="r" style="padding:6px 12px;color:#854d0e">+${fmtW(advTaxBuy)}</td></tr>`:''}
+    ${advTaxBuyDeduct>0?`<tr style="background:#fef0f0"><td style="padding:6px 12px;padding-left:24px;font-size:12px;color:#991b1b">└ 선급금 기공제세액 차감 (타월 발행분)</td><td class="r" style="padding:6px 12px;color:#991b1b">-${fmtW(advTaxBuyDeduct)}</td></tr>`:''}
     <tr><td style="padding:4px 12px">기타매입세액 (판관비 등)</td><td class="r" style="padding:3px 12px">
       <input type="number" value="${otherInputVat}" style="width:130px;text-align:right;border:1px solid #ddd;border-radius:4px;padding:4px 8px"
         onchange="saveVat('${vatKey}','기타매입세액',this.value)">
