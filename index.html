@@ -226,6 +226,7 @@ input[readonly]{background:#f5f5f5;color:#999}
     <button class="nav-btn" onclick="go('deliver')">납품 현황</button>
     <button class="nav-btn" onclick="go('closing')">마감현황</button>
     <button class="nav-btn" onclick="go('cashflow')">실입출금</button>
+    <button class="nav-btn" onclick="go('hometax')">홈택스</button>
     <button class="nav-btn" onclick="go('pl')">손익계산서</button>
     <button class="nav-btn" onclick="go('balance')">대차대조표</button>
     <button class="nav-btn" onclick="go('txclass')">지출분류</button>
@@ -486,6 +487,70 @@ input[readonly]{background:#f5f5f5;color:#999}
     <div class="section-box" style="margin-top:16px">
       <div class="section-title">💰 순현금흐름 요약</div>
       <div class="metrics" id="cf-metrics"></div>
+    </div>
+  </div>
+
+  <!-- 홈택스 세금계산서 -->
+  <div id="page-hometax" class="page">
+    <div style="display:flex;gap:8px;margin-bottom:14px;align-items:center;flex-wrap:wrap">
+      <select id="ht-month" onchange="renderHometax()" style="padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px"></select>
+      <span style="font-size:12px;color:#888">홈택스 전자세금계산서 vs 앱 데이터 비교</span>
+    </div>
+    <!-- 업로드 섹션 -->
+    <div class="section-box" style="margin-bottom:14px">
+      <div class="section-title">📤 세금계산서 업로드 (홈택스 엑셀)</div>
+      <div style="padding:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+        <select id="ht-type" style="padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px">
+          <option value="sell">매출 세금계산서</option>
+          <option value="buy">매입 세금계산서</option>
+        </select>
+        <input type="file" id="ht-file" accept=".xls,.xlsx" onchange="handleHometaxFile(event)">
+        <span id="ht-status" style="font-size:12px;color:#888"></span>
+      </div>
+    </div>
+    <!-- 비교 결과 -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <!-- 매출 -->
+      <div class="section-box">
+        <div class="section-title" style="justify-content:space-between">
+          <span>📊 매출 세금계산서</span>
+          <span id="ht-sell-summary" style="font-size:12px;color:#666"></span>
+        </div>
+        <table class="data-tbl">
+          <thead><tr>
+            <th>작성일자</th>
+            <th>거래처</th>
+            <th class="r">공급가액</th>
+            <th class="r">세액</th>
+            <th style="width:70px;text-align:center">상태</th>
+          </tr></thead>
+          <tbody id="ht-sell-body"></tbody>
+          <tfoot id="ht-sell-foot"></tfoot>
+        </table>
+      </div>
+      <!-- 매입 -->
+      <div class="section-box">
+        <div class="section-title" style="justify-content:space-between">
+          <span>📊 매입 세금계산서</span>
+          <span id="ht-buy-summary" style="font-size:12px;color:#666"></span>
+        </div>
+        <table class="data-tbl">
+          <thead><tr>
+            <th>작성일자</th>
+            <th>거래처</th>
+            <th class="r">공급가액</th>
+            <th class="r">세액</th>
+            <th style="width:70px;text-align:center">상태</th>
+          </tr></thead>
+          <tbody id="ht-buy-body"></tbody>
+          <tfoot id="ht-buy-foot"></tfoot>
+        </table>
+      </div>
+    </div>
+    <!-- 부가세 대사 요약 -->
+    <div class="section-box" style="margin-top:16px">
+      <div class="section-title">🔍 부가세 대사 요약</div>
+      <div class="metrics" id="ht-metrics"></div>
     </div>
   </div>
 
@@ -2465,8 +2530,8 @@ function renderDeliver(){
 
 /* ── 탭 전환 ── */
 function go(p){
-  const navIds=['list','deliver','closing','cashflow','pl','balance','txclass','annual','settings'];
-  const allIds=['list','deliver','closing','cashflow','pl','balance','txclass','annual','new','settings'];
+  const navIds=['list','deliver','closing','cashflow','hometax','pl','balance','txclass','annual','settings'];
+  const allIds=['list','deliver','closing','cashflow','hometax','pl','balance','txclass','annual','new','settings'];
   allIds.forEach(id=>{
     document.getElementById('page-'+id).classList.toggle('on',id===p);
   });
@@ -2478,6 +2543,7 @@ function go(p){
   if(p==='deliver')renderDeliver();
   if(p==='closing')renderClosing();
   if(p==='cashflow')renderCashflow();
+  if(p==='hometax')renderHometax();
   if(p==='pl')renderPL();
   // 일반 사용자 조회 전용 탭 안내 배너 표시
   applyRoleRestrictions(p);
@@ -2735,7 +2801,11 @@ function renderClosing(){
   const totSell=Object.values(sm).reduce((s,v)=>s+v.amt,0);
   const margin=totSell-totBuy;
 
-  const stKey=(type,name,field)=>`${cm||'all'}_${type}_${name}_${field}`;
+  // stKey: 거래월 기준 (closingState 키 형식: {거래월}_{type}_{업체}_date)
+  const stKey=(type,name,field)=>{
+    const tradeMo = type==='buy' ? (bm[name]?.tradeMo||cm) : (sm[name]?.tradeMo||cm);
+    return `${tradeMo||cm}_${type}_${name}_${field}`;
+  };
 
   function stSelect(type, name, field, opts){
     const key=stKey(type,name,field);
@@ -2846,84 +2916,81 @@ function renderClosing(){
 let _closingCache=null;
 
 function renderCashflow(){
-  // 실입출금 탭 - 출금/입금 예정일 기준으로 집계
-  // closingState의 date 값(출금/입금예정일) 기준으로 해당 월에 표시
   const allItems = orders.flatMap(o=>o.items);
+  const sellMonthOf = i => i.closing_month_override || ym(i.ship);
 
-  // closingState에서 업체별 예정일 추출
-  // 키 형식: {월}_{buy/sell}_{업체명}_date
-  const getDueMonth = (type, name) => {
-    // 모든 월의 closingState에서 해당 업체의 date 찾기
-    for(const key of Object.keys(closingState)){
-      if(key.includes(`_${type}_${name}_date`)){
-        const dateVal = closingState[key];
-        if(dateVal) return dateVal.slice(0,7); // yyyy-mm
-      }
-    }
-    return null;
-  };
-
-  // 매입처별 집계 (출하일 기준으로 거래 묶기, 표시는 출금예정일 기준)
-  const bm = {};
-  allItems.forEach(i=>{
-    if(!i.buyer || i.closing_sell_exclude) return;
-    if(!i.ship) return;
-    const shipMo = ym(i.ship);
-    const stKeyBase = `${shipMo}_buy_${i.buyer}_date`;
-    const dueDate = closingState[stKeyBase] || computeDueDate(i.buyer, shipMo) || '';
-    const dueMo = dueDate ? dueDate.slice(0,7) : shipMo;
-    if(!bm[i.buyer]) bm[i.buyer] = {shipMonth: shipMo, dueMo, dueDate, amt:0};
-    bm[i.buyer].amt += i.bamt;
-    if(dueDate && (!bm[i.buyer].dueDate || dueDate > bm[i.buyer].dueDate)){
-      bm[i.buyer].dueDate = dueDate;
-      bm[i.buyer].dueMo = dueMo;
-    }
+  // 출금/입금 예정일 기준 월 목록 생성
+  // closingState에서 date 키만 추출해서 value(예정일)의 월을 목록으로
+  const dueMoSet = new Set();
+  Object.entries(closingState).forEach(([key, val])=>{
+    if(key.endsWith('_date') && val) dueMoSet.add(val.slice(0,7));
   });
-
-  // 매출처별 집계
-  const sm = {};
-  allItems.forEach(i=>{
-    if(!i.seller || i.closing_sell_exclude) return;
-    const sellMo = i.closing_month_override || ym(i.ship) || '';
-    if(!sellMo) return;
-    const company = i.seller.split('_')[0];
-    const stKeyBase = `${sellMo}_sell_${company}_date`;
-    const dueDate = closingState[stKeyBase] || computeDueDate(company, sellMo) || '';
-    const dueMo = dueDate ? dueDate.slice(0,7) : sellMo;
-    if(!sm[company]) sm[company] = {shipMonth: sellMo, dueMo, dueDate, amt:0};
-    sm[company].amt += i.samt;
-    if(dueDate && (!sm[company].dueDate || dueDate > sm[company].dueDate)){
-      sm[company].dueDate = dueDate;
-      sm[company].dueMo = dueMo;
-    }
-  });
-
-  // 월 목록: 출금/입금 예정일 기준
-  const dueMos = [...new Set([
-    ...Object.values(bm).map(v=>v.dueMo).filter(Boolean),
-    ...Object.values(sm).map(v=>v.dueMo).filter(Boolean)
-  ])].sort().reverse();
-  // 거래 발생월도 포함
-  const allMos = [...new Set([
-    ...dueMos,
-    ...allItems.map(i=>i.ship?ym(i.ship):'').filter(Boolean)
-  ])].sort().reverse();
+  // 거래 발생월도 포함 (예정일 미입력 건 대비)
+  allItems.forEach(i=>{ if(i.ship) dueMoSet.add(ym(i.ship)); });
+  const allMos = [...dueMoSet].sort().reverse();
 
   const sel = document.getElementById('cf-month');
-  const cm = sel.value || dueMos[0] || '';
+  const cm = sel.value || allMos[0] || '';
   sel.innerHTML = allMos.map(m=>`<option value="${m}"${m===cm?' selected':''}>${m}</option>`).join('');
-  if(!sel.value && dueMos[0]) sel.value = dueMos[0];
+  if(!sel.value && allMos[0]) sel.value = allMos[0];
 
-  // 해당 월에 출금/입금 예정인 업체만 필터
-  const buyItems = Object.entries(bm).filter(([,v])=>!cm || v.dueMo===cm);
-  const sellItems = Object.entries(sm).filter(([,v])=>!cm || v.dueMo===cm);
+  // cm(조회월)에 출금/입금 예정인 업체 찾기
+  // closingState에서 value가 cm 월인 키를 추출
+  const buyDueCompanies = {}; // 이번 달 출금 예정 매입처 → 거래월
+  const sellDueCompanies = {}; // 이번 달 입금 예정 매출처 → 거래월
+  Object.entries(closingState).forEach(([key, val])=>{
+    if(!key.endsWith('_date') || !val) return;
+    if(val.slice(0,7) !== cm) return;
+    // 키: {거래월}_buy_{업체명}_date
+    const parts = key.split('_');
+    if(parts.length < 4) return;
+    const type = parts[1]; // buy or sell
+    const tradeMo = parts[0]; // 거래월
+    const name = parts.slice(2, parts.length-1).join('_'); // 업체명
+    if(type==='buy') buyDueCompanies[name] = tradeMo;
+    else if(type==='sell') sellDueCompanies[name] = tradeMo;
+  });
 
-  
+  // 해당 거래월의 매입/매출 집계
+  const bm = {};
+  Object.entries(buyDueCompanies).forEach(([buyer, tradeMo])=>{
+    allItems.filter(i=>!i.closing_sell_exclude && i.buyer===buyer && ym(i.ship)===tradeMo)
+      .forEach(i=>{
+        if(!bm[buyer]) bm[buyer]={amt:0, tradeMo};
+        bm[buyer].amt += i.bamt;
+      });
+  });
 
-  const stKey = (type,name,field) => `${cm||'all'}_${type}_${name}_${field}`;
+  const sm = {};
+  Object.entries(sellDueCompanies).forEach(([company, tradeMo])=>{
+    allItems.filter(i=>{
+      if(i.closing_sell_exclude) return false;
+      const co = (i.seller||'').split('_')[0];
+      return co===company && sellMonthOf(i)===tradeMo;
+    }).forEach(i=>{
+      if(!sm[company]) sm[company]={amt:0, tradeMo};
+      sm[company].amt += i.samt;
+    });
+  });
 
+  // 예정일 미입력 업체 → 거래발생월=cm인 건도 포함
+  allItems.filter(i=>!i.closing_sell_exclude && i.buyer && ym(i.ship)===cm).forEach(i=>{
+    const hasKey = Object.keys(closingState).some(k=>k===`${cm}_buy_${i.buyer}_date`);
+    if(!hasKey){
+      if(!bm[i.buyer]) bm[i.buyer]={amt:0, tradeMo:cm};
+      bm[i.buyer].amt += i.bamt;
+    }
+  });
+  allItems.filter(i=>!i.closing_sell_exclude && i.seller && sellMonthOf(i)===cm).forEach(i=>{
+    const company=(i.seller||'').split('_')[0];
+    const hasKey = Object.keys(closingState).some(k=>k===`${cm}_sell_${company}_date`);
+    if(!hasKey){
+      if(!sm[company]) sm[company]={amt:0, tradeMo:cm};
+      sm[company].amt += i.samt;
+    }
+  });
 
-  // 해당 월 선급금/선수금 (pay_date 기준 해당 월만)
+  // 선급금/선수금 (pay_date 기준 해당 월만)
   const prepaidMap = {};
   const advanceMap = {};
   advancePayments.forEach(a => {
@@ -2938,9 +3005,9 @@ function renderCashflow(){
     }
   });
 
-  // 매입처 지급 테이블 (출금예정일 기준 필터된 buyItems 사용)
+  // 매입처 지급 테이블
   let totalPay = 0;
-  const payRows = buyItems
+  const payRows = Object.entries(bm)
     .filter(([,v]) => v.amt > 0)
     .sort((a,b) => b[1].amt - a[1].amt)
     .map(([name, v]) => {
@@ -2949,8 +3016,8 @@ function renderCashflow(){
       const prepaid = prepaidMap[name] || 0;
       const net = total - prepaid;
       totalPay += net;
-      const due = v.dueDate || '';
-      const cfPayKey = `cf_${v.dueMo||cm}_buy_${name}`;
+      const due = closingState[stKey('buy',name,'date')] || computeDueDate(name, cm) || '';
+      const cfPayKey = `cf_${cm}_buy_${name}`;
       const cfPayChecked = closingState[cfPayKey] === '확인';
       return `<tr style="${cfPayChecked?'background:#f0fdf4;':''}">
         <td style="font-weight:600;${cfPayChecked?'color:#166534;text-decoration:line-through':''}">${name}</td>
@@ -2966,12 +3033,12 @@ function renderCashflow(){
     }).join('');
 
   document.getElementById('cf-pay-body').innerHTML = payRows ||
-    '<tr><td colspan="5" style="text-align:center;color:#bbb;padding:1.5rem">내역 없음</td></tr>';
+    '<tr><td colspan="6" style="text-align:center;color:#bbb;padding:1.5rem">내역 없음</td></tr>';
   document.getElementById('cf-pay-total').textContent = '총 ' + fmtW(totalPay);
 
-  // 매출처 수령 테이블 (입금예정일 기준 필터된 sellItems 사용)
+  // 매출처 수령 테이블
   let totalRecv = 0;
-  const recvRows = sellItems
+  const recvRows = Object.entries(sm)
     .filter(([,v]) => v.amt > 0)
     .sort((a,b) => b[1].amt - a[1].amt)
     .map(([name, v]) => {
@@ -2980,8 +3047,8 @@ function renderCashflow(){
       const advance = advanceMap[name] || 0;
       const net = total - advance;
       totalRecv += net;
-      const due = v.dueDate || '';
-      const cfRecvKey = `cf_${v.dueMo||cm}_sell_${name}`;
+      const due = closingState[stKey('sell',name,'date')] || computeDueDate(name, cm) || '';
+      const cfRecvKey = `cf_${cm}_sell_${name}`;
       const cfRecvChecked = closingState[cfRecvKey] === '확인';
       return `<tr style="${cfRecvChecked?'background:#f0fdf4;':''}">
         <td style="font-weight:600;${cfRecvChecked?'color:#166534;text-decoration:line-through':''}">${name}</td>
@@ -2997,7 +3064,7 @@ function renderCashflow(){
     }).join('');
 
   document.getElementById('cf-recv-body').innerHTML = recvRows ||
-    '<tr><td colspan="5" style="text-align:center;color:#bbb;padding:1.5rem">내역 없음</td></tr>';
+    '<tr><td colspan="6" style="text-align:center;color:#bbb;padding:1.5rem">내역 없음</td></tr>';
   document.getElementById('cf-recv-total').textContent = '총 ' + fmtW(totalRecv);
 
   // 순현금흐름 요약
@@ -3008,6 +3075,129 @@ function renderCashflow(){
     <div class="metric"><div class="metric-lbl">💰 순현금흐름</div><div class="metric-val ${net>=0?'g':'b'}">${net>=0?'+':''}${fmtW(net)}</div></div>`;
 }
 
+
+async function handleHometaxFile(event){
+  const file = event.target.files[0];
+  if(!file) return;
+  const type = document.getElementById('ht-type').value;
+  const status = document.getElementById('ht-status');
+  status.textContent = '읽는 중...';
+
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, {type:'array'});
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
+
+  // 6행이 헤더, 7행부터 데이터
+  const dataRows = rows.slice(6).filter(r=>r[0]);
+  const records = dataRows.map(r=>({
+    type,
+    issue_date: String(r[0]).slice(0,10),
+    year_month: String(r[0]).slice(0,7),
+    approval_no: String(r[1]),
+    company: type==='sell' ? String(r[11]).replace(/^주식회사\s*|\s*(주)$/g,'').trim()
+                           : String(r[6]).replace(/^주식회사\s*|\s*(주)$/g,'').trim(),
+    supply_amt: +r[15]||0,
+    vat_amt: +r[16]||0,
+    total_amt: +r[14]||0,
+    item_name: String(r[26]||''),
+    invoice_type: String(r[18]||'일반'),
+  }));
+
+  // Supabase 저장 (승인번호+type 기준 upsert)
+  const {error} = await sb.from('tax_invoices').upsert(records, {onConflict:'approval_no,type'});
+  if(error){ status.textContent = '저장 오류: '+error.message; return; }
+
+  taxInvoices = await loadTaxInvoices();
+  status.textContent = `${records.length}건 업로드 완료`;
+  renderHometax();
+}
+
+async function renderHometax(){
+  if(!taxInvoices.length) taxInvoices = await loadTaxInvoices();
+
+  // 월 목록
+  const months = [...new Set(taxInvoices.map(t=>t.year_month).filter(Boolean))].sort().reverse();
+  const sel = document.getElementById('ht-month');
+  const cm = sel.value || months[0] || '';
+  sel.innerHTML = months.map(m=>`<option value="${m}"${m===cm?' selected':''}>${m}</option>`).join('');
+  if(!sel.value && months[0]) sel.value = months[0];
+
+  const sells = taxInvoices.filter(t=>t.type==='sell' && (!cm||t.year_month===cm));
+  const buys  = taxInvoices.filter(t=>t.type==='buy'  && (!cm||t.year_month===cm));
+
+  // 앱 데이터에서 해당 월 매출/매입 집계
+  const allItems = orders.flatMap(o=>o.items);
+  const sellMo = i => i.closing_month_override || ym(i.ship);
+  const appSells = {}; // 거래처별 매출 합계
+  allItems.filter(i=>!i.closing_sell_exclude && sellMo(i)===cm && i.samt>0).forEach(i=>{
+    const co = (i.seller||'').split('_')[0];
+    if(!appSells[co]) appSells[co]=0;
+    appSells[co]+=i.samt;
+  });
+  const appBuys = {}; // 거래처별 매입 합계
+  allItems.filter(i=>!i.closing_sell_exclude && ym(i.ship)===cm && i.bamt>0).forEach(i=>{
+    if(!appBuys[i.buyer]) appBuys[i.buyer]=0;
+    appBuys[i.buyer]+=i.bamt;
+  });
+
+  // 매출 테이블
+  let sellTotal=0, sellVat=0;
+  document.getElementById('ht-sell-body').innerHTML = sells.length
+    ? sells.map(t=>{
+        sellTotal+=t.supply_amt; sellVat+=t.vat_amt;
+        const co = t.company;
+        const appAmt = Object.entries(appSells).find(([k])=>co.includes(k)||k.includes(co));
+        const match = appAmt && Math.abs(appAmt[1]-t.supply_amt)<1000;
+        const badge = appAmt
+          ? (match ? '<span style="color:#166534;font-size:11px">✅ 일치</span>'
+                   : `<span style="color:#dc2626;font-size:11px" title="앱: ${fmtW(appAmt[1])}">⚠️ 차이</span>`)
+          : '<span style="color:#9ca3af;font-size:11px">❓ 미매칭</span>';
+        return `<tr><td style="font-size:12px">${t.issue_date}</td>
+          <td style="font-size:12px">${t.company}</td>
+          <td class="r">${fmtW(t.supply_amt)}</td>
+          <td class="r">${fmtW(t.vat_amt)}</td>
+          <td style="text-align:center">${badge}</td></tr>`;
+      }).join('')
+    : '<tr><td colspan="5" style="text-align:center;color:#bbb;padding:1.5rem">데이터 없음</td></tr>';
+
+  document.getElementById('ht-sell-foot').innerHTML = sells.length
+    ? `<tr class="tot"><td colspan="2">합계</td><td class="r">${fmtW(sellTotal)}</td><td class="r">${fmtW(sellVat)}</td><td></td></tr>` : '';
+  document.getElementById('ht-sell-summary').textContent = `${sells.length}건`;
+
+  // 매입 테이블
+  let buyTotal=0, buyVat=0;
+  document.getElementById('ht-buy-body').innerHTML = buys.length
+    ? buys.map(t=>{
+        buyTotal+=t.supply_amt; buyVat+=t.vat_amt;
+        const co = t.company;
+        const appAmt = Object.entries(appBuys).find(([k])=>co.includes(k)||k.includes(co));
+        const match = appAmt && Math.abs(appAmt[1]-t.supply_amt)<1000;
+        const badge = appAmt
+          ? (match ? '<span style="color:#166534;font-size:11px">✅ 일치</span>'
+                   : `<span style="color:#dc2626;font-size:11px" title="앱: ${fmtW(appAmt[1])}">⚠️ 차이</span>`)
+          : '<span style="color:#9ca3af;font-size:11px">❓ 미매칭</span>';
+        return `<tr><td style="font-size:12px">${t.issue_date}</td>
+          <td style="font-size:12px">${t.company}</td>
+          <td class="r">${fmtW(t.supply_amt)}</td>
+          <td class="r">${fmtW(t.vat_amt)}</td>
+          <td style="text-align:center">${badge}</td></tr>`;
+      }).join('')
+    : '<tr><td colspan="5" style="text-align:center;color:#bbb;padding:1.5rem">데이터 없음</td></tr>';
+
+  document.getElementById('ht-buy-foot').innerHTML = buys.length
+    ? `<tr class="tot"><td colspan="2">합계</td><td class="r">${fmtW(buyTotal)}</td><td class="r">${fmtW(buyVat)}</td><td></td></tr>` : '';
+  document.getElementById('ht-buy-summary').textContent = `${buys.length}건`;
+
+  // 부가세 대사 요약
+  const netVat = sellVat - buyVat;
+  document.getElementById('ht-metrics').innerHTML = `
+    <div class="metric"><div class="metric-lbl">매출세액 (홈택스)</div><div class="metric-val g">${fmtW(sellVat)}</div></div>
+    <div class="metric"><div class="metric-lbl">매입세액 (홈택스)</div><div class="metric-val b">${fmtW(buyVat)}</div></div>
+    <div class="metric"><div class="metric-lbl">납부예상세액</div><div class="metric-val ${netVat>=0?'b':'g'}">${fmtW(netVat)}</div></div>`;
+}
+
+
 function renderAdvancePayments(){
   const cm=document.getElementById('cl-month').value;
   // 정산완료된 건은 pay_date 기준으로 해당 월 이전이면 숨김
@@ -3016,11 +3206,12 @@ function renderAdvancePayments(){
     if(!cm) return true; // 전체 보기면 항상 표시
     const payMonth = a.pay_date ? a.pay_date.slice(0,7) : null;
     if(!a.settled){
-      // 미정산: pay_date가 조회월과 같을 때만 표시 (없으면 전체 표시)
+      // 미정산: pay_date 없으면 항상 표시, 있으면 해당 월만
       if(!payMonth) return true;
       return payMonth === cm;
     } else {
-      // 정산완료: pay_date가 조회월과 같을 때만 표시 (정산한 달에만)
+      // 정산완료: pay_date가 조회월과 같을 때만 표시
+      if(!payMonth) return false; // 정산완료인데 날짜 없으면 숨김
       return payMonth === cm;
     }
   };
@@ -3442,7 +3633,9 @@ function renderAnnual(){
       const ttlq=m6q+q3q+q4q;
       const cat=partyCategory(category,party);
       return {key,party,item,cat,h1,m6,m6q,m7,m7q,m8,m8q,m9,m9q,q3,q3q,m10,m10q,m11,m11q,m12,m12q,q4,q4q,ttl,ttlq,manualId:mrow?mrow.id:null};
-    }).sort((a,b)=>(a.party+a.item).localeCompare(b.party+b.item));
+    })
+    .filter(r=>r.ttl>0 || r.h1>0) // 금액이 전혀 없는 행 제거
+    .sort((a,b)=>(a.party+a.item).localeCompare(b.party+b.item));
     return rows;
   }
 
@@ -3511,7 +3704,7 @@ function renderAnnual(){
           <td class="r" style="font-size:12px;color:#555;background:#f9f9f9">${fmt(r.q4)}${(showQty&&r.q4q)?`<br><span style="color:#999;font-size:10px">${r.q4q}개</span>`:''}</td>
           <td class="r" style="font-size:12px;font-weight:600">${fmt(r.ttl)}</td>
           <td class="r" style="font-size:12px;color:#666">${(showQty&&r.ttlq)?r.ttlq+'개':'-'}</td>
-          <td style="text-align:center">${r.h1?`<button class="del-btn" onclick="delAnnualRow('${category}','${r.party.replace(/'/g,"\\'")}','${r.item.replace(/'/g,"\\'")}')">×</button>`:''}</td>
+          <td style="text-align:center">${(r.h1||r.ttl)?`<button class="del-btn" onclick="delAnnualRow('${category}','${r.party.replace(/'/g,"\\'")}','${r.item.replace(/'/g,"\\'")}')">×</button>`:''}</td>
         </tr>`).join('');
       }).join('');
 
@@ -3571,7 +3764,7 @@ function renderAnnual(){
         <td class="r" style="font-size:12px;color:#555;background:#f9f9f9">${fmt(r.q4)}${(showQty&&r.q4q)?`<br><span style="color:#999;font-size:10px">${r.q4q}개</span>`:''}</td>
         <td class="r" style="font-size:12px;font-weight:600">${fmt(r.ttl)}</td>
         <td class="r" style="font-size:12px;color:#666">${(showQty&&r.ttlq)?r.ttlq+'개':'-'}</td>
-        <td style="text-align:center">${r.h1?`<button class="del-btn" onclick="delAnnualRow('${category}','${r.party.replace(/'/g,"\\'")}','${r.item.replace(/'/g,"\\'")}')">×</button>`:''}</td>
+        <td style="text-align:center">${(r.h1||r.ttl)?`<button class="del-btn" onclick="delAnnualRow('${category}','${r.party.replace(/'/g,"\\'")}','${r.item.replace(/'/g,"\\'")}')">×</button>`:''}</td>
       </tr>`).join('');
 
     return headerRow + detailRows;
