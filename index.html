@@ -3450,21 +3450,30 @@ function renderPL(){
   let quarterVatHtml = '';
   if(pm && [3,6,9,12].includes(curMo)){
     const qMos = quarterMonths[curMo];
-    let qOutVat=0, qInVatCogs=0, qOtherVat=0;
+    let qOutVat=0, qInVatCogs=0, qOtherVat=0, qAdvSell=0, qAdvSellDeduct=0, qAdvBuy=0, qAdvBuyDeduct=0;
     qMos.forEach(mo=>{
       const mKey = curYr+'-'+mo;
-      // 해당 월 매출/매입 집계
       const mItems = orders.flatMap(o=>o.items);
       const mSales = mItems.filter(i=>ym(i.ship)===mKey).reduce((s,i)=>s+(i.samt||0),0);
       const mPurch = mItems.filter(i=>ym(i.ship)===mKey).reduce((s,i)=>s+(i.bamt||0),0);
       qOutVat += Math.round(mSales*0.1);
       qInVatCogs += Math.round(mPurch*0.1);
-      const mVatKey = mKey;
-      if(vatData[mVatKey]){
-        qOtherVat += (vatData[mVatKey].find(i=>i.name==='기타매입세액')||{amt:0}).amt||0;
+      if(vatData[mKey]){
+        qOtherVat += (vatData[mKey].find(i=>i.name==='기타매입세액')||{amt:0}).amt||0;
       }
+      // 선수금/선급금 세금계산서 발행분 합산
+      qAdvSell += advancePayments.filter(a=>a.type==='선수금'&&a.tax_date&&a.tax_date.slice(0,7)===mKey)
+        .reduce((s,a)=>s+Math.round((+a.amount||0)*0.1),0);
+      qAdvSellDeduct += advancePayments.filter(a=>a.type==='선수금'&&a.tax_date&&a.pay_date&&
+        a.pay_date.slice(0,7)===mKey&&a.tax_date.slice(0,7)!==a.pay_date.slice(0,7))
+        .reduce((s,a)=>s+Math.round((+a.amount||0)*0.1),0);
+      qAdvBuy += advancePayments.filter(a=>a.type==='선급금'&&a.tax_date&&a.tax_date.slice(0,7)===mKey)
+        .reduce((s,a)=>s+Math.round((+a.amount||0)*0.1),0);
+      qAdvBuyDeduct += advancePayments.filter(a=>a.type==='선급금'&&a.tax_date&&a.pay_date&&
+        a.pay_date.slice(0,7)===mKey&&a.tax_date.slice(0,7)!==a.pay_date.slice(0,7))
+        .reduce((s,a)=>s+Math.round((+a.amount||0)*0.1),0);
     });
-    const qVatPayable = qOutVat - qInVatCogs - qOtherVat;
+    const qVatPayable = qOutVat+qAdvSell-qAdvSellDeduct - qInVatCogs-qAdvBuy+qAdvBuyDeduct - qOtherVat;
     const qLabel = vatPeriodLabel(pm);
     quarterVatHtml = `
     <tr style="background:#eff6ff;border-top:2px solid #3b82f6">
@@ -3526,7 +3535,7 @@ function renderPL(){
 
   _plCache={pm,sales,salesRaw,salesAdj,purchases,purchasesRaw,purchaseAdj,beginInv,endInv,cogs,gross,
     totalSga,sgaList,opIncome,otherInc,otherExp,otherList,preIncome,
-    outputVat,advTaxSell,inputVatCogs,advTaxBuy,otherInputVat,vatPayable};
+    outputVat,advTaxSell,advTaxSellDeduct,inputVatCogs,advTaxBuy,advTaxBuyDeduct,otherInputVat,vatPayable};
 }
 let _plCache=null;
 
