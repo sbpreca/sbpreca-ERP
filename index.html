@@ -3481,6 +3481,7 @@ function renderPL(){
 
   // 부가세 섹션 제거됨 → 홈택스 탭에서 확인
   const vatKey=pm||'all';
+  const outputVat=0, inputVatCogs=0, otherInputVat=0;
   // 선급금/선수금 중 해당 월에 세금계산서 발행된 건의 부가세
   // tax_date 기준으로 해당 월에 발행된 건만 집계
   const taxDateKey = pm || 'all';
