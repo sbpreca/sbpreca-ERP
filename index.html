@@ -404,17 +404,48 @@ input[readonly]{background:#f5f5f5;color:#999}
     </div>
 
     <div class="section-box" style="margin-bottom:14px">
-      <div class="section-title"><span>💰 분할 입출금 내역</span><span style="font-size:13px;color:#166534;font-weight:600" id="cl-advance-sum"></span></div>
+      <div class="section-title"><span>선급금 지급 내역 (매입처에 미리 준 돈)</span><span style="font-size:13px;color:#dc2626;font-weight:600" id="cl-prepaid-sum"></span></div>
       <table class="data-tbl">
-        <thead><tr><th>업체명</th><th class="r" style="width:140px">금액 (음수=지급)</th><th style="width:110px">입출금일</th><th style="width:110px">세금계산서<br>발행월</th><th>비고</th><th style="width:70px;text-align:center">정산완료</th><th style="width:36px"></th></tr></thead>
+        <thead><tr><th>매입처</th><th class="r" style="width:130px">금액</th><th style="width:110px">지급일</th><th style="width:110px">세금계산서<br>발행월</th><th>비고</th><th style="width:70px;text-align:center">정산완료</th><th style="width:36px"></th></tr></thead>
+        <tbody id="cl-prepaid-body"></tbody>
+      </table>
+      <div style="padding:10px 12px;display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid #eee">
+        <input id="ap-new-company" placeholder="매입처명" style="width:150px">
+        <input type="number" id="ap-new-amt" placeholder="금액" style="width:120px">
+        <input type="date" id="ap-new-date" style="width:140px">
+        <input id="ap-new-note" placeholder="비고 (선택)" style="width:180px">
+        <button class="btn btn-save" onclick="addAdvancePayment('선급금')">+ 추가</button>
+      </div>
+    </div>
+
+    <div class="section-box" style="margin-bottom:14px">
+      <div class="section-title"><span>선수금 수령 내역 (매출처에서 미리 받은 돈)</span><span style="font-size:13px;color:#166534;font-weight:600" id="cl-advance-sum"></span></div>
+      <table class="data-tbl">
+        <thead><tr><th>매출처</th><th class="r" style="width:130px">금액</th><th style="width:110px">수령일</th><th style="width:110px">세금계산서<br>발행월</th><th>비고</th><th style="width:70px;text-align:center">정산완료</th><th style="width:36px"></th></tr></thead>
         <tbody id="cl-advance-body"></tbody>
       </table>
       <div style="padding:10px 12px;display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid #eee">
-        <input id="ar-new-company" placeholder="업체명" style="width:130px">
-        <input type="number" id="ar-new-amt" placeholder="금액 (음수=지급)" style="width:150px">
+        <input id="ar-new-company" placeholder="매출처명" style="width:150px">
+        <input type="number" id="ar-new-amt" placeholder="금액" style="width:120px">
         <input type="date" id="ar-new-date" style="width:140px">
         <input id="ar-new-note" placeholder="비고 (선택)" style="width:180px">
-        <button class="btn btn-save" onclick="addAdvancePaymentUnified()">+ 추가</button>
+        <button class="btn btn-save" onclick="addAdvancePayment('선수금')">+ 추가</button>
+      </div>
+    </div>
+
+    <!-- 분할 입출금 예정 -->
+    <div class="section-box" style="margin-bottom:14px">
+      <div class="section-title"><span>📅 분할 입출금 예정</span><span style="font-size:12px;color:#888;font-weight:400;margin-left:8px">앞으로 받을/줄 금액 (양수=수령, 음수=지급)</span></div>
+      <table class="data-tbl">
+        <thead><tr><th>업체명</th><th class="r" style="width:140px">금액</th><th style="width:110px">예정일</th><th>비고</th><th style="width:70px;text-align:center">완료</th><th style="width:36px"></th></tr></thead>
+        <tbody id="cl-split-body"></tbody>
+      </table>
+      <div style="padding:10px 12px;display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid #eee">
+        <input id="sp-new-company" placeholder="업체명" style="width:130px">
+        <input type="number" id="sp-new-amt" placeholder="금액 (음수=지급)" style="width:150px">
+        <input type="date" id="sp-new-date" style="width:140px">
+        <input id="sp-new-note" placeholder="비고 (선택)" style="width:180px">
+        <button class="btn btn-save" onclick="addSplitPayment()">+ 추가</button>
       </div>
     </div>
   </div>
@@ -1607,6 +1638,7 @@ async function loadAll(){
     balanceData = await loadBalanceFromDb();
     monthlyNotes = await loadMonthlyNotesFromDb();
     advancePayments = await loadAdvancePaymentsFromDb();
+  splitPayments = await loadSplitPaymentsFromDb();
     showSyncStatus('연결됨');
   }catch(err){
     console.error('loadAll error:', err);
@@ -3094,6 +3126,40 @@ function renderCashflow(){
     '<tr><td colspan="6" style="text-align:center;color:#bbb;padding:1.5rem">내역 없음</td></tr>';
   document.getElementById('cf-recv-total').textContent = '총 ' + fmtW(totalRecv);
 
+  // 분할 입출금 예정 (split_payments) - 예정일 기준
+  const splitRecv = splitPayments.filter(s=>!s.settled && s.amount>0 && s.due_date && s.due_date.slice(0,7)===cm);
+  const splitPay = splitPayments.filter(s=>!s.settled && s.amount<0 && s.due_date && s.due_date.slice(0,7)===cm);
+
+  if(splitRecv.length || splitPay.length){
+    const splitRecvHtml = splitRecv.map(s=>`<tr>
+      <td style="font-weight:600">${s.company}</td>
+      <td class="r">${fmtW(s.amount)}</td>
+      <td class="r" style="color:#999">-</td>
+      <td class="r" style="font-weight:700;color:#166534">${fmtW(s.amount)}</td>
+      <td style="font-size:12px;color:#555">${s.due_date||'-'}</td>
+      <td style="text-align:center"><input type="checkbox" onchange="saveSplitField('${s.id}','settled',this.checked);renderCashflow()"></td>
+    </tr>`).join('');
+    const splitPayHtml = splitPay.map(s=>`<tr>
+      <td style="font-weight:600">${s.company}</td>
+      <td class="r">${fmtW(Math.abs(s.amount))}</td>
+      <td class="r" style="color:#999">-</td>
+      <td class="r" style="font-weight:700;color:#dc2626">${fmtW(Math.abs(s.amount))}</td>
+      <td style="font-size:12px;color:#555">${s.due_date||'-'}</td>
+      <td style="text-align:center"><input type="checkbox" onchange="saveSplitField('${s.id}','settled',this.checked);renderCashflow()"></td>
+    </tr>`).join('');
+
+    if(splitRecvHtml){
+      document.getElementById('cf-recv-body').innerHTML += splitRecvHtml;
+      splitRecv.forEach(s=>{ totalRecv += s.amount; });
+      document.getElementById('cf-recv-total').textContent = '총 ' + fmtW(totalRecv);
+    }
+    if(splitPayHtml){
+      document.getElementById('cf-pay-body').innerHTML += splitPayHtml;
+      splitPay.forEach(s=>{ totalPay += Math.abs(s.amount); });
+      document.getElementById('cf-pay-total').textContent = '총 ' + fmtW(totalPay);
+    }
+  }
+
   // 순현금흐름 요약
   const net = totalRecv - totalPay;
   document.getElementById('cf-metrics').innerHTML = `
@@ -3339,39 +3405,45 @@ function renderAdvancePayments(){
     </tr>`;
   }
 
-  // 통합 뷰: 선수금(양수) + 선급금(음수) 합쳐서 표시
-  const allAdv = [
-    ...advance.map(a=>({...a, _sign:1})),
-    ...prepaid.map(a=>({...a, _sign:-1}))
-  ].sort((a,b)=>(a.pay_date||'').localeCompare(b.pay_date||''));
-
-  document.getElementById('cl-advance-body').innerHTML = allAdv.length
-    ? allAdv.map(a=>{
-        const isNeg = a.type==='선급금';
-        const color = isNeg ? '#dc2626' : '#166534';
-        const dispAmt = isNeg ? `-${fmtW(a.amount)}` : `+${fmtW(a.amount)}`;
-        return `<tr>
-          <td style="font-size:12px;font-weight:600">${a.company}</td>
-          <td class="r" style="color:${color};font-weight:700">${dispAmt}</td>
-          <td><input type="date" value="${a.pay_date||''}" style="width:100%;font-size:11px;border:1px solid #eee;padding:3px;border-radius:4px"
-            onchange="saveAdvanceField('${a.id}','pay_date',this.value)"></td>
-          <td><input type="month" value="${a.tax_date?a.tax_date.slice(0,7):''}" style="width:100%;font-size:11px;border:1px solid #eee;padding:3px;border-radius:4px"
-            onchange="saveAdvanceField('${a.id}','tax_date',this.value?this.value+'-01':'')"></td>
-          <td><input value="${a.note||''}" style="width:100%;font-size:11px;border:1px solid #eee;padding:3px;border-radius:4px"
-            onchange="saveAdvanceField('${a.id}','note',this.value)"></td>
-          <td style="text-align:center"><input type="checkbox" ${a.settled?'checked':''} title="정산완료"
-            onchange="saveAdvanceField('${a.id}','settled',this.checked)"></td>
-          <td style="text-align:center"><button class="del-btn" onclick="delAdvancePayment('${a.id}')">×</button></td>
-        </tr>`;
-      }).join('')
-    : `<tr><td colspan="7" style="text-align:center;color:#bbb;padding:1rem">없어요</td></tr>`;
+  document.getElementById('cl-prepaid-body').innerHTML = prepaid.length
+    ? prepaid.map(rowHtml).join('')
+    : `<tr><td colspan="6" style="text-align:center;color:#bbb;padding:1rem">없어요</td></tr>`;
+  document.getElementById('cl-advance-body').innerHTML = advance.length
+    ? advance.map(rowHtml).join('')
+    : `<tr><td colspan="6" style="text-align:center;color:#bbb;padding:1rem">없어요</td></tr>`;
 
   const prepaidBal=prepaid.filter(a=>!a.settled).reduce((s,a)=>s+(+a.amount||0),0);
   const advanceBal=advance.filter(a=>!a.settled).reduce((s,a)=>s+(+a.amount||0),0);
-  const netBal = advanceBal - prepaidBal;
-  const netColor = netBal >= 0 ? '#166534' : '#dc2626';
-  // cl-prepaid-sum 제거됨
-  document.getElementById('cl-advance-sum').textContent=`순잔액: ${netBal>=0?'+':''}${fmtW(netBal)}`;
+  document.getElementById('cl-prepaid-sum').textContent=`미정산 잔액: ${fmtW(prepaidBal)}`;
+  document.getElementById('cl-advance-sum').textContent=`미정산 잔액: ${fmtW(advanceBal)}`;
+
+  // 분할 입출금 렌더링
+  const splitEl = document.getElementById('cl-split-body');
+  if(splitEl){
+    const visibleSplits = splitPayments.filter(s=>{
+      if(!cm) return true;
+      const dueMo = s.due_date ? s.due_date.slice(0,7) : null;
+      if(!s.settled) return !dueMo || dueMo===cm;
+      return dueMo===cm;
+    });
+    splitEl.innerHTML = visibleSplits.length
+      ? visibleSplits.map(s=>{
+          const isNeg = s.amount < 0;
+          const color = isNeg ? '#dc2626' : '#166534';
+          return `<tr>
+            <td style="font-size:12px;font-weight:600">${s.company}</td>
+            <td class="r" style="color:${color};font-weight:700">${isNeg?'-':'+'} ${fmtW(Math.abs(s.amount))}</td>
+            <td><input type="date" value="${s.due_date||''}" style="width:100%;font-size:11px;border:1px solid #eee;padding:3px;border-radius:4px"
+              onchange="saveSplitField('${s.id}','due_date',this.value)"></td>
+            <td><input value="${s.note||''}" style="width:100%;font-size:11px;border:1px solid #eee;padding:3px;border-radius:4px"
+              onchange="saveSplitField('${s.id}','note',this.value)"></td>
+            <td style="text-align:center"><input type="checkbox" ${s.settled?'checked':''} title="완료"
+              onchange="saveSplitField('${s.id}','settled',this.checked)"></td>
+            <td style="text-align:center"><button class="del-btn" onclick="delSplitPayment('${s.id}')">×</button></td>
+          </tr>`;
+        }).join('')
+      : `<tr><td colspan="6" style="text-align:center;color:#bbb;padding:1rem">없어요</td></tr>`;
+  }
 }
 
 async function addAdvancePaymentUnified(){
@@ -3392,6 +3464,46 @@ async function addAdvancePaymentUnified(){
     document.getElementById('ar-new-note').value='';
     renderAdvancePayments();
   }
+}
+
+// ── 분할 입출금 (split_payments) ──────────────────
+let splitPayments = [];
+
+async function loadSplitPaymentsFromDb(){
+  const {data,error} = await sb.from('split_payments').select('*').order('due_date');
+  if(error){ console.error(error); return []; }
+  return data||[];
+}
+
+async function addSplitPayment(){
+  const company = document.getElementById('sp-new-company').value.trim();
+  const amount = +(document.getElementById('sp-new-amt').value)||0;
+  const due_date = document.getElementById('sp-new-date').value||null;
+  const note = document.getElementById('sp-new-note').value.trim();
+  if(!company||!amount){ alert('업체명과 금액을 입력해주세요'); return; }
+  const {data,error} = await sb.from('split_payments').insert({company,amount,due_date,note,settled:false}).select();
+  if(error){ console.error(error); return; }
+  splitPayments.push(data[0]);
+  document.getElementById('sp-new-company').value='';
+  document.getElementById('sp-new-amt').value='';
+  document.getElementById('sp-new-date').value='';
+  document.getElementById('sp-new-note').value='';
+  renderAdvancePayments();
+}
+
+async function saveSplitField(id, field, value){
+  const s = splitPayments.find(x=>x.id===id);
+  if(!s) return;
+  s[field] = field==='settled' ? value : (field==='amount' ? (+value||0) : value);
+  await sb.from('split_payments').update({[field]:s[field]}).eq('id',id);
+  renderAdvancePayments();
+}
+
+async function delSplitPayment(id){
+  if(!confirm('삭제할까요?')) return;
+  await sb.from('split_payments').delete().eq('id',id);
+  splitPayments = splitPayments.filter(s=>s.id!==id);
+  renderAdvancePayments();
 }
 
 async function addAdvancePayment(type){
