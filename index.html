@@ -3073,7 +3073,8 @@ function renderCashflow(){
       const vat = Math.round(v.amt * 0.1);
       const total = v.amt + vat;
       const prepaid = prepaidMap[name] || 0;
-      const net = total - prepaid;
+      const deduct = splitPayDeduct[name] || 0;
+      const net = total - prepaid - deduct;
       totalPay += net;
       const due = v.dueDate || '';
       const cfPayKey = `cf_${cm}_buy_${name}`;
@@ -3104,7 +3105,8 @@ function renderCashflow(){
       const vat = Math.round(v.amt * 0.1);
       const total = v.amt + vat;
       const advance = advanceMap[name] || 0;
-      const net = total - advance;
+      const deduct = splitRecvDeduct[name] || 0;
+      const net = total - advance - deduct;
       totalRecv += net;
       const due = v.dueDate || '';
       const cfRecvKey = `cf_${cm}_sell_${name}`;
@@ -3129,6 +3131,22 @@ function renderCashflow(){
   // 분할 입출금 예정 (split_payments) - 예정일 기준
   const splitRecv = splitPayments.filter(s=>!s.settled && s.amount>0 && s.due_date && s.due_date.slice(0,7)===cm);
   const splitPay = splitPayments.filter(s=>!s.settled && s.amount<0 && s.due_date && s.due_date.slice(0,7)===cm);
+
+  // 다른 달에 분할 입금 예정인 금액을 이번 달 마감현황 금액에서 차감
+  // 예: 성화전설 11월 입금예정인데, 10월에 분할 입금 1,340,900원 있으면
+  //     11월 실입출금에서 1,340,900원 차감
+  const splitRecvDeduct = {}; // {업체명: 차감할 금액}
+  const splitPayDeduct = {};
+  splitPayments.filter(s=>!s.settled && s.amount>0 && s.due_date && s.due_date.slice(0,7)!==cm).forEach(s=>{
+    // 이 분할 입금이 마감현황에서 cm월에 입금예정인 업체와 같은지 확인
+    if(!splitRecvDeduct[s.company]) splitRecvDeduct[s.company]=0;
+    // cm월 마감현황에 이 업체가 있으면 차감
+    if(sm[s.company]) splitRecvDeduct[s.company] += s.amount;
+  });
+  splitPayments.filter(s=>!s.settled && s.amount<0 && s.due_date && s.due_date.slice(0,7)!==cm).forEach(s=>{
+    if(!splitPayDeduct[s.company]) splitPayDeduct[s.company]=0;
+    if(bm[s.company]) splitPayDeduct[s.company] += Math.abs(s.amount);
+  });
 
   if(splitRecv.length || splitPay.length){
     const splitRecvHtml = splitRecv.map(s=>`<tr style="background:#f0fff4">
