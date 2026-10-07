@@ -3370,6 +3370,12 @@ async function renderHometax(){
         </tr>`).join('')
       : '<tr><td colspan="3" style="text-align:center;color:#bbb;padding:1rem">입력된 법인카드 매입세액 없음</td></tr>';
 
+  const quarters = {
+    '1기 예정 (1~3월)': ['2026-01','2026-02','2026-03'],
+    '1기 확정 (1~6월)': ['2026-01','2026-02','2026-03','2026-04','2026-05','2026-06'],
+    '2기 예정 (7~9월)': ['2026-07','2026-08','2026-09'],
+    '2기 확정 (7~12월)': ['2026-07','2026-08','2026-09','2026-10','2026-11','2026-12'],
+  };
   const qRows = Object.entries(quarters).map(([label, mos])=>{
     const qSellVat = taxInvoices.filter(t=>t.type==='sell'&&mos.includes(t.year_month))
       .reduce((s,t)=>s+(+t.vat_amt||0),0);
@@ -4619,7 +4625,9 @@ async function applyTxToPL(){
 /* ══════════════ 대차대조표 ══════════════ */
 function renderBalance(){
   const nowYm=new Date().toISOString().slice(0,7);
-  const months=[...new Set([...Object.keys(balanceData), nowYm])].sort().reverse();
+  const yr = nowYm.slice(0,4);
+  const allYrMonths = Array.from({length:12},(_,i)=>`${yr}-${String(i+1).padStart(2,'0')}`);
+  const months=[...new Set([...Object.keys(balanceData), ...allYrMonths])].sort().reverse();
   const sel=document.getElementById('bs-month');
   const curYm=sel.value||months[0]||nowYm;
   sel.innerHTML=months.map(m=>`<option value="${m}"${m===curYm?' selected':''}>${m}</option>`).join('');
