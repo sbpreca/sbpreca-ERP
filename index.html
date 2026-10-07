@@ -404,32 +404,17 @@ input[readonly]{background:#f5f5f5;color:#999}
     </div>
 
     <div class="section-box" style="margin-bottom:14px">
-      <div class="section-title"><span>선급금 지급 내역 (매입처에 미리 준 돈)</span><span style="font-size:13px;color:#dc2626;font-weight:600" id="cl-prepaid-sum"></span></div>
-      <table class="data-tbl">
-        <thead><tr><th>매입처</th><th class="r" style="width:130px">금액</th><th style="width:110px">지급일</th><th style="width:110px">세금계산서<br>발행월</th><th>비고</th><th style="width:70px;text-align:center">정산완료</th><th style="width:36px"></th></tr></thead>
-        <tbody id="cl-prepaid-body"></tbody>
-      </table>
-      <div style="padding:10px 12px;display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid #eee">
-        <input id="ap-new-company" placeholder="매입처명" style="width:150px">
-        <input type="number" id="ap-new-amt" placeholder="금액" style="width:120px">
-        <input type="date" id="ap-new-date" style="width:140px">
-        <input id="ap-new-note" placeholder="비고 (선택)" style="width:180px">
-        <button class="btn btn-save" onclick="addAdvancePayment('선급금')">+ 추가</button>
-      </div>
-    </div>
-
-    <div class="section-box" style="margin-bottom:14px">
-      <div class="section-title"><span>선수금 수령 내역 (매출처에서 미리 받은 돈)</span><span style="font-size:13px;color:#166534;font-weight:600" id="cl-advance-sum"></span></div>
+      <div class="section-title"><span>💰 분할 입출금 내역</span><span style="font-size:13px;color:#166534;font-weight:600" id="cl-advance-sum"></span></div>
       <table class="data-tbl">
         <thead><tr><th>매출처</th><th class="r" style="width:130px">금액</th><th style="width:110px">수령일</th><th style="width:110px">세금계산서<br>발행월</th><th>비고</th><th style="width:70px;text-align:center">정산완료</th><th style="width:36px"></th></tr></thead>
         <tbody id="cl-advance-body"></tbody>
       </table>
       <div style="padding:10px 12px;display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid #eee">
-        <input id="ar-new-company" placeholder="매출처명" style="width:150px">
-        <input type="number" id="ar-new-amt" placeholder="금액" style="width:120px">
+        <input id="ar-new-company" placeholder="업체명" style="width:130px">
+        <input type="number" id="ar-new-amt" placeholder="금액 (음수=지급)" style="width:150px">
         <input type="date" id="ar-new-date" style="width:140px">
         <input id="ar-new-note" placeholder="비고 (선택)" style="width:180px">
-        <button class="btn btn-save" onclick="addAdvancePayment('선수금')">+ 추가</button>
+        <button class="btn btn-save" onclick="addAdvancePaymentUnified()">+ 추가</button>
       </div>
     </div>
   </div>
@@ -3369,14 +3354,59 @@ function renderAdvancePayments(){
   document.getElementById('cl-prepaid-body').innerHTML = prepaid.length
     ? prepaid.map(rowHtml).join('')
     : `<tr><td colspan="6" style="text-align:center;color:#bbb;padding:1rem">없어요</td></tr>`;
-  document.getElementById('cl-advance-body').innerHTML = advance.length
-    ? advance.map(rowHtml).join('')
-    : `<tr><td colspan="6" style="text-align:center;color:#bbb;padding:1rem">없어요</td></tr>`;
+  // 통합 뷰: 선수금(양수) + 선급금(음수) 합쳐서 표시
+  const allAdv = [
+    ...advance.map(a=>({...a, _sign:1})),
+    ...prepaid.map(a=>({...a, _sign:-1}))
+  ].sort((a,b)=>(a.pay_date||'').localeCompare(b.pay_date||''));
+
+  document.getElementById('cl-advance-body').innerHTML = allAdv.length
+    ? allAdv.map(a=>{
+        const isNeg = a.type==='선급금';
+        const color = isNeg ? '#dc2626' : '#166534';
+        const dispAmt = isNeg ? `-${fmtW(a.amount)}` : `+${fmtW(a.amount)}`;
+        return `<tr>
+          <td style="font-size:12px;font-weight:600">${a.company}</td>
+          <td class="r" style="color:${color};font-weight:700">${dispAmt}</td>
+          <td><input type="date" value="${a.pay_date||''}" style="width:100%;font-size:11px;border:1px solid #eee;padding:3px;border-radius:4px"
+            onchange="saveAdvanceField('${a.id}','pay_date',this.value)"></td>
+          <td><input type="month" value="${a.tax_date?a.tax_date.slice(0,7):''}" style="width:100%;font-size:11px;border:1px solid #eee;padding:3px;border-radius:4px"
+            onchange="saveAdvanceField('${a.id}','tax_date',this.value?this.value+'-01':'')"></td>
+          <td><input value="${a.note||''}" style="width:100%;font-size:11px;border:1px solid #eee;padding:3px;border-radius:4px"
+            onchange="saveAdvanceField('${a.id}','note',this.value)"></td>
+          <td style="text-align:center"><input type="checkbox" ${a.settled?'checked':''} title="정산완료"
+            onchange="saveAdvanceField('${a.id}','settled',this.checked)"></td>
+          <td style="text-align:center"><button class="del-btn" onclick="delAdvancePayment('${a.id}')">×</button></td>
+        </tr>`;
+      }).join('')
+    : `<tr><td colspan="7" style="text-align:center;color:#bbb;padding:1rem">없어요</td></tr>`;
 
   const prepaidBal=prepaid.filter(a=>!a.settled).reduce((s,a)=>s+(+a.amount||0),0);
   const advanceBal=advance.filter(a=>!a.settled).reduce((s,a)=>s+(+a.amount||0),0);
-  document.getElementById('cl-prepaid-sum').textContent=`미정산 잔액: ${fmtW(prepaidBal)}`;
-  document.getElementById('cl-advance-sum').textContent=`미정산 잔액: ${fmtW(advanceBal)}`;
+  const netBal = advanceBal - prepaidBal;
+  const netColor = netBal >= 0 ? '#166534' : '#dc2626';
+  if(document.getElementById('cl-prepaid-sum')) document.getElementById('cl-prepaid-sum').textContent='';
+  document.getElementById('cl-advance-sum').textContent=`순잔액: ${netBal>=0?'+':''}${fmtW(netBal)}`;
+}
+
+async function addAdvancePaymentUnified(){
+  const company = document.getElementById('ar-new-company').value.trim();
+  const rawAmt = +(document.getElementById('ar-new-amt').value)||0;
+  const date = document.getElementById('ar-new-date').value;
+  const note = document.getElementById('ar-new-note').value.trim();
+  if(!company||!rawAmt){ alert('업체명과 금액을 입력해주세요'); return; }
+  // 양수=선수금(수령), 음수=선급금(지급)
+  const type = rawAmt >= 0 ? '선수금' : '선급금';
+  const amount = Math.abs(rawAmt);
+  const row = await upsertAdvancePayment({type, company, amount, pay_date:date||null, note, settled:false});
+  if(row){
+    advancePayments.push(row);
+    document.getElementById('ar-new-company').value='';
+    document.getElementById('ar-new-amt').value='';
+    document.getElementById('ar-new-date').value='';
+    document.getElementById('ar-new-note').value='';
+    renderAdvancePayments();
+  }
 }
 
 async function addAdvancePayment(type){
