@@ -3382,7 +3382,7 @@ function renderAdvancePayments(){
   const advanceBal=advance.filter(a=>!a.settled).reduce((s,a)=>s+(+a.amount||0),0);
   const netBal = advanceBal - prepaidBal;
   const netColor = netBal >= 0 ? '#166534' : '#dc2626';
-  if(document.getElementById('cl-prepaid-sum')) document.getElementById('cl-prepaid-sum').textContent='';
+  // cl-prepaid-sum 제거됨
   document.getElementById('cl-advance-sum').textContent=`순잔액: ${netBal>=0?'+':''}${fmtW(netBal)}`;
 }
 
