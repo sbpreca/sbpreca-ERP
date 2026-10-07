@@ -407,6 +407,7 @@ input[readonly]{background:#f5f5f5;color:#999}
       <div class="section-title">
         <span>💰 분할 입출금 내역</span>
         <span style="font-size:12px;color:#888;font-weight:400">양수=수령(선수금), 음수=지급(선급금)</span>
+        <span id="cl-prepaid-sum" style="font-size:13px;font-weight:700;color:#166534"></span>
       </div>
       <table class="data-tbl">
         <thead><tr>
@@ -3379,7 +3380,8 @@ function renderAdvancePayments(){
   const advanceBal=advance.filter(a=>!a.settled).reduce((s,a)=>s+(+a.amount||0),0);
   const netBal = prepaidBal - advanceBal;
   const netColor = netBal >= 0 ? '#166534' : '#dc2626';
-  document.getElementById('cl-prepaid-sum').textContent='';
+  const prepaidSumEl = document.getElementById('cl-prepaid-sum');
+  if(prepaidSumEl) prepaidSumEl.textContent='';
   // 통합 잔액 표시 (수령-지급 순잔액)
 }
 
