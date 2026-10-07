@@ -3128,10 +3128,6 @@ function renderCashflow(){
     '<tr><td colspan="6" style="text-align:center;color:#bbb;padding:1.5rem">내역 없음</td></tr>';
   document.getElementById('cf-recv-total').textContent = '총 ' + fmtW(totalRecv);
 
-  // 분할 입출금 예정 (split_payments) - 예정일 기준
-  const splitRecv = splitPayments.filter(s=>!s.settled && s.amount>0 && s.due_date && s.due_date.slice(0,7)===cm);
-  const splitPay = splitPayments.filter(s=>!s.settled && s.amount<0 && s.due_date && s.due_date.slice(0,7)===cm);
-
   // 다른 달에 분할 입금 예정인 금액을 이번 달 마감현황 금액에서 차감
   // 예: 성화전설 11월 입금예정인데, 10월에 분할 입금 1,340,900원 있으면
   //     11월 실입출금에서 1,340,900원 차감
@@ -3147,6 +3143,10 @@ function renderCashflow(){
     if(!splitPayDeduct[s.company]) splitPayDeduct[s.company]=0;
     if(bm[s.company]) splitPayDeduct[s.company] += Math.abs(s.amount);
   });
+
+// 분할 입출금 예정 (split_payments) - 예정일 기준
+  const splitRecv = splitPayments.filter(s=>!s.settled && s.amount>0 && s.due_date && s.due_date.slice(0,7)===cm);
+  const splitPay = splitPayments.filter(s=>!s.settled && s.amount<0 && s.due_date && s.due_date.slice(0,7)===cm);
 
   if(splitRecv.length || splitPay.length){
     const splitRecvHtml = splitRecv.map(s=>`<tr style="background:#f0fff4">
