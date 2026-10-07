@@ -503,9 +503,8 @@ input[readonly]{background:#f5f5f5;color:#999}
         </div>
         <table class="data-tbl">
           <thead><tr>
-            <th>거래처</th>
-            <th class="r">공급가액</th>
-            <th class="r">세액</th>
+            <th>작성일자</th><th>거래처</th>
+            <th class="r">공급가액</th><th class="r">세액</th>
             <th class="r" style="font-weight:700">합계(VAT포함)</th>
             <th style="width:70px;text-align:center">상태</th>
             <th style="width:60px;text-align:center">확인</th>
@@ -522,9 +521,8 @@ input[readonly]{background:#f5f5f5;color:#999}
         </div>
         <table class="data-tbl">
           <thead><tr>
-            <th>거래처</th>
-            <th class="r">공급가액</th>
-            <th class="r">세액</th>
+            <th>작성일자</th><th>거래처</th>
+            <th class="r">공급가액</th><th class="r">세액</th>
             <th class="r" style="font-weight:700">합계(VAT포함)</th>
             <th style="width:70px;text-align:center">상태</th>
             <th style="width:60px;text-align:center">확인</th>
@@ -3209,59 +3207,58 @@ async function renderHometax(){
 
   const normName = n => n.replace(/\(주\)|주식회사|\(유\)|유한회사|\s/g,'').toLowerCase();
 
-  const groupByCompany = (list) => {
-    const map = {};
-    list.forEach(t=>{
-      const co = t.company;
-      if(!map[co]) map[co]={company:co, supply:0, vat:0, ids:[], confirmed:true};
-      map[co].supply += +t.supply_amt||0;
-      map[co].vat += +t.vat_amt||0;
-      map[co].ids.push(t.id);
-      if(!t.confirmed) map[co].confirmed = false;
-    });
-    return Object.values(map).sort((a,b)=>a.company.localeCompare(b.company));
-  };
-
-  const makeRows = (groups, appMap) => groups.map(g=>{
-    const normCo = normName(g.company);
+  const makeBadge = (co, appMap, supply) => {
+    const normCo = normName(co);
     const appAmt = Object.entries(appMap).find(([k])=>{
       const normK = normName(k);
-      return g.company.includes(k)||k.includes(g.company)||normCo.includes(normK)||normK.includes(normCo);
+      return co.includes(k)||k.includes(co)||normCo.includes(normK)||normK.includes(normCo);
     });
-    const match = appAmt && Math.abs(appAmt[1]-g.supply)<1000;
-    const badge = appAmt
+    const match = appAmt && Math.abs(appAmt[1]-supply)<1000;
+    return appAmt
       ? (match ? '<span style="color:#166534;font-size:11px">✅ 일치</span>'
                : `<span style="color:#dc2626;font-size:11px" title="앱: ${fmtW(appAmt[1])}">⚠️ 차이</span>`)
       : '<span style="color:#9ca3af;font-size:11px">❓ 미매칭</span>';
-    return `<tr style="${g.confirmed?'background:#f0fdf4;opacity:0.8':''}">
-      <td style="font-size:12px;font-weight:600;${g.confirmed?'text-decoration:line-through;color:#999':''}">${g.company}</td>
-      <td class="r" style="${g.confirmed?'color:#999':''}">${fmtW(g.supply)}</td>
-      <td class="r" style="${g.confirmed?'color:#999':''}">${fmtW(g.vat)}</td>
-      <td class="r" style="font-weight:700;${g.confirmed?'color:#999':''}">${fmtW(g.supply+g.vat)}</td>
-      <td style="text-align:center">${badge}</td>
-      <td style="text-align:center"><input type="checkbox" ${g.confirmed?'checked':''} title="확인"
-        onchange="confirmTaxInvoiceGroup(${JSON.stringify(g.ids)},this.checked)"></td></tr>`;
-  }).join('');
+  };
 
-  const sellGroups = groupByCompany(sells);
-  const buyGroups = groupByCompany(buys);
-  let sellTotal=0, sellVat=0, buyTotal=0, buyVat=0;
-  sellGroups.forEach(g=>{sellTotal+=g.supply; sellVat+=g.vat;});
-  buyGroups.forEach(g=>{buyTotal+=g.supply; buyVat+=g.vat;});
+  // 매출 테이블 (건별)
+  let sellTotal=0, sellVat=0;
+  document.getElementById('ht-sell-body').innerHTML = sells.length
+    ? sells.map(t=>{
+        sellTotal+=+t.supply_amt||0; sellVat+=+t.vat_amt||0;
+        const badge = makeBadge(t.company, appSells, +t.supply_amt||0);
+        return `<tr style="${t.confirmed?'background:#f0fdf4;opacity:0.8':''}">
+          <td style="font-size:12px">${t.issue_date}</td>
+          <td style="font-size:12px;${t.confirmed?'text-decoration:line-through;color:#999':''}">${t.company}</td>
+          <td class="r" style="${t.confirmed?'color:#999':''}">${fmtW(t.supply_amt)}</td>
+          <td class="r" style="${t.confirmed?'color:#999':''}">${fmtW(t.vat_amt)}</td>
+          <td class="r" style="font-weight:700;${t.confirmed?'color:#999':''}">${fmtW((+t.supply_amt||0)+(+t.vat_amt||0))}</td>
+          <td style="text-align:center">${badge}</td>
+          <td style="text-align:center"><input type="checkbox" ${t.confirmed?'checked':''} onchange="confirmTaxInvoice('${t.id}',this.checked)"></td></tr>`;
+      }).join('')
+    : '<tr><td colspan="7" style="text-align:center;color:#bbb;padding:1.5rem">데이터 없음</td></tr>';
+  document.getElementById('ht-sell-foot').innerHTML = sells.length
+    ? `<tr class="tot"><td colspan="2">합계</td><td class="r">${fmtW(sellTotal)}</td><td class="r">${fmtW(sellVat)}</td><td class="r">${fmtW(sellTotal+sellVat)}</td><td></td><td></td></tr>` : '';
+  document.getElementById('ht-sell-summary').textContent = `${sells.length}건`;
 
-  document.getElementById('ht-sell-body').innerHTML = sellGroups.length
-    ? makeRows(sellGroups, appSells)
-    : '<tr><td colspan="5" style="text-align:center;color:#bbb;padding:1.5rem">데이터 없음</td></tr>';
-  document.getElementById('ht-sell-foot').innerHTML = sellGroups.length
-    ? `<tr class="tot"><td>합계</td><td class="r">${fmtW(sellTotal)}</td><td class="r">${fmtW(sellVat)}</td><td class="r">${fmtW(sellTotal+sellVat)}</td><td></td><td></td></tr>` : '';
-  document.getElementById('ht-sell-summary').textContent = `${sellGroups.length}개 업체`;
-
-  document.getElementById('ht-buy-body').innerHTML = buyGroups.length
-    ? makeRows(buyGroups, appBuys)
-    : '<tr><td colspan="5" style="text-align:center;color:#bbb;padding:1.5rem">데이터 없음</td></tr>';
-  document.getElementById('ht-buy-foot').innerHTML = buyGroups.length
-    ? `<tr class="tot"><td>합계</td><td class="r">${fmtW(buyTotal)}</td><td class="r">${fmtW(buyVat)}</td><td class="r">${fmtW(buyTotal+buyVat)}</td><td></td><td></td></tr>` : '';
-  document.getElementById('ht-buy-summary').textContent = `${buyGroups.length}개 업체`;
+  // 매입 테이블 (건별)
+  let buyTotal=0, buyVat=0;
+  document.getElementById('ht-buy-body').innerHTML = buys.length
+    ? buys.map(t=>{
+        buyTotal+=+t.supply_amt||0; buyVat+=+t.vat_amt||0;
+        const badge = makeBadge(t.company, appBuys, +t.supply_amt||0);
+        return `<tr style="${t.confirmed?'background:#f0fdf4;opacity:0.8':''}">
+          <td style="font-size:12px">${t.issue_date}</td>
+          <td style="font-size:12px;${t.confirmed?'text-decoration:line-through;color:#999':''}">${t.company}</td>
+          <td class="r" style="${t.confirmed?'color:#999':''}">${fmtW(t.supply_amt)}</td>
+          <td class="r" style="${t.confirmed?'color:#999':''}">${fmtW(t.vat_amt)}</td>
+          <td class="r" style="font-weight:700;${t.confirmed?'color:#999':''}">${fmtW((+t.supply_amt||0)+(+t.vat_amt||0))}</td>
+          <td style="text-align:center">${badge}</td>
+          <td style="text-align:center"><input type="checkbox" ${t.confirmed?'checked':''} onchange="confirmTaxInvoice('${t.id}',this.checked)"></td></tr>`;
+      }).join('')
+    : '<tr><td colspan="7" style="text-align:center;color:#bbb;padding:1.5rem">데이터 없음</td></tr>';
+  document.getElementById('ht-buy-foot').innerHTML = buys.length
+    ? `<tr class="tot"><td colspan="2">합계</td><td class="r">${fmtW(buyTotal)}</td><td class="r">${fmtW(buyVat)}</td><td class="r">${fmtW(buyTotal+buyVat)}</td><td></td><td></td></tr>` : '';
+  document.getElementById('ht-buy-summary').textContent = `${buys.length}건`;
 
   // 법인카드 목록 렌더링
   const cardEntries = Object.entries(closingState)
