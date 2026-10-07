@@ -4959,6 +4959,7 @@ function printAnnualReport(){
     <div class="report-title">${curY}년 연간 매출·매입 현황 보고서</div>
     <div class="report-sub">${MY.name}　|　구분: ${tabLabel}　|　출력일: ${today}</div>
     ${tableHtml(sellRows,'매출 현황','매출처')}
+    <div style='page-break-before:always'></div>
     ${tableHtml(buyRows,'매입 현황','매입처')}
     <div class="report-section-title">매출총이익 요약</div>
     <table class="report-tbl">
