@@ -404,75 +404,86 @@ input[readonly]{background:#f5f5f5;color:#999}
     </div>
 
     <div class="section-box" style="margin-bottom:14px">
-      <div class="section-title">
-        <span>💰 분할 입출금 내역</span>
-        <span style="font-size:12px;color:#888;font-weight:400">양수=수령(선수금), 음수=지급(선급금)</span>
-        <span id="cl-prepaid-sum" style="font-size:13px;font-weight:700;color:#166534"></span>
-      </div>
+      <div class="section-title"><span>선급금 지급 내역 (매입처에 미리 준 돈)</span><span style="font-size:13px;color:#dc2626;font-weight:600" id="cl-prepaid-sum"></span></div>
       <table class="data-tbl">
-        <thead><tr>
-          <th>업체명</th>
-          <th class="r" style="width:130px">금액 (음수=지급)</th>
-          <th style="width:110px">입출금일</th>
-          <th style="width:110px">세금계산서<br>발행월</th>
-          <th>비고</th>
-          <th style="width:70px;text-align:center">정산완료</th>
-          <th style="width:36px"></th>
-        </tr></thead>
+        <thead><tr><th>매입처</th><th class="r" style="width:130px">금액</th><th style="width:110px">지급일</th><th style="width:110px">세금계산서<br>발행월</th><th>비고</th><th style="width:70px;text-align:center">정산완료</th><th style="width:36px"></th></tr></thead>
         <tbody id="cl-prepaid-body"></tbody>
       </table>
       <div style="padding:10px 12px;display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid #eee">
-        <input id="new-adv-company" placeholder="업체명" style="width:130px">
-        <input id="new-adv-amount" type="number" placeholder="금액 (음수=지급)" style="width:150px">
-        <input id="new-adv-date" type="date" style="width:140px">
-        <input id="new-adv-note" placeholder="비고 (선택)" style="width:160px">
-        <button class="btn btn-save" onclick="addAdvancePayment()">+ 추가</button>
+        <input id="ap-new-company" placeholder="매입처명" style="width:150px">
+        <input type="number" id="ap-new-amt" placeholder="금액" style="width:120px">
+        <input type="date" id="ap-new-date" style="width:140px">
+        <input id="ap-new-note" placeholder="비고 (선택)" style="width:180px">
+        <button class="btn btn-save" onclick="addAdvancePayment('선급금')">+ 추가</button>
       </div>
     </div>
+
+    <div class="section-box" style="margin-bottom:14px">
+      <div class="section-title"><span>선수금 수령 내역 (매출처에서 미리 받은 돈)</span><span style="font-size:13px;color:#166534;font-weight:600" id="cl-advance-sum"></span></div>
+      <table class="data-tbl">
+        <thead><tr><th>매출처</th><th class="r" style="width:130px">금액</th><th style="width:110px">수령일</th><th style="width:110px">세금계산서<br>발행월</th><th>비고</th><th style="width:70px;text-align:center">정산완료</th><th style="width:36px"></th></tr></thead>
+        <tbody id="cl-advance-body"></tbody>
+      </table>
+      <div style="padding:10px 12px;display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid #eee">
+        <input id="ar-new-company" placeholder="매출처명" style="width:150px">
+        <input type="number" id="ar-new-amt" placeholder="금액" style="width:120px">
+        <input type="date" id="ar-new-date" style="width:140px">
+        <input id="ar-new-note" placeholder="비고 (선택)" style="width:180px">
+        <button class="btn btn-save" onclick="addAdvancePayment('선수금')">+ 추가</button>
+      </div>
+    </div>
+  </div>
 
   <!-- 실입출금 -->
   <div id="page-cashflow" class="page">
     <div style="display:flex;gap:8px;margin-bottom:14px;align-items:center;flex-wrap:wrap">
       <select id="cf-month" onchange="renderCashflow()" style="padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px"></select>
       <span style="font-size:12px;color:#888">기준월의 실제 입출금 예정 금액</span>
-      <a href="https://bizbank.shinhan.com/main.html" target="_blank" class="btn" style="margin-left:auto;font-size:12px;padding:5px 12px;background:#003087;color:#fff;border-color:#003087">🏦 신한은행 기업뱅킹</a>
+      <div style="margin-left:auto">
+        <a href="https://bizbank.shinhan.com/main.html" target="_blank" rel="noopener noreferrer" class="btn btn-save" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;padding:7px 16px;font-size:13px">
+          🏦 신한은행 기업뱅킹
+        </a>
+      </div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <!-- 지급 (매입처) -->
       <div class="section-box">
         <div class="section-title" style="justify-content:space-between">
           <span>📤 지급 예정 (매입처)</span>
-          <span id="cf-pay-total" style="font-size:13px;font-weight:700;color:#dc2626"></span>
+          <span id="cf-pay-total" style="font-size:14px;font-weight:700;color:#dc2626"></span>
         </div>
         <table class="data-tbl">
           <thead><tr>
             <th>매입처</th>
-            <th class="r">결제예정액(VAT포함)</th>
-            <th class="r">선금 차감</th>
-            <th class="r">실지급액</th>
+            <th class="r" style="width:130px">결제예정액(VAT포함)</th>
+            <th class="r" style="width:120px">선급금 차감</th>
+            <th class="r" style="width:130px">실지급액</th>
             <th style="width:110px">출금예정일</th>
-            <th style="width:50px;text-align:center">출금확인</th>
+            <th style="width:70px;text-align:center">출금확인</th>
           </tr></thead>
           <tbody id="cf-pay-body"></tbody>
         </table>
       </div>
+      <!-- 수령 (매출처) -->
       <div class="section-box">
         <div class="section-title" style="justify-content:space-between">
           <span>📥 수령 예정 (매출처)</span>
-          <span id="cf-recv-total" style="font-size:13px;font-weight:700;color:#166534"></span>
+          <span id="cf-recv-total" style="font-size:14px;font-weight:700;color:#166534"></span>
         </div>
         <table class="data-tbl">
           <thead><tr>
             <th>매출처</th>
-            <th class="r">청구예정액(VAT포함)</th>
-            <th class="r">선수금 차감</th>
-            <th class="r">실수령액</th>
+            <th class="r" style="width:130px">청구예정액(VAT포함)</th>
+            <th class="r" style="width:120px">선수금 차감</th>
+            <th class="r" style="width:130px">실수령액</th>
             <th style="width:110px">입금예정일</th>
-            <th style="width:50px;text-align:center">입금확인</th>
+            <th style="width:70px;text-align:center">입금확인</th>
           </tr></thead>
           <tbody id="cf-recv-body"></tbody>
         </table>
       </div>
     </div>
+    <!-- 순현금흐름 요약 -->
     <div class="section-box" style="margin-top:16px">
       <div class="section-title">💰 순현금흐름 요약</div>
       <div class="metrics" id="cf-metrics"></div>
@@ -499,6 +510,7 @@ input[readonly]{background:#f5f5f5;color:#999}
     </div>
     <!-- 비교 결과 -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <!-- 매출 -->
       <div class="section-box">
         <div class="section-title" style="justify-content:space-between">
           <span>📊 매출 세금계산서</span>
@@ -506,8 +518,10 @@ input[readonly]{background:#f5f5f5;color:#999}
         </div>
         <table class="data-tbl">
           <thead><tr>
-            <th>작성일자</th><th>거래처</th>
-            <th class="r">공급가액</th><th class="r">세액</th>
+            <th>작성일자</th>
+            <th>거래처</th>
+            <th class="r">공급가액</th>
+            <th class="r">세액</th>
             <th style="width:70px;text-align:center">상태</th>
             <th style="width:60px;text-align:center">확인</th>
           </tr></thead>
@@ -515,6 +529,7 @@ input[readonly]{background:#f5f5f5;color:#999}
           <tfoot id="ht-sell-foot"></tfoot>
         </table>
       </div>
+      <!-- 매입 -->
       <div class="section-box">
         <div class="section-title" style="justify-content:space-between">
           <span>📊 매입 세금계산서</span>
@@ -522,8 +537,10 @@ input[readonly]{background:#f5f5f5;color:#999}
         </div>
         <table class="data-tbl">
           <thead><tr>
-            <th>작성일자</th><th>거래처</th>
-            <th class="r">공급가액</th><th class="r">세액</th>
+            <th>작성일자</th>
+            <th>거래처</th>
+            <th class="r">공급가액</th>
+            <th class="r">세액</th>
             <th style="width:70px;text-align:center">상태</th>
             <th style="width:60px;text-align:center">확인</th>
           </tr></thead>
@@ -537,39 +554,18 @@ input[readonly]{background:#f5f5f5;color:#999}
       <div class="section-title">🔍 부가세 대사 요약</div>
       <div class="metrics" id="ht-metrics"></div>
     </div>
-    <!-- 법인카드 매입세액 -->
-    <div class="section-box" style="margin-top:16px">
-      <div class="section-title">💳 법인카드 매입세액 공제 (수동 입력)</div>
-      <div style="padding:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-        <select id="ht-card-month" style="padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px">
-          <option value="">월 선택</option>
-          <option>2026-01</option><option>2026-02</option><option>2026-03</option>
-          <option>2026-04</option><option>2026-05</option><option>2026-06</option>
-          <option>2026-07</option><option>2026-08</option><option>2026-09</option>
-          <option>2026-10</option><option>2026-11</option><option>2026-12</option>
-        </select>
-        <input type="number" id="ht-card-amt" placeholder="법인카드 매입세액 (원)"
-          style="width:200px;padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px">
-        <button class="btn btn-save" onclick="saveCardVat()">저장</button>
-        <span style="font-size:12px;color:#888">※ 매월 15일 공제 신청 후 입력</span>
-      </div>
-      <table class="data-tbl" style="margin-top:8px">
-        <thead><tr><th>월</th><th class="r">법인카드 매입세액</th><th style="width:50px"></th></tr></thead>
-        <tbody id="ht-card-body"></tbody>
-      </table>
-    </div>
     <!-- 분기별 납부세액 -->
     <div class="section-box" style="margin-top:16px">
       <div class="section-title">📋 분기별 납부세액 (홈택스 기준)</div>
-      <table class="data-tbl">
+      <table class="data-tbl" id="ht-quarter-table">
         <thead><tr>
           <th>신고기간</th>
           <th class="r">매출세액</th>
           <th class="r">매입세액</th>
-          <th class="r">법인카드공제</th>
           <th class="r" style="font-weight:700">납부예상세액</th>
         </tr></thead>
         <tbody id="ht-quarter-body"></tbody>
+        <tfoot id="ht-quarter-foot"></tfoot>
       </table>
     </div>
   </div>
@@ -595,7 +591,16 @@ input[readonly]{background:#f5f5f5;color:#999}
             <tbody id="pl-body"></tbody>
           </table>
         </div>
-        
+        <div class="section-box">
+          <div class="section-title" style="justify-content:space-between">
+            <span>부가세 현황 (예상)</span>
+            <span id="vat-period" style="font-size:11px;color:#888;font-weight:600"></span>
+          </div>
+          <table class="data-tbl">
+            <tbody id="vat-body"></tbody>
+          </table>
+          <p style="font-size:11px;color:#999;padding:8px 12px 4px">※ 매입세액은 발주 매입원가 기준으로 자동 계산돼요. 카드/경비 등 판관비 쪽 매입세액공제분은 "기타매입세액"에 직접 입력해주세요.</p>
+        </div>
       </div>
       <div>
         <div class="section-box" style="margin-bottom:14px">
@@ -3104,35 +3109,12 @@ function renderCashflow(){
 
 let taxInvoices = [];
 
-async function delCardVat(mo){
-  const key = `ht_card_${mo}`;
-  delete closingState[key];
-  await sb.from('closing_state').delete().eq('key', key);
-  renderHometax();
-}
-
 async function confirmTaxInvoice(id, confirmed){
   const {error} = await sb.from('tax_invoices').update({confirmed}).eq('id', id);
   if(error){ console.error(error); return; }
   const item = taxInvoices.find(t=>t.id===id);
   if(item) item.confirmed = confirmed;
   showSyncStatus(confirmed ? '✅ 확인 완료' : '확인 해제');
-}
-
-// 법인카드 매입세액 (closing_state에 저장: ht_card_{yyyy-mm})
-async function saveCardVat(){
-  const mo = document.getElementById('ht-card-month').value;
-  const amt = +document.getElementById('ht-card-amt').value||0;
-  if(!mo){ alert('월을 선택해주세요'); return; }
-  const key = `ht_card_${mo}`;
-  closingState[key] = String(amt);
-  await sb.from('closing_state').upsert({key, value:String(amt)},{onConflict:'key'});
-  showSyncStatus('저장됨');
-  renderHometax();
-}
-
-function getCardVat(mo){
-  return +(closingState[`ht_card_${mo}`]||0);
 }
 
 async function loadTaxInvoices(){
@@ -3271,34 +3253,18 @@ async function renderHometax(){
     '2기 확정 (7~12월)': ['2026-07','2026-08','2026-09','2026-10','2026-11','2026-12'],
   };
 
-  // 법인카드 매입세액 목록 렌더링
-  const cardEntries = Object.entries(closingState)
-    .filter(([k])=>k.startsWith('ht_card_'))
-    .map(([k,v])=>({mo:k.replace('ht_card_',''), amt:+v||0}))
-    .filter(e=>e.amt>0)
-    .sort((a,b)=>a.mo.localeCompare(b.mo));
-  document.getElementById('ht-card-body').innerHTML = cardEntries.length
-    ? cardEntries.map(e=>`<tr>
-        <td>${e.mo}</td>
-        <td class="r">${fmtW(e.amt)}</td>
-        <td style="text-align:center"><button class="del-btn" onclick="delCardVat('${e.mo}')">×</button></td>
-      </tr>`).join('')
-    : '<tr><td colspan="3" style="text-align:center;color:#bbb;padding:1rem">입력된 법인카드 매입세액 없음</td></tr>';
-
   const qRows = Object.entries(quarters).map(([label, mos])=>{
     const qSellVat = taxInvoices.filter(t=>t.type==='sell'&&mos.includes(t.year_month))
       .reduce((s,t)=>s+(+t.vat_amt||0),0);
     const qBuyVat = taxInvoices.filter(t=>t.type==='buy'&&mos.includes(t.year_month))
       .reduce((s,t)=>s+(+t.vat_amt||0),0);
-    const qCardVat = mos.reduce((s,mo)=>s+getCardVat(mo),0);
-    const qNet = qSellVat - qBuyVat - qCardVat;
+    const qNet = qSellVat - qBuyVat;
     const hasData = taxInvoices.some(t=>mos.includes(t.year_month));
     if(!hasData) return '';
     return `<tr>
       <td style="font-weight:600">${label}</td>
       <td class="r">${fmtW(qSellVat)}</td>
       <td class="r">${fmtW(qBuyVat)}</td>
-      <td class="r" style="color:#166534">${qCardVat>0?'-'+fmtW(qCardVat):'-'}</td>
       <td class="r" style="font-weight:700;color:${qNet>=0?'#dc2626':'#166534'}">${qNet<0?'-':''}${fmtW(Math.abs(qNet))}</td>
     </tr>`;
   }).join('');
@@ -3351,59 +3317,34 @@ function renderAdvancePayments(){
     </tr>`;
   }
 
-  // 통합 뷰: 선수금(양수)과 선급금(음수)을 하나의 테이블에
-  const allAdv = [...advance.map(a=>({...a,_sign:-1})), ...prepaid.map(a=>({...a,_sign:1}))]
-    .sort((a,b)=>(a.pay_date||'').localeCompare(b.pay_date||''));
-
-  document.getElementById('cl-prepaid-body').innerHTML = allAdv.length
-    ? allAdv.map(a=>{
-        const isNeg = a.type==='선급금';
-        const dispAmt = isNeg ? -a.amount : +a.amount;
-        const color = isNeg ? '#dc2626' : '#166534';
-        return `<tr>
-          <td style="font-size:12px">${a.company}</td>
-          <td class="r" style="color:${color};font-weight:600">${isNeg?'-':'+'} ${fmtW(a.amount)}</td>
-          <td><input type="date" value="${a.pay_date||''}" style="width:100%;font-size:11px;border:1px solid #eee;padding:3px"
-            onchange="saveAdvanceField('${a.id}','pay_date',this.value)"></td>
-          <td><input type="month" value="${a.tax_date?a.tax_date.slice(0,7):''}" style="width:100%;font-size:11px;border:1px solid #eee;padding:3px"
-            onchange="saveAdvanceField('${a.id}','tax_date',this.value?this.value+'-01':'')"></td>
-          <td><input value="${a.note||''}" style="width:100%;font-size:11px;border:1px solid #eee;padding:3px"
-            onchange="saveAdvanceField('${a.id}','note',this.value)"></td>
-          <td style="text-align:center"><input type="checkbox" ${a.settled?'checked':''} title="정산완료"
-            onchange="saveAdvanceField('${a.id}','settled',this.checked)"></td>
-          <td style="text-align:center"><button class="del-btn" onclick="delAdvancePayment('${a.id}')">×</button></td>
-        </tr>`;
-      }).join('')
-    : `<tr><td colspan="7" style="text-align:center;color:#bbb;padding:1rem">없어요</td></tr>`;
+  document.getElementById('cl-prepaid-body').innerHTML = prepaid.length
+    ? prepaid.map(rowHtml).join('')
+    : `<tr><td colspan="6" style="text-align:center;color:#bbb;padding:1rem">없어요</td></tr>`;
+  document.getElementById('cl-advance-body').innerHTML = advance.length
+    ? advance.map(rowHtml).join('')
+    : `<tr><td colspan="6" style="text-align:center;color:#bbb;padding:1rem">없어요</td></tr>`;
 
   const prepaidBal=prepaid.filter(a=>!a.settled).reduce((s,a)=>s+(+a.amount||0),0);
   const advanceBal=advance.filter(a=>!a.settled).reduce((s,a)=>s+(+a.amount||0),0);
-  const netBal = prepaidBal - advanceBal;
-  const netColor = netBal >= 0 ? '#166534' : '#dc2626';
-  const prepaidSumEl = document.getElementById('cl-prepaid-sum');
-  if(prepaidSumEl) prepaidSumEl.textContent='';
-  // 통합 잔액 표시 (수령-지급 순잔액)
+  document.getElementById('cl-prepaid-sum').textContent=`미정산 잔액: ${fmtW(prepaidBal)}`;
+  document.getElementById('cl-advance-sum').textContent=`미정산 잔액: ${fmtW(advanceBal)}`;
 }
 
-async function addAdvancePayment(){
-  const company = document.getElementById('new-adv-company').value.trim();
-  const rawAmt = +(document.getElementById('new-adv-amount').value)||0;
-  const date = document.getElementById('new-adv-date').value;
-  const note = document.getElementById('new-adv-note').value.trim();
-  if(!company||!rawAmt){ alert('업체명과 금액을 입력해주세요'); return; }
-  const type = rawAmt >= 0 ? '선수금' : '선급금';
-  const amount = Math.abs(rawAmt);
-  const row = await upsertAdvancePayment({type, company, amount, pay_date:date||null, note, settled:false});
-  if(row){
-    advancePayments.push(row);
-    document.getElementById('new-adv-company').value='';
-    document.getElementById('new-adv-amount').value='';
-    document.getElementById('new-adv-date').value='';
-    document.getElementById('new-adv-note').value='';
-    renderAdvancePayments();
-  }
+async function addAdvancePayment(type){
+  const pfx=type==='선급금'?'ap':'ar';
+  const company=document.getElementById(`${pfx}-new-company`).value.trim();
+  const amount=+document.getElementById(`${pfx}-new-amt`).value||0;
+  const pay_date=document.getElementById(`${pfx}-new-date`).value||null;
+  const note=document.getElementById(`${pfx}-new-note`).value.trim();
+  if(!company||!amount){ alert('업체명과 금액을 입력해주세요'); return; }
+  const row=await upsertAdvancePayment({type,company,amount,pay_date,note,settled:false});
+  if(row) advancePayments.push(row);
+  document.getElementById(`${pfx}-new-company`).value='';
+  document.getElementById(`${pfx}-new-amt`).value='';
+  document.getElementById(`${pfx}-new-date`).value='';
+  document.getElementById(`${pfx}-new-note`).value='';
+  renderAdvancePayments();
 }
-
 async function saveAdvanceField(id,field,value){
   const a=advancePayments.find(x=>x.id===id);
   if(!a) return;
@@ -3489,9 +3430,12 @@ function renderPL(){
   const gm=sales?(gross/sales*100).toFixed(1):0;
   const om=sales?(opIncome/sales*100).toFixed(1):0;
 
-  // 부가세 섹션 제거됨 - 홈택스 탭에서 확인
-  const outputVat=0, inputVatCogs=0, otherInputVat=0;
+  // 부가세 예상 (매출세액 - 매입세액 - 기타매입세액)
+  const outputVat=Math.round(sales*0.1); // 매출세액
+  const inputVatCogs=Math.round(purchases*0.1); // 매입세액(매입원가분)
   const vatKey=pm||'all';
+  if(!vatData[vatKey]) vatData[vatKey]=[{name:'기타매입세액',amt:0}];
+  const otherInputVat=(vatData[vatKey].find(i=>i.name==='기타매입세액')||{amt:0}).amt||0;
   // 선급금/선수금 중 해당 월에 세금계산서 발행된 건의 부가세
   // tax_date 기준으로 해당 월에 발행된 건만 집계
   const taxDateKey = pm || 'all';
@@ -3569,6 +3513,91 @@ function renderPL(){
   const quarterMonths={3:['01','02','03'],6:['04','05','06'],9:['07','08','09'],12:['10','11','12']};
   const curMo = pm ? +pm.slice(5,7) : 0;
   const curYr = pm ? pm.slice(0,4) : '';
+  let quarterVatHtml = '';
+  if(pm && [3,6,9,12].includes(curMo)){
+    const qMos = quarterMonths[curMo];
+    let qOutVat=0, qInVatCogs=0, qOtherVat=0, qAdvSell=0, qAdvSellDeduct=0, qAdvBuy=0, qAdvBuyDeduct=0;
+    qMos.forEach(mo=>{
+      const mKey = curYr+'-'+mo;
+      const mItems = orders.flatMap(o=>o.items);
+      const mSales = mItems.filter(i=>ym(i.ship)===mKey).reduce((s,i)=>s+(i.samt||0),0);
+      const mPurch = mItems.filter(i=>ym(i.ship)===mKey).reduce((s,i)=>s+(i.bamt||0),0);
+      qOutVat += Math.round(mSales*0.1);
+      qInVatCogs += Math.round(mPurch*0.1);
+      if(vatData[mKey]){
+        qOtherVat += (vatData[mKey].find(i=>i.name==='기타매입세액')||{amt:0}).amt||0;
+      }
+      // 선수금/선급금 세금계산서 발행분 합산
+      qAdvSell += advancePayments.filter(a=>a.type==='선수금'&&a.tax_date&&a.tax_date.slice(0,7)===mKey)
+        .reduce((s,a)=>s+Math.round((+a.amount||0)*0.1),0);
+      qAdvSellDeduct += advancePayments.filter(a=>a.type==='선수금'&&a.tax_date&&a.pay_date&&
+        a.pay_date.slice(0,7)===mKey&&a.tax_date.slice(0,7)!==a.pay_date.slice(0,7))
+        .reduce((s,a)=>s+Math.round((+a.amount||0)*0.1),0);
+      qAdvBuy += advancePayments.filter(a=>a.type==='선급금'&&a.tax_date&&a.tax_date.slice(0,7)===mKey)
+        .reduce((s,a)=>s+Math.round((+a.amount||0)*0.1),0);
+      qAdvBuyDeduct += advancePayments.filter(a=>a.type==='선급금'&&a.tax_date&&a.pay_date&&
+        a.pay_date.slice(0,7)===mKey&&a.tax_date.slice(0,7)!==a.pay_date.slice(0,7))
+        .reduce((s,a)=>s+Math.round((+a.amount||0)*0.1),0);
+    });
+    const qVatPayable = qOutVat+qAdvSell-qAdvSellDeduct - qInVatCogs-qAdvBuy+qAdvBuyDeduct - qOtherVat;
+    const qLabel = vatPeriodLabel(pm);
+    quarterVatHtml = `
+    <tr style="background:#eff6ff;border-top:2px solid #3b82f6">
+      <td colspan="2" style="padding:6px 12px;font-size:12px;font-weight:700;color:#1d4ed8">
+        📋 ${qLabel} 분기 합계
+      </td>
+    </tr>
+    <tr style="background:#eff6ff">
+      <td style="padding:6px 12px;font-size:12px;color:#1d4ed8">분기 매출세액 합계</td>
+      <td class="r" style="padding:6px 12px;font-size:12px;color:#1d4ed8">${fmtW(qOutVat)}</td>
+    </tr>
+    <tr style="background:#eff6ff">
+      <td style="padding:6px 12px;font-size:12px;color:#1d4ed8">분기 매입세액 합계</td>
+      <td class="r" style="padding:6px 12px;font-size:12px;color:#1d4ed8">-${fmtW(qInVatCogs+qOtherVat)}</td>
+    </tr>
+    <tr style="background:#dbeafe;border-top:1px solid #93c5fd">
+      <td style="padding:8px 12px;font-size:13px;font-weight:700;color:#1e40af">${qVatPayable>=0?'📤 분기 납부예상세액':'📥 분기 환급예상세액'}</td>
+      <td class="r" style="padding:8px 12px;font-size:13px;font-weight:700;color:${qVatPayable>=0?'#dc2626':'#166534'}">${qVatPayable<0?'-':''}${fmtW(Math.abs(qVatPayable))}</td>
+    </tr>`;
+  }
+
+  document.getElementById('vat-period').textContent=vatPeriodLabel(pm);
+  document.getElementById('vat-body').innerHTML=`
+    <tr><td style="padding:8px 12px">매출세액 (납품기준 매출액×10%)</td><td class="r" style="padding:8px 12px">${fmtW(outputVat)}</td></tr>
+    ${advTaxSell>0?`<tr style="background:#fef9c3"><td style="padding:6px 12px;color:#854d0e">└ 선수금 세금계산서 발행분 (${pm||'전체'})</td><td class="r" style="padding:6px 12px;color:#854d0e">+${fmtW(advTaxSell)}</td></tr>`:''}
+    ${advTaxSellDeduct>0?`<tr style="background:#fef0f0"><td style="padding:6px 12px;padding-left:24px;font-size:12px;color:#991b1b">└ 선수금 기납부세액 차감 (타월 발행분)</td><td class="r" style="padding:6px 12px;color:#991b1b">-${fmtW(advTaxSellDeduct)}</td></tr>`:''}
+    <tr><td style="padding:8px 12px">매입세액 - 매입원가분 (당기매입×10%)</td><td class="r" style="padding:8px 12px">${fmtW(inputVatCogs)}</td></tr>
+    ${advTaxBuy>0?`<tr style="background:#fef9c3"><td style="padding:6px 12px;color:#854d0e">└ 선급금 세금계산서 발행분 (${pm||'전체'})</td><td class="r" style="padding:6px 12px;color:#854d0e">+${fmtW(advTaxBuy)}</td></tr>`:''}
+    ${advTaxBuyDeduct>0?`<tr style="background:#fef0f0"><td style="padding:6px 12px;padding-left:24px;font-size:12px;color:#991b1b">└ 선급금 기공제세액 차감 (타월 발행분)</td><td class="r" style="padding:6px 12px;color:#991b1b">-${fmtW(advTaxBuyDeduct)}</td></tr>`:''}
+    <tr><td style="padding:4px 12px">기타매입세액 (판관비 등)</td><td class="r" style="padding:3px 12px">
+      <input type="number" value="${otherInputVat}" style="width:130px;text-align:right;border:1px solid #ddd;border-radius:4px;padding:4px 8px"
+        onchange="saveVat('${vatKey}','기타매입세액',this.value)">
+    </td></tr>
+    <tr class="tot" style="font-weight:700;background:#f5f5f5;border-top:2px solid #ddd">
+      <td style="padding:10px 12px">${vatPayable>=0?'납부예상세액':'환급예상세액'}</td>
+      <td class="r" style="padding:10px 12px;color:${vatPayable>=0?'#dc2626':'#166534'};font-weight:700">${vatPayable<0?'-':''}${fmtW(Math.abs(vatPayable))}</td>
+    </tr>
+    ${quarterVatHtml}`;
+
+  // 판관비 테이블
+  document.getElementById('sga-body').innerHTML=sgaList.map((item,i)=>`<tr>
+    <td style="padding:8px 12px">${item.name}</td>
+    <td class="r" style="padding:4px 8px">
+      <input type="number" value="${item.amt||0}" style="width:110px;text-align:right;border:1px solid #ddd;border-radius:4px;padding:4px 8px;font-size:13px"
+        onchange="sgaData['${sgaKey}'][${i}].amt=+this.value;persistSga();renderPL()">
+    </td>
+    <td style="text-align:center;padding:4px">
+      <button class="del-btn" onclick="sgaData['${sgaKey}'].splice(${i},1);persistSga();renderPL()">×</button>
+    </td>
+  </tr>`).join('');
+  document.getElementById('sga-total').textContent=fmtW(totalSga);
+
+  // 영업외손익
+  document.getElementById('other-body').innerHTML=otherList.map((item,i)=>`<tr>
+    <td style="padding:8px 12px">${item.name} <span style="font-size:10px;color:${item.type==='inc'?'#166534':'#dc2626'}">${item.type==='inc'?'수익':'비용'}</span></td>
+    <td class="r" style="padding:8px 12px">${fmtW(item.amt)}</td>
+    <td style="text-align:center"><button class="del-btn" onclick="otherData['${otherKey}'].splice(${i},1);persistOther();renderPL()">×</button></td>
+  </tr>`).join('');
 
   _plCache={pm,sales,salesRaw,salesAdj,purchases,purchasesRaw,purchaseAdj,beginInv,endInv,cogs,gross,
     totalSga,sgaList,opIncome,otherInc,otherExp,otherList,preIncome,
