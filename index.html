@@ -406,7 +406,7 @@ input[readonly]{background:#f5f5f5;color:#999}
     <div class="section-box" style="margin-bottom:14px">
       <div class="section-title"><span>💰 분할 입출금 내역</span><span style="font-size:13px;color:#166534;font-weight:600" id="cl-advance-sum"></span></div>
       <table class="data-tbl">
-        <thead><tr><th>매출처</th><th class="r" style="width:130px">금액</th><th style="width:110px">수령일</th><th style="width:110px">세금계산서<br>발행월</th><th>비고</th><th style="width:70px;text-align:center">정산완료</th><th style="width:36px"></th></tr></thead>
+        <thead><tr><th>업체명</th><th class="r" style="width:140px">금액 (음수=지급)</th><th style="width:110px">입출금일</th><th style="width:110px">세금계산서<br>발행월</th><th>비고</th><th style="width:70px;text-align:center">정산완료</th><th style="width:36px"></th></tr></thead>
         <tbody id="cl-advance-body"></tbody>
       </table>
       <div style="padding:10px 12px;display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid #eee">
@@ -2851,10 +2851,10 @@ function renderClosing(){
   function sellRowHtml(name, v, idx){
     const vat=Math.round(v.amt*0.1);
     const detailId='sell-detail-'+idx;
-    // 품목이 2개 이상이면 펼치기 화살표, 1개면 바로 펼쳐서 표시
-    const hasMultiple=Object.keys(v.items).length>1;
+    // 항상 클릭해야 펼쳐짐 (품목 1개여도)
+    const hasMultiple=Object.keys(v.items).length>=1;
     const arrow=hasMultiple?'▸ ':'';
-    const rowDisplay=hasMultiple?'display:none;':'';
+    const rowDisplay='display:none;';
     const itemRows=Object.entries(v.items).map(([item,iv])=>'<tr class="'+detailId+'-row" style="'+rowDisplay+'background:#fbfbfb"><td style="padding-left:28px;font-size:12px;color:#666">└ '+item+' <span style="color:#999">('+fmt(iv.sqty)+'개)</span></td><td class="r" style="font-size:12px;color:#666;white-space:nowrap">'+fmtW(iv.samt)+'</td><td colspan="5"></td></tr>').join('');
     const clickAttr=hasMultiple?(' style="cursor:pointer" onclick="toggleDetail(\''+detailId+'\',this)"'):'';
     return '<tr'+clickAttr+'><td style="font-weight:600">'+arrow+name+'</td><td class="r" style="white-space:nowrap">'+fmtW(v.amt)+'</td><td class="r" style="white-space:nowrap">'+fmtW(vat)+'</td><td class="r profit-val" style="white-space:nowrap">'+fmtW(v.amt+vat)+'</td><td onclick="event.stopPropagation()">'+dateInput('sell',name)+'</td><td class="c" onclick="event.stopPropagation()">'+stSelect('sell',name,'tax',['미발급','발급완료'])+'</td><td class="c" onclick="event.stopPropagation()">'+stSelect('sell',name,'done',['미완료','완료'])+'</td></tr>'+itemRows;
@@ -3351,9 +3351,6 @@ function renderAdvancePayments(){
     </tr>`;
   }
 
-  document.getElementById('cl-prepaid-body').innerHTML = prepaid.length
-    ? prepaid.map(rowHtml).join('')
-    : `<tr><td colspan="6" style="text-align:center;color:#bbb;padding:1rem">없어요</td></tr>`;
   // 통합 뷰: 선수금(양수) + 선급금(음수) 합쳐서 표시
   const allAdv = [
     ...advance.map(a=>({...a, _sign:1})),
