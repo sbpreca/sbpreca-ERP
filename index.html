@@ -3327,6 +3327,10 @@ async function handleHometaxFile(event){
 
 async function renderHometax(){
   if(!taxInvoices.length) taxInvoices = await loadTaxInvoices();
+  if(!_txLoaded){
+    txAll = await loadBankTxFromDb();
+    _txLoaded=true;
+  }
 
   // 월 목록
   const months = [...new Set(taxInvoices.map(t=>t.year_month).filter(Boolean))].sort().reverse();
@@ -3338,34 +3342,76 @@ async function renderHometax(){
   const sells = taxInvoices.filter(t=>t.type==='sell' && (!cm||t.year_month===cm));
   const buys  = taxInvoices.filter(t=>t.type==='buy'  && (!cm||t.year_month===cm));
 
-  // 앱 데이터 집계
-  const allItems = orders.flatMap(o=>o.items);
-  const sellMo = i => ym(i.ship);
-  const appSells = {};
-  allItems.filter(i=>i.status==='납품완료' && !i.closing_sell_exclude && sellMo(i)===cm && i.samt>0).forEach(i=>{
-    const co = (i.seller||'').split('_')[0];
-    if(!appSells[co]) appSells[co]=0;
-    appSells[co]+=i.samt;
-  });
-  const appBuys = {};
-  allItems.filter(i=>!i.closing_sell_exclude && ym(i.ship)===cm && i.bamt>0).forEach(i=>{
-    if(!appBuys[i.buyer]) appBuys[i.buyer]=0;
-    appBuys[i.buyer]+=i.bamt;
-  });
-
-  const normName = n => n.replace(/\(주\)|주식회사|\(유\)|유한회사|\s/g,'').toLowerCase();
-
-  const makeBadge = (co, appMap, supply) => {
-    const normCo = normName(co);
-    const appAmt = Object.entries(appMap).find(([k])=>{
-      const normK = normName(k);
-      return co.includes(k)||k.includes(co)||normCo.includes(normK)||normK.includes(normCo);
+  // 같은 업체 계산서 합계를 마감 금액과 비교한다.
+  // 선수금·선급금 차이는 그달 세금계산서 발행월이 찍힌 분할 결제, 없으면 마감 조정액을 본다.
+  const groupedSupply = list => {
+    const groups=[];
+    list.forEach(t=>{
+      const co=t.company||'';
+      let g=groups.find(x=>partyMatch(x.key, co));
+      if(!g){ g={key:co, supply:0}; groups.push(g); }
+      g.supply += +t.supply_amt||0;
     });
-    const match = appAmt && Math.abs(appAmt[1]-supply)<1000;
-    return appAmt
-      ? (match ? '<span style="color:#166534;font-size:11px">✅ 일치</span>'
-               : `<span style="color:#dc2626;font-size:11px" title="앱: ${fmtW(appAmt[1])}">⚠️ 차이</span>`)
-      : '<span style="color:#9ca3af;font-size:11px">❓ 미매칭</span>';
+    return groups;
+  };
+  const supplyOf = (company, groups) => {
+    const g=groups.find(x=>partyMatch(x.key, company));
+    return g ? g.supply : 0;
+  };
+  const splitSupplyOf = (company, side) => {
+    let sum=0;
+    splitPayments.forEach(s=>{
+      if((s.tax_date||'').slice(0,7)!==cm) return;
+      if(!partyMatch(company, s.company||'')) return;
+      const amt=+s.amount||0;
+      if(side==='sell' && amt<=0) return;
+      if(side==='buy' && amt>=0) return;
+      sum += s.is_vat_included ? Math.round(Math.abs(amt)/1.1) : Math.abs(amt);
+    });
+    return sum;
+  };
+  const orderSupplyOf = (company, side) => {
+    let sum=0;
+    orders.flatMap(o=>o.items).forEach(i=>{
+      if(i.closing_sell_exclude) return;
+      if(ym(i.ship)!==cm) return;
+      if(side==='sell'){
+        if(i.status!=='납품완료' || !i.samt) return;
+        const co=(i.seller||'').split('_')[0];
+        if(co && partyMatch(company, co)) sum+=i.samt;
+      }else if(i.bamt && i.buyer && partyMatch(company, i.buyer)){
+        sum+=i.bamt;
+      }
+    });
+    return sum;
+  };
+  const adjSupplyOf = (company, side) => vatAdjustments
+    .filter(a=>a.year_month===cm && a.type===side && partyMatch(company, a.company||''))
+    .reduce((s,a)=>s+(+a.amount||0),0);
+  const nearWon = (a,b) => Math.abs(a-b)<1000;
+  const sellGroups = groupedSupply(sells);
+  const buyGroups = groupedSupply(buys);
+  const invoiceStatus = (company, side) => {
+    const invSum = supplyOf(company, side==='sell'?sellGroups:buyGroups);
+    const orderAmt = orderSupplyOf(company, side);
+    const adjAmt = adjSupplyOf(company, side);
+    const splitAmt = splitSupplyOf(company, side);
+    const tip = `계산서 ${fmtW(invSum)} / 마감 ${fmtW(orderAmt)} / 조정 ${fmtW(adjAmt)} / 분할 ${fmtW(splitAmt)}`;
+    if(nearWon(invSum, orderAmt) && (orderAmt!==0 || invSum===0)) return {ok:true, label:'✅ 일치', title:tip};
+    if(adjAmt && nearWon(invSum, orderAmt+adjAmt)) return {ok:true, label:side==='sell'?'✅ 선수금':'✅ 선급금', title:tip};
+    if(splitAmt && nearWon(invSum, orderAmt+splitAmt)) return {ok:true, label:'✅ 분할', title:tip};
+    if(splitAmt && nearWon(invSum, splitAmt)) return {ok:true, label:'✅ 분할', title:tip};
+    if(adjAmt && nearWon(invSum, adjAmt)) return {ok:true, label:side==='sell'?'✅ 선수금':'✅ 선급금', title:tip};
+    if(side==='buy'){
+      const extra=outsidePurchaseInvoices(cm).find(r=>r.included && partyMatch(r.company, company));
+      if(extra && nearWon(invSum, extra.supply)) return {ok:true, label:'✅ 지출', title:'지출분류에 출금이 있는 계산서'};
+    }
+    if(orderAmt || adjAmt || splitAmt) return {ok:false, label:'⚠️ 차이', title:tip};
+    return {ok:false, label:'❓ 미매칭', title:tip};
+  };
+  const badgeHtml = st => {
+    const color = st.ok ? '#166534' : (st.label.includes('미매칭') ? '#9ca3af' : '#dc2626');
+    return `<span style="color:${color};font-size:11px" title="${escHtml(st.title)}">${st.label}</span>`;
   };
 
   // 매출 테이블 (건별)
@@ -3373,7 +3419,7 @@ async function renderHometax(){
   document.getElementById('ht-sell-body').innerHTML = sells.length
     ? sells.map(t=>{
         sellTotal+=+t.supply_amt||0; sellVat+=+t.vat_amt||0;
-        const badge = makeBadge(t.company, appSells, +t.supply_amt||0);
+        const badge = badgeHtml(invoiceStatus(t.company, 'sell'));
         return `<tr style="${t.confirmed?'background:#f0fdf4;opacity:0.8':''}">
           <td style="font-size:12px">${t.issue_date}</td>
           <td style="font-size:12px;${t.confirmed?'text-decoration:line-through;color:#999':''}">${t.company}</td>
@@ -3386,14 +3432,14 @@ async function renderHometax(){
     : '<tr><td colspan="7" style="text-align:center;color:#bbb;padding:1.5rem">데이터 없음</td></tr>';
   document.getElementById('ht-sell-foot').innerHTML = sells.length
     ? `<tr class="tot"><td colspan="2">합계</td><td class="r">${fmtW(sellTotal)}</td><td class="r">${fmtW(sellVat)}</td><td class="r">${fmtW(sellTotal+sellVat)}</td><td></td><td></td></tr>` : '';
-  document.getElementById('ht-sell-summary').textContent = `${sells.length}건`;
+  document.getElementById('ht-sell-summary').textContent = `${sells.length}건 · ${sells.filter(t=>!invoiceStatus(t.company,'sell').ok).length?('확인 '+sells.filter(t=>!invoiceStatus(t.company,'sell').ok).length):'상태 일치'}`;
 
   // 매입 테이블 (건별)
   let buyTotal=0, buyVat=0;
   document.getElementById('ht-buy-body').innerHTML = buys.length
     ? buys.map(t=>{
         buyTotal+=+t.supply_amt||0; buyVat+=+t.vat_amt||0;
-        const badge = makeBadge(t.company, appBuys, +t.supply_amt||0);
+        const badge = badgeHtml(invoiceStatus(t.company, 'buy'));
         return `<tr style="${t.confirmed?'background:#f0fdf4;opacity:0.8':''}">
           <td style="font-size:12px">${t.issue_date}</td>
           <td style="font-size:12px;${t.confirmed?'text-decoration:line-through;color:#999':''}">${t.company}</td>
@@ -3406,7 +3452,7 @@ async function renderHometax(){
     : '<tr><td colspan="7" style="text-align:center;color:#bbb;padding:1.5rem">데이터 없음</td></tr>';
   document.getElementById('ht-buy-foot').innerHTML = buys.length
     ? `<tr class="tot"><td colspan="2">합계</td><td class="r">${fmtW(buyTotal)}</td><td class="r">${fmtW(buyVat)}</td><td class="r">${fmtW(buyTotal+buyVat)}</td><td></td><td></td></tr>` : '';
-  document.getElementById('ht-buy-summary').textContent = `${buys.length}건`;
+  document.getElementById('ht-buy-summary').textContent = `${buys.length}건 · ${buys.filter(t=>!invoiceStatus(t.company,'buy').ok).length?('확인 '+buys.filter(t=>!invoiceStatus(t.company,'buy').ok).length):'상태 일치'}`;
 
   // 법인카드 목록 렌더링
   const cardEntries = Object.entries(closingState)
