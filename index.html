@@ -2919,13 +2919,38 @@ function renderClosing(){
 
   const prepaidBal=advancePayments.filter(a=>a.type==='선급금'&&!a.settled).reduce((s,a)=>s+(+a.amount||0),0);
   const advanceBal=advancePayments.filter(a=>a.type==='선수금'&&!a.settled).reduce((s,a)=>s+(+a.amount||0),0);
+  const htSellVat = taxInvoices.filter(t=>t.type==='sell'&&t.year_month===cm).reduce((s,t)=>s+(+t.vat_amt||0),0);
+  const htBuyVat = taxInvoices.filter(t=>t.type==='buy'&&t.year_month===cm).reduce((s,t)=>s+(+t.vat_amt||0),0);
+  const appSellVat = Math.round(shownSellTotal*0.1);
+  const appBuyVat = Math.round(shownBuyTotal*0.1);
+  const sellDiff = htSellVat - appSellVat;
+  const buyDiff = htBuyVat - appBuyVat;
+  let htVatHtml = '';
+  if(htSellVat || htBuyVat){
+    htVatHtml = '<div class="metric" style="border-left:3px solid #e5e7eb;padding-left:12px;margin-left:4px">'
+      + '<div class="metric-lbl">🔍 홈택스 매출세액</div>'
+      + '<div class="metric-val" style="color:'+(Math.abs(sellDiff)<1000?'#166534':'#dc2626')+';font-size:12px">'
+      + '홈택스 '+fmtW(htSellVat)+' / 마감 '+fmtW(appSellVat)+'<br>'
+      + '<span style="font-weight:700">'+(Math.abs(sellDiff)<1000?'✅ 일치':'⚠️ 차이 '+fmtW(Math.abs(sellDiff)))+'</span>'
+      + '</div></div>'
+      + '<div class="metric">'
+      + '<div class="metric-lbl">🔍 홈택스 매입세액</div>'
+      + '<div class="metric-val" style="color:'+(Math.abs(buyDiff)<1000?'#166534':'#dc2626')+';font-size:12px">'
+      + '홈택스 '+fmtW(htBuyVat)+' / 마감 '+fmtW(appBuyVat)+'<br>'
+      + '<span style="font-weight:700">'+(Math.abs(buyDiff)<1000?'✅ 일치':'⚠️ 차이 '+fmtW(Math.abs(buyDiff)))+'</span>'
+      + '</div></div>';
+  }
   document.getElementById('cl-metrics').innerHTML=`
     <div class="metric"><div class="metric-lbl">${tab==='all'?'전체':tab} 매입 결제예정</div><div class="metric-val">${fmtW(shownBuyTotal*1.1)}</div></div>
     <div class="metric"><div class="metric-lbl">${tab==='all'?'전체':tab} 매출 청구예정</div><div class="metric-val g">${fmtW(shownSellTotal*1.1)}</div></div>
     <div class="metric"><div class="metric-lbl">이익 (VAT 제외)</div><div class="metric-val b">${fmtW(shownMargin)}</div></div>
     <div class="metric"><div class="metric-lbl">이익률</div><div class="metric-val b">${shownSellTotal?(shownMargin/shownSellTotal*100).toFixed(1):0}%</div></div>
     <div class="metric"><div class="metric-lbl">선급금 미정산 잔액</div><div class="metric-val" style="color:#dc2626">${fmtW(prepaidBal)}</div></div>
-    <div class="metric"><div class="metric-lbl">선수금 미정산 잔액</div><div class="metric-val" style="color:#166534">${fmtW(advanceBal)}</div></div>`;
+    <div class="metric"><div class="metric-lbl">선수금 미정산 잔액</div><div class="metric-val" style="color:#166534">${fmtW(advanceBal)}</div></div>
+    <div class="metric" style="border-left:3px solid #e5e7eb;padding-left:12px;margin-left:4px"><div class="metric-lbl">📊 매출세액 (마감기준)</div><div class="metric-val" style="color:#166534">${fmtW(Math.round(shownSellTotal*0.1))}</div></div>
+    <div class="metric"><div class="metric-lbl">📊 매입세액 (마감기준)</div><div class="metric-val" style="color:#dc2626">${fmtW(Math.round(shownBuyTotal*0.1))}</div></div>
+    <div class="metric"><div class="metric-lbl">💰 납부예상세액</div><div class="metric-val" style="color:${(shownSellTotal-shownBuyTotal)>=0?'#dc2626':'#166534'};font-weight:700">${fmtW(Math.round((shownSellTotal-shownBuyTotal)*0.1))}</div></div>
+    ${htVatHtml}`;
 
   document.getElementById('cl-buy-body').innerHTML=buyHtml+
     '<tr class="tot"><td>'+(tab==='all'?'전체':tab)+' 합계</td><td class="r">'+fmtW(shownBuyTotal)+'</td><td class="r">'+fmtW(Math.round(shownBuyTotal*0.1))+'</td><td class="r profit-val">'+fmtW(Math.round(shownBuyTotal*1.1))+'</td><td colspan="3"></td></tr>';
