@@ -2978,7 +2978,7 @@ function renderCashflow(){
       if(!buyByTradeMo[mo][i.buyer]) buyByTradeMo[mo][i.buyer]=0;
       buyByTradeMo[mo][i.buyer]+=i.bamt;
     }
-    if(i.status==='납품완료' && i.seller && i.samt && sellMonthOf(i)){
+    if(i.seller && i.samt && sellMonthOf(i)){
       const mo = sellMonthOf(i);
       if(!mo) return;
       const co = i.seller.split('_')[0];
@@ -3010,7 +3010,12 @@ function renderCashflow(){
   Object.values(buyDueMap).forEach(mo=>dueMoSet.add(mo));
   Object.values(sellDueMap).forEach(mo=>dueMoSet.add(mo));
   Object.keys(buyByTradeMo).forEach(mo=>dueMoSet.add(mo));
-  Object.keys(sellByTradeMo).forEach(mo=>dueMoSet.add(mo));
+  Object.entries(sellByTradeMo).forEach(([tradeMo, companies])=>{
+    Object.keys(companies).forEach(name=>{
+      const saved=sellDueMap[`${tradeMo}|${name}`];
+      dueMoSet.add(saved || ym(computeDueDate(name, tradeMo)) || tradeMo);
+    });
+  });
   const allMos = [...dueMoSet].filter(Boolean).sort().reverse();
 
   const sel = document.getElementById('cf-month');
@@ -3035,9 +3040,11 @@ function renderCashflow(){
   Object.entries(sellByTradeMo).forEach(([tradeMo, companies])=>{
     Object.entries(companies).forEach(([company, amt])=>{
       const key = `${tradeMo}|${company}`;
-      const dueMo = sellDueMap[key] || tradeMo;
+      const savedDue = sellDueMap[key];
+      const autoDue = computeDueDate(company, tradeMo);
+      const dueMo = savedDue || ym(autoDue) || tradeMo;
       if(dueMo !== cm) return;
-      if(!sm[company]) sm[company]={amt:0, tradeMo, dueDate: closingState[`${tradeMo}_sell_${company}_date`]||''};
+      if(!sm[company]) sm[company]={amt:0, tradeMo, dueDate: closingState[`${tradeMo}_sell_${company}_date`]||autoDue||''};
       sm[company].amt+=amt;
     });
   });
