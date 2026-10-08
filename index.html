@@ -9,13 +9,13 @@
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'맑은 고딕','Apple SD Gothic Neo',sans-serif;font-size:14px;color:#1a1a1a;background:#eee}
-.app{max-width:1300px;margin:0 auto;padding:20px}
+.app{max-width:1680px;margin:0 auto;padding:12px 8px}
 h1{font-size:17px;font-weight:600;margin-bottom:16px;color:#111}
 .nav{display:flex;background:#fff;border-radius:8px 8px 0 0;border:1px solid #ddd;border-bottom:none}
 .nav-btn{padding:11px 22px;font-size:13px;border:none;background:none;cursor:pointer;color:#888;border-bottom:2px solid transparent;font-family:inherit}
 .nav-btn.on{color:#111;border-bottom-color:#111;font-weight:600}
 .nav-btn:hover{background:#f9f9f9;color:#333}
-.page{display:none;background:#fff;border-radius:0 0 8px 8px;padding:24px;border:1px solid #ddd}
+.page{display:none;background:#fff;border-radius:0 0 8px 8px;padding:16px 12px;border:1px solid #ddd}
 .page.on{display:block}
 .form-grid{display:grid;grid-template-columns:160px 160px 1fr;gap:12px;margin-bottom:20px}
 .field{display:flex;flex-direction:column;gap:5px}
@@ -24,6 +24,8 @@ input,select{width:100%;padding:7px 10px;font-size:13px;border:1px solid #ddd;bo
 input:focus,select:focus{outline:none;border-color:#888}
 input[readonly]{background:#f5f5f5;color:#999}
 .section-box{border:1px solid #ddd;border-radius:7px;overflow:hidden;margin-bottom:16px}
+#page-hometax .section-box{overflow-x:auto}
+#page-hometax .data-tbl th,#page-hometax .data-tbl td{padding-left:8px;padding-right:8px}
 .section-title{padding:9px 14px;background:#f5f5f5;font-size:11px;font-weight:700;color:#555;border-bottom:1px solid #ddd;letter-spacing:0.4px;text-transform:uppercase;display:flex;justify-content:space-between;align-items:center}
 .items-table{width:100%;border-collapse:collapse;font-size:12px}
 .items-table th{background:#fafafa;padding:7px 7px;border-bottom:1px solid #ddd;border-right:1px solid #f0f0f0;font-weight:600;color:#555;text-align:left;white-space:nowrap;font-size:11px}
@@ -522,7 +524,6 @@ input[readonly]{background:#f5f5f5;color:#999}
             <th class="r">공급가액</th><th class="r">세액</th>
             <th class="r" style="font-weight:700">합계(VAT포함)</th>
             <th style="width:70px;text-align:center">상태</th>
-            <th style="width:60px;text-align:center">확인</th>
           </tr></thead>
           <tbody id="ht-sell-body"></tbody>
           <tfoot id="ht-sell-foot"></tfoot>
@@ -540,7 +541,6 @@ input[readonly]{background:#f5f5f5;color:#999}
             <th class="r">공급가액</th><th class="r">세액</th>
             <th class="r" style="font-weight:700">합계(VAT포함)</th>
             <th style="width:70px;text-align:center">상태</th>
-            <th style="width:60px;text-align:center">확인</th>
           </tr></thead>
           <tbody id="ht-buy-body"></tbody>
           <tfoot id="ht-buy-foot"></tfoot>
@@ -3234,14 +3234,6 @@ function renderCashflow(){
 
 let taxInvoices = [];
 
-async function confirmTaxInvoice(id, confirmed){
-  const {error} = await sb.from('tax_invoices').update({confirmed}).eq('id', id);
-  if(error){ console.error(error); return; }
-  const item = taxInvoices.find(t=>t.id===id);
-  if(item) item.confirmed = confirmed;
-  showSyncStatus(confirmed ? '✅ 확인 완료' : '확인 해제');
-}
-
 async function saveCardVat(){
   const mo = document.getElementById('ht-card-month').value;
   const amt = +document.getElementById('ht-card-amt').value||0;
@@ -3407,12 +3399,11 @@ async function renderHometax(){
           <td class="r" style="${t.confirmed?'color:#999':''}">${fmtW(t.supply_amt)}</td>
           <td class="r" style="${t.confirmed?'color:#999':''}">${fmtW(t.vat_amt)}</td>
           <td class="r" style="font-weight:700;${t.confirmed?'color:#999':''}">${fmtW((+t.supply_amt||0)+(+t.vat_amt||0))}</td>
-          <td style="text-align:center">${badge}</td>
-          <td style="text-align:center"><input type="checkbox" ${t.confirmed?'checked':''} onchange="confirmTaxInvoice('${t.id}',this.checked)"></td></tr>`;
+          <td style="text-align:center">${badge}</td></tr>`;
       }).join('')
-    : '<tr><td colspan="7" style="text-align:center;color:#bbb;padding:1.5rem">데이터 없음</td></tr>';
+    : '<tr><td colspan="6" style="text-align:center;color:#bbb;padding:1.5rem">데이터 없음</td></tr>';
   document.getElementById('ht-sell-foot').innerHTML = sells.length
-    ? `<tr class="tot"><td colspan="2">합계</td><td class="r">${fmtW(sellTotal)}</td><td class="r">${fmtW(sellVat)}</td><td class="r">${fmtW(sellTotal+sellVat)}</td><td></td><td></td></tr>` : '';
+    ? `<tr class="tot"><td colspan="2">합계</td><td class="r">${fmtW(sellTotal)}</td><td class="r">${fmtW(sellVat)}</td><td class="r">${fmtW(sellTotal+sellVat)}</td><td></td></tr>` : '';
   document.getElementById('ht-sell-summary').textContent = `${sells.length}건 · ${sells.filter(t=>!invoiceStatus(t.company,'sell').ok).length?('확인 '+sells.filter(t=>!invoiceStatus(t.company,'sell').ok).length):'상태 일치'}`;
 
   // 매입 테이블 (건별)
@@ -3427,12 +3418,11 @@ async function renderHometax(){
           <td class="r" style="${t.confirmed?'color:#999':''}">${fmtW(t.supply_amt)}</td>
           <td class="r" style="${t.confirmed?'color:#999':''}">${fmtW(t.vat_amt)}</td>
           <td class="r" style="font-weight:700;${t.confirmed?'color:#999':''}">${fmtW((+t.supply_amt||0)+(+t.vat_amt||0))}</td>
-          <td style="text-align:center">${badge}</td>
-          <td style="text-align:center"><input type="checkbox" ${t.confirmed?'checked':''} onchange="confirmTaxInvoice('${t.id}',this.checked)"></td></tr>`;
+          <td style="text-align:center">${badge}</td></tr>`;
       }).join('')
-    : '<tr><td colspan="7" style="text-align:center;color:#bbb;padding:1.5rem">데이터 없음</td></tr>';
+    : '<tr><td colspan="6" style="text-align:center;color:#bbb;padding:1.5rem">데이터 없음</td></tr>';
   document.getElementById('ht-buy-foot').innerHTML = buys.length
-    ? `<tr class="tot"><td colspan="2">합계</td><td class="r">${fmtW(buyTotal)}</td><td class="r">${fmtW(buyVat)}</td><td class="r">${fmtW(buyTotal+buyVat)}</td><td></td><td></td></tr>` : '';
+    ? `<tr class="tot"><td colspan="2">합계</td><td class="r">${fmtW(buyTotal)}</td><td class="r">${fmtW(buyVat)}</td><td class="r">${fmtW(buyTotal+buyVat)}</td><td></td></tr>` : '';
   document.getElementById('ht-buy-summary').textContent = `${buys.length}건 · ${buys.filter(t=>!invoiceStatus(t.company,'buy').ok).length?('확인 '+buys.filter(t=>!invoiceStatus(t.company,'buy').ok).length):'상태 일치'}`;
 
   // 법인카드 목록 렌더링
