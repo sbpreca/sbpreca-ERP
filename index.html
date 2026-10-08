@@ -419,7 +419,8 @@ input[readonly]{background:#f5f5f5;color:#999}
         <input type="number" id="sp-new-amt" placeholder="금액 (음수=지급)" style="width:150px">
         <input type="date" id="sp-new-date" style="width:140px">
         <input type="month" id="sp-new-tax" placeholder="세금계산서 발행월" style="width:140px">
-        <input id="sp-new-note" placeholder="비고 (선택)" style="width:150px">
+        <input id="sp-new-note" placeholder="비고 (선택)" style="width:130px">
+        <label style="font-size:12px;white-space:nowrap"><input type="checkbox" id="sp-new-vat"> VAT포함</label>
         <button class="btn btn-save" onclick="addSplitPayment()">+ 추가</button>
       </div>
     </div>
@@ -2923,13 +2924,14 @@ async function renderClosing(){
   const htSellVat = taxInvoices.filter(t=>t.type==='sell'&&t.year_month===cm).reduce((s,t)=>s+(+t.vat_amt||0),0);
   const htBuyVat = taxInvoices.filter(t=>t.type==='buy'&&t.year_month===cm).reduce((s,t)=>s+(+t.vat_amt||0),0);
   // 분할 입출금 중 해당 월 세금계산서 발행분 추가
-  // splitPayments는 VAT포함 금액 → 공급가액으로 변환 (÷1.1)
+  // is_vat_included 여부에 따라 공급가액 계산
+  const toSupply = (s, amt) => s.is_vat_included ? Math.round(amt/1.1) : amt;
   const splitTaxSell = splitPayments
     .filter(s=>s.amount>0 && s.tax_date && s.tax_date.slice(0,7)===cm)
-    .reduce((sum,s)=>sum+Math.round(s.amount/1.1), 0);
+    .reduce((sum,s)=>sum+toSupply(s, s.amount), 0);
   const splitTaxBuy = splitPayments
     .filter(s=>s.amount<0 && s.tax_date && s.tax_date.slice(0,7)===cm)
-    .reduce((sum,s)=>sum+Math.round(Math.abs(s.amount)/1.1), 0);
+    .reduce((sum,s)=>sum+toSupply(s, Math.abs(s.amount)), 0);
   const appSellVat = Math.round((shownSellTotal + splitTaxSell) * 0.1);
   const appBuyVat = Math.round((shownBuyTotal + splitTaxBuy) * 0.1);
   const sellDiff = htSellVat - appSellVat;
@@ -3570,7 +3572,8 @@ async function addSplitPayment(){
   const tax_date = tax_month ? tax_month+'-01' : null;
   const note = document.getElementById('sp-new-note').value.trim();
   if(!company||!amount){ alert('업체명과 금액을 입력해주세요'); return; }
-  const {data,error} = await sb.from('split_payments').insert({company,amount,due_date,tax_date,note,settled:false}).select();
+  const is_vat_included = document.getElementById('sp-new-vat').checked;
+  const {data,error} = await sb.from('split_payments').insert({company,amount,due_date,tax_date,note,settled:false,is_vat_included}).select();
   if(error){ console.error(error); return; }
   splitPayments.push(data[0]);
   document.getElementById('sp-new-company').value='';
@@ -3578,6 +3581,7 @@ async function addSplitPayment(){
   document.getElementById('sp-new-date').value='';
   document.getElementById('sp-new-tax').value='';
   document.getElementById('sp-new-note').value='';
+  document.getElementById('sp-new-vat').checked=false;
   renderAdvancePayments();
 }
 
