@@ -2921,8 +2921,15 @@ function renderClosing(){
   const advanceBal=advancePayments.filter(a=>a.type==='선수금'&&!a.settled).reduce((s,a)=>s+(+a.amount||0),0);
   const htSellVat = taxInvoices.filter(t=>t.type==='sell'&&t.year_month===cm).reduce((s,t)=>s+(+t.vat_amt||0),0);
   const htBuyVat = taxInvoices.filter(t=>t.type==='buy'&&t.year_month===cm).reduce((s,t)=>s+(+t.vat_amt||0),0);
-  const appSellVat = Math.round(shownSellTotal*0.1);
-  const appBuyVat = Math.round(shownBuyTotal*0.1);
+  // 분할 입출금 중 해당 월 세금계산서 발행분 추가
+  const splitTaxSell = splitPayments
+    .filter(s=>s.amount>0 && s.tax_date && s.tax_date.slice(0,7)===cm)
+    .reduce((sum,s)=>sum+s.amount, 0);
+  const splitTaxBuy = splitPayments
+    .filter(s=>s.amount<0 && s.tax_date && s.tax_date.slice(0,7)===cm)
+    .reduce((sum,s)=>sum+Math.abs(s.amount), 0);
+  const appSellVat = Math.round((shownSellTotal + splitTaxSell) * 0.1);
+  const appBuyVat = Math.round((shownBuyTotal + splitTaxBuy) * 0.1);
   const sellDiff = htSellVat - appSellVat;
   const buyDiff = htBuyVat - appBuyVat;
   let htVatHtml = '';
@@ -4926,8 +4933,7 @@ function _doPrintClosingByCompany(cm, bm, sm, stKey){
       <div style="margin-top:30px;font-size:12px;color:#555">
         <p>위와 같이 마감 내역을 확인합니다.</p>
         <div style="margin-top:40px;display:flex;justify-content:space-between">
-          <div>확인자: ___________________ (인)</div>
-          <div>${MY.name}　담당자: ___________________ (인)</div>
+          
         </div>
       </div>
     </div>`;
