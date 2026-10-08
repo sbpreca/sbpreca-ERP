@@ -349,7 +349,6 @@ input[readonly]{background:#f5f5f5;color:#999}
           <th style="width:48px" class="c">분할</th>
           <th style="width:60px" class="c">명세서</th>
           <th style="width:60px" class="c">마감제외</th>
-          <th style="width:100px" class="c">매출 정산월</th>
         </tr></thead>
         <tbody id="deliver-body"></tbody>
       </table>
@@ -2427,12 +2426,9 @@ function renderDeliver(){
         <td class="c" title="반품예정 등으로 이번 마감현황(외상매출금) 집계에서 이 매출만 빼고 싶을 때 체크">
           <input type="checkbox" ${r.closing_sell_exclude?'checked':''} onchange="updateClosingExclude(${idx},this.checked)">
         </td>
-        <td class="c" title="실제 납품월과 다르게 매출을 인식하기로 한 경우(마감현황에만 반영) - 예: 2026-07">
-          <input type="month" value="${r.closing_month_override||''}" style="width:100%;font-size:11px" onchange="updateClosingMonthOverride(${idx},this.value)">
-        </td>
       </tr>`;
     }).join('')
-    :'<tr><td colspan="15" style="text-align:center;color:#bbb;padding:2rem">납품 내역이 없어요</td></tr>';
+    :'<tr><td colspan="14" style="text-align:center;color:#bbb;padding:2rem">납품 내역이 없어요</td></tr>';
 
 }
 
@@ -2647,8 +2643,8 @@ async function renderClosing(){
   if(!taxInvoices || !taxInvoices.length) taxInvoices = await loadTaxInvoices();
   const cm=document.getElementById('cl-month').value;
   const tab=document.getElementById('cl-tab')?document.getElementById('cl-tab').value:'all';
-  // 매입: 출하일(납품일) 기준 / 매출: 정산월 재지정(closing_month_override)이 있으면 그걸 우선, 없으면 출하일 기준
-  const sellMonthOf=i=>i.closing_month_override||ym(i.ship);
+  // 매입: 출하일 기준. 매출: 납품완료된 건만, 출하일(납품일)이 속한 달
+  const sellMonthOf=i=>ym(i.ship);
   const months=[...new Set(orders.flatMap(o=>o.items.flatMap(i=>[i.ship?ym(i.ship):'', sellMonthOf(i)])).filter(Boolean))].sort().reverse();
   document.getElementById('cl-month').innerHTML=`<option value="">전체</option>`+months.map(m=>`<option${m===cm?' selected':''}>${m}</option>`).join('');
   document.getElementById('cl-note').value=monthlyNotes[cm||'all']||'';
@@ -2675,11 +2671,11 @@ async function renderClosing(){
     return true;
   });
   const all=allItems.filter(i=>{
+    if(i.status!=='납품완료') return false;
     if(!cm) return true;
     if(sellMonthOf(i)!==cm) return false;
-    // ※ 이전 달 처리완료 여부와 무관 — 해당 월에 거래가 있으면 항상 표시
     return true;
-  }); // 매출처 집계용
+  }); // 매출처 집계용: 납품완료, 출하월
 
   // 매입처별 집계 (품목별 상세 포함) - 출하일 기준 그대로
   const bm={};
@@ -2864,7 +2860,7 @@ let _closingCache=null;
 
 function renderCashflow(){
   const allItems = orders.flatMap(o=>o.items);
-  const sellMonthOf = i => i.closing_month_override || ym(i.ship);
+  const sellMonthOf = i => ym(i.ship);
 
   // 1. 먼저 거래월별 매입/매출 집계
   const buyByTradeMo = {}; // {거래월: {업체: amt}}
@@ -2878,7 +2874,7 @@ function renderCashflow(){
       if(!buyByTradeMo[mo][i.buyer]) buyByTradeMo[mo][i.buyer]=0;
       buyByTradeMo[mo][i.buyer]+=i.bamt;
     }
-    if(i.seller && i.samt){
+    if(i.status==='납품완료' && i.seller && i.samt && i.ship){
       const mo = sellMonthOf(i);
       if(!mo) return;
       const co = i.seller.split('_')[0];
@@ -3236,9 +3232,9 @@ async function renderHometax(){
 
   // 앱 데이터 집계
   const allItems = orders.flatMap(o=>o.items);
-  const sellMo = i => i.closing_month_override || ym(i.ship);
+  const sellMo = i => ym(i.ship);
   const appSells = {};
-  allItems.filter(i=>!i.closing_sell_exclude && sellMo(i)===cm && i.samt>0).forEach(i=>{
+  allItems.filter(i=>i.status==='납품완료' && !i.closing_sell_exclude && sellMo(i)===cm && i.samt>0).forEach(i=>{
     const co = (i.seller||'').split('_')[0];
     if(!appSells[co]) appSells[co]=0;
     appSells[co]+=i.samt;
@@ -3550,8 +3546,8 @@ function renderPL(){
     if(!pm) return true;
     return i.ship && ym(i.ship)===pm;
   });
-  // 매출: 마감제외 표시된 건은 애초에 매출로 안 잡고, 매출 정산월 재지정이 있으면 그 달로 인식 (마감현황/연간현황과 동일 기준)
-  const salesMonthOf=i=>i.closing_month_override||ym(i.ship);
+  // 매출: 납품완료만, 출하일이 속한 달. 마감제외는 매출에서 뺀다.
+  const salesMonthOf=i=>ym(i.ship);
   const allSell=orders.flatMap(o=>o.items).filter(i=>{
     if(i.status!=='납품완료') return false;
     if(i.closing_sell_exclude) return false;
@@ -3559,7 +3555,7 @@ function renderPL(){
     return salesMonthOf(i)===pm;
   });
   const all=allBuy; // 기존 코드 호환용 (판관비 등 다른 곳에서 참조하지 않음, 매입 계산에만 사용)
-  const salesRaw=allSell.reduce((s,i)=>s+i.samt,0); // 발주 데이터 기준 매출액 (자동, 마감제외/정산월 반영됨)
+  const salesRaw=allSell.reduce((s,i)=>s+i.samt,0); // 납품완료 공급가액, 출하월 기준
   const purchasesRaw=allBuy.reduce((s,i)=>s+i.bamt,0); // 발주 데이터 기준 당기매입액 (자동, 납품일 그대로)
     const salesAdj=0;
   const sales=salesRaw;
@@ -3754,7 +3750,7 @@ function renderAnnual(){
       o.items.forEach(i=>{
         if(i.status!=='납품완료') return;
         if(category==='매출' && i.closing_sell_exclude) return; // 반품예정 등 마감제외 표시된 매출은 연간현황에서도 제외
-        const effShip=(category==='매출' && i.closing_month_override) ? i.closing_month_override+'-01' : i.ship;
+        const effShip=i.ship;
         if(!effShip || yr(effShip)!==curY) return;
         const mo=+effShip.slice(5,7);
         if(mo<6) return; // 1~5월은 수동 입력 영역, 6월부터 자동집계
