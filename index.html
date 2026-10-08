@@ -348,7 +348,6 @@ input[readonly]{background:#f5f5f5;color:#999}
           <th style="width:74px" class="c">납품상태</th>
           <th style="width:48px" class="c">분할</th>
           <th style="width:60px" class="c">명세서</th>
-          <th style="width:60px" class="c">마감제외</th>
         </tr></thead>
         <tbody id="deliver-body"></tbody>
       </table>
@@ -2167,18 +2166,6 @@ function updateStatus(idx,val){
   }
   persist(o.no);updateTsBar();
 }
-function updateClosingExclude(idx,checked){
-  const r=deliverRows[idx];if(!r)return;
-  const o=orders.find(x=>x.no===r.order_no);if(!o)return;
-  o.items[r.item_idx].closing_sell_exclude=checked;
-  persist(o.no);
-}
-function updateClosingMonthOverride(idx,val){
-  const r=deliverRows[idx];if(!r)return;
-  const o=orders.find(x=>x.no===r.order_no);if(!o)return;
-  o.items[r.item_idx].closing_month_override=val||'';
-  persist(o.no);
-}
 
 
 function showTSfromDeliver(){
@@ -2430,14 +2417,10 @@ function renderDeliver(){
           <option${!isPend?' selected':''}>납품완료</option>
         </select></td>
         <td class="c">${isPend?`<button class="btn" style="font-size:11px;padding:3px 8px" onclick="splitItem(${idx})">분할</button>`:'　'}</td>
-        <td class="c">${r.samt>0?`<button class="btn btn-ts" style="font-size:11px;padding:3px 8px" onclick="quickTS(${idx})">${isPend?'명세서':'재발행'}</button>`:'　'}
-          </td>
-        <td class="c" title="반품예정 등으로 이번 마감현황(외상매출금) 집계에서 이 매출만 빼고 싶을 때 체크">
-          <input type="checkbox" ${r.closing_sell_exclude?'checked':''} onchange="updateClosingExclude(${idx},this.checked)">
-        </td>
+        <td class="c">${r.samt>0?`<button class="btn btn-ts" style="font-size:11px;padding:3px 8px" onclick="quickTS(${idx})">${isPend?'명세서':'재발행'}</button>`:'　'}</td>
       </tr>`;
     }).join('')
-    :'<tr><td colspan="14" style="text-align:center;color:#bbb;padding:2rem">납품 내역이 없어요</td></tr>';
+    :'<tr><td colspan="13" style="text-align:center;color:#bbb;padding:2rem">납품 내역이 없어요</td></tr>';
 
 }
 
