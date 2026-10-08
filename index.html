@@ -3193,12 +3193,12 @@ function renderCashflow(){
       if(existingRow){
         const adjTd = existingRow.querySelectorAll('td')[2];
         const curAdj = parseInt(adjTd.textContent.replace(/[^0-9-]/g,''))||0;
-        const newAdj = curAdj + Math.abs(s.amount);
-        adjTd.textContent = '+' + fmtW(newAdj);
-        adjTd.style.color = '#dc2626';
+        const newAdj = curAdj - Math.abs(s.amount);
+        adjTd.textContent = '-' + fmtW(Math.abs(newAdj));
+        adjTd.style.color = '#166534';
         const amtTd = existingRow.querySelectorAll('td')[3];
         const curNet = parseInt(amtTd.textContent.replace(/[^0-9]/g,''))||0;
-        amtTd.textContent = fmtW(curNet + Math.abs(s.amount));
+        amtTd.textContent = fmtW(curNet - Math.abs(s.amount));
         amtTd.style.color = '#dc2626';
         amtTd.style.fontWeight = '700';
       } else {
