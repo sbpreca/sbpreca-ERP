@@ -403,9 +403,17 @@ input[readonly]{background:#f5f5f5;color:#999}
       </table>
     </div>
 
-    
-
-    
+    <div class="section-box" id="cl-overhead-box" style="margin-top:14px">
+      <div class="section-title"><span>발주 외 매입 세금계산서</span><span style="font-size:12px;color:#888;font-weight:400;margin-left:8px">임대료, 기장료, 전화, 전기처럼 발주 없이 발행된 계산서입니다. 체크한 거래처는 다음 달 계산서도 마감 매입세액에 포함됩니다.</span></div>
+      <table class="data-tbl">
+        <thead><tr>
+          <th>거래처</th><th>적요</th>
+          <th class="r">공급가액</th><th class="r">세액</th>
+          <th style="width:90px;text-align:center">마감 반영</th>
+        </tr></thead>
+        <tbody id="cl-overhead-body"></tbody>
+      </table>
+    </div>
 
     <!-- 분할 입출금 예정 -->
     <div class="section-box" style="margin-bottom:14px">
@@ -2639,6 +2647,94 @@ function setClosingTab(tab){
   renderClosing();
 }
 
+function escHtml(s){
+  return String(s||'').replace(/[&<>"']/g, ch=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[ch]));
+}
+function normParty(n){
+  return String(n||'').replace(/\(주\)|주식회사|\(유\)|유한회사|\s/g,'').toLowerCase();
+}
+function partyMatch(a,b){
+  const x=normParty(a), y=normParty(b);
+  if(!x||!y) return false;
+  if(x===y||x.includes(y)||y.includes(x)) return true;
+  if(Math.abs(x.length-y.length)>1 || Math.min(x.length,y.length)<4) return false;
+  const A=x.length>=y.length?x:y;
+  const B=x.length>=y.length?y:x;
+  let i=0, j=0, diff=0;
+  while(i<A.length && j<B.length){
+    if(A[i]===B[j]){ i++; j++; continue; }
+    diff++;
+    if(diff>1) return false;
+    if(A.length===B.length){ i++; j++; }
+    else i++;
+  }
+  return diff+(A.length-i)<=1;
+}
+function overheadKey(name){ return 'ht_ov_'+normParty(name); }
+function overheadIncluded(name){ return closingState[overheadKey(name)]==='1'; }
+function outsidePurchaseInvoices(cm){
+  if(!cm) return [];
+  const grouped={};
+  taxInvoices.filter(t=>t.type==='buy' && t.year_month===cm).forEach(t=>{
+    const co=t.company||'(거래처 없음)';
+    if(!grouped[co]) grouped[co]={company:co, supply:0, vat:0, items:[]};
+    grouped[co].supply += +t.supply_amt||0;
+    grouped[co].vat += +t.vat_amt||0;
+    const item=String(t.item_name||'').trim();
+    if(item && !grouped[co].items.includes(item)) grouped[co].items.push(item);
+  });
+  const orderBuyers=new Set();
+  orders.flatMap(o=>o.items).forEach(i=>{
+    if(i.closing_sell_exclude) return;
+    if(!(i.ship && ym(i.ship)===cm) || !i.buyer) return;
+    orderBuyers.add(i.buyer);
+  });
+  const adjs=vatAdjustments.filter(a=>a.year_month===cm && a.type==='buy');
+  return Object.values(grouped).flatMap(row=>{
+    if([...orderBuyers].some(b=>partyMatch(row.company,b))) return [];
+    const adj=adjs.filter(a=>partyMatch(row.company,a.company)).reduce((s,a)=>s+(+a.amount||0),0);
+    const residualSupply=row.supply-adj;
+    if(residualSupply<=1000) return [];
+    const vat=row.supply ? Math.round(row.vat*residualSupply/row.supply) : 0;
+    return [{...row, supply:residualSupply, vat, included:overheadIncluded(row.company)}];
+  }).sort((a,b)=>b.supply-a.supply);
+}
+async function toggleOverheadInclude(enc, on){
+  const name=decodeURIComponent(enc);
+  const key=overheadKey(name);
+  if(on) closingState[key]='1';
+  else delete closingState[key];
+  const req = on
+    ? sb.from('closing_state').upsert({key, value:'1'},{onConflict:'key'})
+    : sb.from('closing_state').delete().eq('key', key);
+  const {error}=await req;
+  if(error){ console.error(error); showSyncStatus('저장 실패', true); return; }
+  showSyncStatus(on?'마감 세액에 포함':'마감 세액에서 제외');
+  renderClosing();
+}
+function renderOverhead(cm){
+  const body=document.getElementById('cl-overhead-body');
+  if(!body) return;
+  if(!cm){
+    body.innerHTML='<tr><td colspan="5" style="text-align:center;color:#bbb;padding:1rem">마감 기간을 고르면 발주에 없는 세금계산서가 나와요</td></tr>';
+    return;
+  }
+  const rows=outsidePurchaseInvoices(cm);
+  if(!rows.length){
+    body.innerHTML='<tr><td colspan="5" style="text-align:center;color:#bbb;padding:1rem">이 달은 발주에 없는 세금계산서가 없어요</td></tr>';
+    return;
+  }
+  const inc=rows.filter(r=>r.included);
+  body.innerHTML=rows.map(r=>`<tr>
+      <td style="font-weight:600">${escHtml(r.company)}</td>
+      <td style="font-size:12px;color:#666">${escHtml(r.items.slice(0,3).join(', '))}</td>
+      <td class="r">${fmtW(r.supply)}</td>
+      <td class="r">${fmtW(r.vat)}</td>
+      <td style="text-align:center"><input type="checkbox" ${r.included?'checked':''} onchange="toggleOverheadInclude('${encodeURIComponent(r.company)}', this.checked)"></td>
+    </tr>`).join('')
+    + `<tr class="tot"><td colspan="2">반영 합계</td><td class="r">${fmtW(inc.reduce((s,r)=>s+r.supply,0))}</td><td class="r">${fmtW(inc.reduce((s,r)=>s+r.vat,0))}</td><td></td></tr>`;
+}
+
 async function renderClosing(){
   if(!taxInvoices || !taxInvoices.length) taxInvoices = await loadTaxInvoices();
   const cm=document.getElementById('cl-month').value;
@@ -2814,7 +2910,8 @@ async function renderClosing(){
     .filter(a=>a.year_month===cm && a.type==='buy')
     .reduce((sum,a)=>sum+(+a.amount||0), 0);
   const appSellVat = Math.round((shownSellTotal + vatAdjSell) * 0.1);
-  const appBuyVat = Math.round((shownBuyTotal + vatAdjBuy) * 0.1);
+  const overheadVat = tab==='all' ? outsidePurchaseInvoices(cm).filter(r=>r.included).reduce((s,r)=>s+r.vat,0) : 0;
+  const appBuyVat = Math.round((shownBuyTotal + vatAdjBuy) * 0.1) + overheadVat;
   const sellDiff = htSellVat - appSellVat;
   const buyDiff = htBuyVat - appBuyVat;
   let htVatHtml = '';
@@ -2848,6 +2945,7 @@ async function renderClosing(){
   document.getElementById('cl-sell-body').innerHTML=sellHtml+
     '<tr class="tot"><td>'+(tab==='all'?'전체':tab)+' 합계</td><td class="r">'+fmtW(shownSellTotal)+'</td><td class="r">'+fmtW(Math.round(shownSellTotal*0.1))+'</td><td class="r profit-val">'+fmtW(Math.round(shownSellTotal*1.1))+'</td><td colspan="3"></td></tr>';
 
+  renderOverhead(cm);
   renderAdvancePayments();
 
   _closingCache={cm,bm,sm,stKey};
@@ -4129,6 +4227,12 @@ function exportClosingExcel(){
       closingState[stKey('buy',name,'tax')]||'미발급',
       closingState[stKey('buy',name,'done')]||'미완료']);
   });
+  const extra=outsidePurchaseInvoices(cm).filter(r=>r.included);
+  if(extra.length){
+    rows.push([]);
+    rows.push(['발주 외 매입 세금계산서 (마감 세액 반영)']);
+    extra.forEach(r=>rows.push(['기타매입', r.company, r.supply, r.vat, r.supply+r.vat, '', '반영', '']));
+  }
   rows.push([]);
   rows.push([`매출처별 청구 마감 (${cm||'전체'})`]);
   Object.entries(sm).sort((a,b)=>b[1].amt-a[1].amt).forEach(([name,v])=>{
