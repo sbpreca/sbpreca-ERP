@@ -404,11 +404,12 @@ input[readonly]{background:#f5f5f5;color:#999}
     </div>
 
     <div class="section-box" id="cl-overhead-box" style="margin-top:14px">
-      <div class="section-title"><span>발주 외 매입 세금계산서</span><span style="font-size:12px;color:#888;font-weight:400;margin-left:8px">임대료, 기장료, 전화, 전기처럼 발주 없이 발행된 계산서입니다. 체크한 거래처는 다음 달 계산서도 마감 매입세액에 포함됩니다.</span></div>
+      <div class="section-title"><span>발주 외 매입 세금계산서</span><span style="font-size:12px;color:#888;font-weight:400;margin-left:8px">지출분류에 올린 임대료, 기장료, 전화, 전기 출금이 있으면 그 세금계산서 세액을 마감에 넣습니다.</span></div>
       <table class="data-tbl">
         <thead><tr>
           <th>거래처</th><th>적요</th>
           <th class="r">공급가액</th><th class="r">세액</th>
+          <th>지출분류</th>
           <th style="width:90px;text-align:center">마감 반영</th>
         </tr></thead>
         <tbody id="cl-overhead-body"></tbody>
@@ -2671,7 +2672,23 @@ function partyMatch(a,b){
   return diff+(A.length-i)<=1;
 }
 function overheadKey(name){ return 'ht_ov_'+normParty(name); }
-function overheadIncluded(name){ return closingState[overheadKey(name)]==='1'; }
+function bankOverheadHits(cm, row){
+  const texts=(row.items||[]).join(' ');
+  return (txAll||[]).filter(t=>{
+    if(t.year_month!==cm || t.direction!=='out') return false;
+    if(t.pl_type && t.pl_type!=='판관비') return false;
+    if(t.vat_type && t.vat_type!=='공제') return false;
+    if((+t.amount||0)<=1000) return false;
+    const desc=String(t.description||'');
+    if(partyMatch(row.company, desc)) return true;
+    if(normParty(row.company).includes('케이티') && /(?<![A-Za-z])KT/i.test(desc)) return true;
+    if(String(row.company).includes('신화') && desc.includes('신화')) return true;
+    if(texts.includes('임대') && (t.account==='지급임차료' || desc.includes('임대'))) return true;
+    if((texts.includes('전기') || String(row.company).includes('전력')) && (t.account==='전력비' || desc.includes('전력'))) return true;
+    if((texts.includes('기장') || texts.includes('결산')) && desc.includes('신화')) return true;
+    return false;
+  });
+}
 function outsidePurchaseInvoices(cm){
   if(!cm) return [];
   const grouped={};
@@ -2696,18 +2713,17 @@ function outsidePurchaseInvoices(cm){
     const residualSupply=row.supply-adj;
     if(residualSupply<=1000) return [];
     const vat=row.supply ? Math.round(row.vat*residualSupply/row.supply) : 0;
-    return [{...row, supply:residualSupply, vat, included:overheadIncluded(row.company)}];
+    const hits=bankOverheadHits(cm, {...row, supply:residualSupply});
+    const flag=closingState[overheadKey(row.company)];
+    const included = flag==='1' || (flag!=='0' && hits.length>0);
+    return [{...row, supply:residualSupply, vat, hits, included}];
   }).sort((a,b)=>b.supply-a.supply);
 }
 async function toggleOverheadInclude(enc, on){
   const name=decodeURIComponent(enc);
   const key=overheadKey(name);
-  if(on) closingState[key]='1';
-  else delete closingState[key];
-  const req = on
-    ? sb.from('closing_state').upsert({key, value:'1'},{onConflict:'key'})
-    : sb.from('closing_state').delete().eq('key', key);
-  const {error}=await req;
+  closingState[key]=on?'1':'0';
+  const {error}=await sb.from('closing_state').upsert({key, value:on?'1':'0'},{onConflict:'key'});
   if(error){ console.error(error); showSyncStatus('저장 실패', true); return; }
   showSyncStatus(on?'마감 세액에 포함':'마감 세액에서 제외');
   renderClosing();
@@ -2716,27 +2732,40 @@ function renderOverhead(cm){
   const body=document.getElementById('cl-overhead-body');
   if(!body) return;
   if(!cm){
-    body.innerHTML='<tr><td colspan="5" style="text-align:center;color:#bbb;padding:1rem">마감 기간을 고르면 발주에 없는 세금계산서가 나와요</td></tr>';
+    body.innerHTML='<tr><td colspan="6" style="text-align:center;color:#bbb;padding:1rem">마감 기간을 고르면 발주에 없는 세금계산서가 나와요</td></tr>';
     return;
   }
   const rows=outsidePurchaseInvoices(cm);
   if(!rows.length){
-    body.innerHTML='<tr><td colspan="5" style="text-align:center;color:#bbb;padding:1rem">이 달은 발주에 없는 세금계산서가 없어요</td></tr>';
+    body.innerHTML='<tr><td colspan="6" style="text-align:center;color:#bbb;padding:1rem">이 달은 발주에 없는 세금계산서가 없어요</td></tr>';
     return;
   }
   const inc=rows.filter(r=>r.included);
-  body.innerHTML=rows.map(r=>`<tr>
+  body.innerHTML=rows.map(r=>{
+    const bankAmt=(r.hits||[]).reduce((s,t)=>s+(+t.amount||0),0);
+    const bankDesc=[...new Set((r.hits||[]).map(t=>t.description))].slice(0,3).join(', ');
+    const bankCell=r.hits&&r.hits.length
+      ? `<div style="font-size:12px">${escHtml(bankDesc)}</div><div style="font-size:11px;color:#888">${escHtml((r.hits[0].account||''))} ${fmtW(bankAmt)}</div>`
+      : '<span style="color:#bbb;font-size:12px">출금 없음</span>';
+    return `<tr>
       <td style="font-weight:600">${escHtml(r.company)}</td>
       <td style="font-size:12px;color:#666">${escHtml(r.items.slice(0,3).join(', '))}</td>
       <td class="r">${fmtW(r.supply)}</td>
       <td class="r">${fmtW(r.vat)}</td>
+      <td>${bankCell}</td>
       <td style="text-align:center"><input type="checkbox" ${r.included?'checked':''} onchange="toggleOverheadInclude('${encodeURIComponent(r.company)}', this.checked)"></td>
-    </tr>`).join('')
-    + `<tr class="tot"><td colspan="2">반영 합계</td><td class="r">${fmtW(inc.reduce((s,r)=>s+r.supply,0))}</td><td class="r">${fmtW(inc.reduce((s,r)=>s+r.vat,0))}</td><td></td></tr>`;
+    </tr>`;
+  }).join('')
+    + `<tr class="tot"><td colspan="2">반영 합계</td><td class="r">${fmtW(inc.reduce((s,r)=>s+r.supply,0))}</td><td class="r">${fmtW(inc.reduce((s,r)=>s+r.vat,0))}</td><td></td><td></td></tr>`;
 }
 
+let _txLoaded=false;
 async function renderClosing(){
   if(!taxInvoices || !taxInvoices.length) taxInvoices = await loadTaxInvoices();
+  if(!_txLoaded){
+    txAll = await loadBankTxFromDb();
+    _txLoaded=true;
+  }
   const cm=document.getElementById('cl-month').value;
   const tab=document.getElementById('cl-tab')?document.getElementById('cl-tab').value:'all';
   // 매입: 출하일 기준. 매출: 납품완료된 건만, 출하일(납품일)이 속한 달
