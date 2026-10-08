@@ -2925,16 +2925,15 @@ async function renderClosing(){
   const htBuyVat = taxInvoices.filter(t=>t.type==='buy'&&t.year_month===cm).reduce((s,t)=>s+(+t.vat_amt||0),0);
   // 분할 입출금 중 해당 월 세금계산서 발행분 추가
   // is_vat_included 여부에 따라 공급가액 계산
-  const toSupply = (s, amt) => s.is_vat_included ? Math.round(amt/1.1) : amt;
-  // 양수=매출 추가, 음수=매출 차감 (선수금 상계 등)
-  const splitTaxSell = splitPayments
-    .filter(s=>s.tax_date && s.tax_date.slice(0,7)===cm && (s.amount>0 || (s.amount<0 && s.note && s.note.includes('상계'))))
-    .reduce((sum,s)=>sum+toSupply(s, s.amount), 0);
-  const splitTaxBuy = splitPayments
-    .filter(s=>s.amount<0 && s.tax_date && s.tax_date.slice(0,7)===cm && !(s.note && s.note.includes('상계')))
-    .reduce((sum,s)=>sum+toSupply(s, Math.abs(s.amount)), 0);
-  const appSellVat = Math.round((shownSellTotal + splitTaxSell) * 0.1);
-  const appBuyVat = Math.round((shownBuyTotal + splitTaxBuy) * 0.1);
+  // vat_adjustments 기반으로 부가세 조정
+  const vatAdjSell = vatAdjustments
+    .filter(a=>a.year_month===cm && a.type==='sell')
+    .reduce((sum,a)=>sum+(+a.amount||0), 0);
+  const vatAdjBuy = vatAdjustments
+    .filter(a=>a.year_month===cm && a.type==='buy')
+    .reduce((sum,a)=>sum+(+a.amount||0), 0);
+  const appSellVat = Math.round((shownSellTotal + vatAdjSell) * 0.1);
+  const appBuyVat = Math.round((shownBuyTotal + vatAdjBuy) * 0.1);
   const sellDiff = htSellVat - appSellVat;
   const buyDiff = htBuyVat - appBuyVat;
   let htVatHtml = '';
