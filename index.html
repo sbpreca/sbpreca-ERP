@@ -2036,8 +2036,6 @@ function showPO(){
         <tbody>${dataRows}${blank}</tbody>
         <tfoot><tr><td colspan="5" style="text-align:right;padding:8px">합　계</td><td class="r">${fmt(sub)}</td><td colspan="2"></td></tr></tfoot>
       </table>
-      ${(()=>{ const refs=[...new Set(its.map(r=>r.item))].filter(it=>ITEM_PRICES[it]).map(it=>`${it} ${fmt(ITEM_PRICES[it].buy)}원`);
-        return refs.length?`<div style="font-size:11px;color:#888;margin:-6px 0 10px 2px">※ 등록 매입단가 참고: ${refs.join(' 　 ')}</div>`:''; })()}
       <div class="po-foot">
         <div class="po-foot-row"><span class="po-foot-key">납 품 처</span><span class="po-foot-val">${deliverKey||'　'}</span></div>
         <div class="po-foot-row"><span class="po-foot-key">소 재 지</span><span class="po-foot-val">${di.addr||'　'}</span></div>
@@ -2118,8 +2116,6 @@ function buildTS(selectedItems, issueDate){
           <td></td>
         </tr></tfoot>
       </table>
-      ${(()=>{ const refs=[...new Set(its.map(r=>r.item))].filter(it=>ITEM_PRICES[it]).map(it=>`${it} ${fmt(ITEM_PRICES[it].sell)}원`);
-        return refs.length?`<div style="font-size:11px;color:#888;margin:-6px 0 10px 2px">※ 등록 매출단가 참고: ${refs.join(' 　 ')}</div>`:''; })()}
       <div class="ts-bank">
         <span>${MY.bank}</span>
         <span>인수자　　　　　　　　　(인)</span>
