@@ -2955,9 +2955,9 @@ async function renderClosing(){
     <div class="metric"><div class="metric-lbl">이익률</div><div class="metric-val b">${shownSellTotal?(shownMargin/shownSellTotal*100).toFixed(1):0}%</div></div>
     <div class="metric"><div class="metric-lbl">선급금 미정산 잔액</div><div class="metric-val" style="color:#dc2626">${fmtW(prepaidBal)}</div></div>
     <div class="metric"><div class="metric-lbl">선수금 미정산 잔액</div><div class="metric-val" style="color:#166534">${fmtW(advanceBal)}</div></div>
-    <div class="metric" style="border-left:3px solid #e5e7eb;padding-left:12px;margin-left:4px"><div class="metric-lbl">📊 매출세액 (마감기준)</div><div class="metric-val" style="color:#166534">${fmtW(Math.round(shownSellTotal*0.1))}</div></div>
-    <div class="metric"><div class="metric-lbl">📊 매입세액 (마감기준)</div><div class="metric-val" style="color:#dc2626">${fmtW(Math.round(shownBuyTotal*0.1))}</div></div>
-    <div class="metric"><div class="metric-lbl">💰 납부예상세액</div><div class="metric-val" style="color:${(shownSellTotal-shownBuyTotal)>=0?'#dc2626':'#166534'};font-weight:700">${fmtW(Math.round((shownSellTotal-shownBuyTotal)*0.1))}</div></div>
+    <div class="metric" style="border-left:3px solid #e5e7eb;padding-left:12px;margin-left:4px"><div class="metric-lbl">📊 매출세액 (마감기준)</div><div class="metric-val" style="color:#166534">${fmtW(appSellVat)}</div></div>
+    <div class="metric"><div class="metric-lbl">📊 매입세액 (마감기준)</div><div class="metric-val" style="color:#dc2626">${fmtW(appBuyVat)}</div></div>
+    <div class="metric"><div class="metric-lbl">💰 납부예상세액</div><div class="metric-val" style="color:${(shownSellTotal-shownBuyTotal)>=0?'#dc2626':'#166534'};font-weight:700">${fmtW(appSellVat - appBuyVat)}</div></div>
     ${htVatHtml}`;
 
   document.getElementById('cl-buy-body').innerHTML=buyHtml+
