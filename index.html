@@ -4442,6 +4442,9 @@ async function saveBankTxRows(rows){
   return true;
 }
 
+function personalPhoneSupport(desc){
+  return /SKT/i.test(String(desc||''));
+}
 function matchTxRule(desc){
   let best=null;
   txRules.forEach(r=>{
@@ -4537,7 +4540,9 @@ async function handleTxFile(e){
     }
     const matched=matchTxRule(p.description);
     const defaultAccount = matched ? matched.account : (p.source==='card' ? '복리후생비' : '');
-    const vatType = ACCOUNT_VAT_TYPE[defaultAccount] || (ACCOUNT_PLTYPE[defaultAccount]==='판관비' ? '공제' : '해당없음');
+    const vatType = personalPhoneSupport(p.description)
+      ? '불공제'
+      : (ACCOUNT_VAT_TYPE[defaultAccount] || (ACCOUNT_PLTYPE[defaultAccount]==='판관비' ? '공제' : '해당없음'));
     return {...p, account: defaultAccount, vat_type: vatType, ruleKeyword: matched?matched.keyword:p.description, saveRule: !matched};
   });
   document.getElementById('tx-file-status').textContent=`${parsed.length}건 불러옴 (${isBank?'은행':'카드'} 형식)`;
@@ -4589,7 +4594,7 @@ async function saveTxReview(){
   const rows=txRowsPending.map(r=>({
     source:r.source, account_label:r.account_label, tx_date:r.tx_date, description:r.description,
     amount:r.amount, direction:r.direction, account:r.account, pl_type:ACCOUNT_PLTYPE[r.account]||'비손익',
-    vat_type:r.vat_type||(ACCOUNT_PLTYPE[r.account]==='판관비'?(ACCOUNT_VAT_TYPE[r.account]||'공제'):'해당없음'),
+    vat_type:personalPhoneSupport(r.description)?'불공제':(r.vat_type||(ACCOUNT_PLTYPE[r.account]==='판관비'?(ACCOUNT_VAT_TYPE[r.account]||'공제'):'해당없음')),
     year_month:r.tx_date.slice(0,7)
   }));
   const ok=await saveBankTxRows(rows);
@@ -4642,7 +4647,9 @@ async function renderTxSummary(){
     </tr>`;
   }).join('');
   const plTotal=list.filter(a=>a.pl_type==='판관비').reduce((s,a)=>s+a.out,0);
-  document.getElementById('tx-summary-foot').innerHTML=`<tr class="tot"><td colspan="2">판관비 합계</td><td class="r">${fmt(plTotal)}</td></tr>`;
+  const phoneSupport=rows.filter(t=>t.direction==='out' && personalPhoneSupport(t.description)).reduce((s,t)=>s+(+t.amount||0),0);
+  document.getElementById('tx-summary-foot').innerHTML=`<tr class="tot"><td colspan="2">판관비 합계</td><td class="r">${fmt(plTotal)}</td></tr>`
+    + (phoneSupport?`<tr><td colspan="3" style="font-size:12px;color:#888;font-weight:400">휴대폰 ${fmt(phoneSupport)}원은 개인 명의 지원입니다. 매입세액에 넣지 않습니다.</td></tr>`:'');
 }
 
 async function applyTxToPL(){
@@ -4652,15 +4659,20 @@ async function applyTxToPL(){
   const rows=txAll.filter(t=>t.year_month===ym);
   const byAccount={};
   rows.forEach(t=>{
-    if(!byAccount[t.account]) byAccount[t.account]={account:t.account, pl_type:t.pl_type, in:0, out:0};
-    if(t.direction==='in') byAccount[t.account].in+=+t.amount; else byAccount[t.account].out+=+t.amount;
+    if(!byAccount[t.account]) byAccount[t.account]={account:t.account, pl_type:t.pl_type, in:0, out:0, deductible:0};
+    if(t.direction==='in') byAccount[t.account].in+=+t.amount;
+    else {
+      byAccount[t.account].out+=+t.amount;
+      const vat = personalPhoneSupport(t.description) ? '불공제' : (t.vat_type || (ACCOUNT_PLTYPE[t.account]==='판관비' ? (ACCOUNT_VAT_TYPE[t.account]||'공제') : '해당없음'));
+      if(t.pl_type==='판관비' && vat==='공제') byAccount[t.account].deductible += +t.amount||0;
+    }
   });
   const sgaList=[], otherList=[];
-  let vatDeductible = 0; // 부가세 공제 가능 판관비 합계
+  let vatDeductible = 0; // 부가세 공제 가능 판관비 합계. 개인 명의 휴대폰 지원은 제외
   Object.values(byAccount).forEach(a=>{
     if(a.pl_type==='판관비'){
-      sgaList.push({name:a.account, amt:a.out, vat_type:a.vat_type||'공제'});
-      if((a.vat_type||'공제')==='공제') vatDeductible += a.out;
+      sgaList.push({name:a.account, amt:a.out, vat_type:a.deductible>0 && a.deductible<a.out ? '일부공제' : (a.deductible>0?'공제':'불공제')});
+      vatDeductible += a.deductible||0;
     }
     else if(a.pl_type==='영업외수익') otherList.push({name:a.account, type:'inc', amt:a.in});
     else if(a.pl_type==='영업외비용') otherList.push({name:a.account, type:'exp', amt:a.out});
