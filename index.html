@@ -3154,7 +3154,13 @@ function renderCashflow(){
         if(name===s.company) existingRow = row;
       });
       if(existingRow){
-        // 기존 행의 청구예정액(2번째 td)은 그대로, 실수령액(4번째 td)만 분할 추가
+        // 금액조정 td(3번째)에 분할 금액 표시
+        const adjTd = existingRow.querySelectorAll('td')[2];
+        const curAdj = parseInt(adjTd.textContent.replace(/[^0-9-]/g,''))||0;
+        const newAdj = curAdj + s.amount;
+        adjTd.textContent = (newAdj>=0?'+':'-') + fmtW(Math.abs(newAdj));
+        adjTd.style.color = '#166534';
+        // 실수령액 td(4번째)도 업데이트
         const amtTd = existingRow.querySelectorAll('td')[3];
         const curNet = parseInt(amtTd.textContent.replace(/[^0-9]/g,''))||0;
         amtTd.textContent = fmtW(curNet + s.amount);
@@ -3185,6 +3191,11 @@ function renderCashflow(){
         if(name===s.company) existingRow = row;
       });
       if(existingRow){
+        const adjTd = existingRow.querySelectorAll('td')[2];
+        const curAdj = parseInt(adjTd.textContent.replace(/[^0-9-]/g,''))||0;
+        const newAdj = curAdj + Math.abs(s.amount);
+        adjTd.textContent = '+' + fmtW(newAdj);
+        adjTd.style.color = '#dc2626';
         const amtTd = existingRow.querySelectorAll('td')[3];
         const curNet = parseInt(amtTd.textContent.replace(/[^0-9]/g,''))||0;
         amtTd.textContent = fmtW(curNet + Math.abs(s.amount));
