@@ -2923,12 +2923,13 @@ async function renderClosing(){
   const htSellVat = taxInvoices.filter(t=>t.type==='sell'&&t.year_month===cm).reduce((s,t)=>s+(+t.vat_amt||0),0);
   const htBuyVat = taxInvoices.filter(t=>t.type==='buy'&&t.year_month===cm).reduce((s,t)=>s+(+t.vat_amt||0),0);
   // 분할 입출금 중 해당 월 세금계산서 발행분 추가
+  // splitPayments는 VAT포함 금액 → 공급가액으로 변환 (÷1.1)
   const splitTaxSell = splitPayments
     .filter(s=>s.amount>0 && s.tax_date && s.tax_date.slice(0,7)===cm)
-    .reduce((sum,s)=>sum+s.amount, 0);
+    .reduce((sum,s)=>sum+Math.round(s.amount/1.1), 0);
   const splitTaxBuy = splitPayments
     .filter(s=>s.amount<0 && s.tax_date && s.tax_date.slice(0,7)===cm)
-    .reduce((sum,s)=>sum+Math.abs(s.amount), 0);
+    .reduce((sum,s)=>sum+Math.round(Math.abs(s.amount)/1.1), 0);
   const appSellVat = Math.round((shownSellTotal + splitTaxSell) * 0.1);
   const appBuyVat = Math.round((shownBuyTotal + splitTaxBuy) * 0.1);
   const sellDiff = htSellVat - appSellVat;
