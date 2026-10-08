@@ -1615,6 +1615,7 @@ async function loadAll(){
     monthlyNotes = await loadMonthlyNotesFromDb();
     advancePayments = await loadAdvancePaymentsFromDb();
     splitPayments = await loadSplitPaymentsFromDb();
+    vatAdjustments = await loadVatAdjustments();
     showSyncStatus('연결됨');
   }catch(err){
     console.error('loadAll error:', err);
@@ -3557,9 +3558,16 @@ async function addAdvancePaymentUnified(){
 
 // ── 분할 입출금 (split_payments) ──────────────────
 let splitPayments = [];
+let vatAdjustments = [];
 
 async function loadSplitPaymentsFromDb(){
   const {data,error} = await sb.from('split_payments').select('*').order('due_date');
+  if(error){ console.error(error); return []; }
+  return data||[];
+}
+
+async function loadVatAdjustments(){
+  const {data,error} = await sb.from('vat_adjustments').select('*').order('year_month');
   if(error){ console.error(error); return []; }
   return data||[];
 }
