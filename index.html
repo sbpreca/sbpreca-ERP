@@ -3176,7 +3176,9 @@ function renderCashflow(){
       let existingRow = null;
       rows.forEach(row=>{
         const td = row.querySelector('td:first-child');
-        if(td && td.textContent.trim()===s.company) existingRow = row;
+        // innerText 첫 줄만 비교 (span 태그 내용 제외)
+        const name = td ? (td.firstChild ? td.firstChild.textContent.trim() : td.textContent.trim()) : '';
+        if(name===s.company) existingRow = row;
       });
       if(existingRow){
         // 기존 행의 청구예정액(2번째 td)은 그대로, 실수령액(4번째 td)만 분할 추가
@@ -3206,7 +3208,8 @@ function renderCashflow(){
       let existingRow = null;
       rows.forEach(row=>{
         const td = row.querySelector('td:first-child');
-        if(td && td.textContent.trim()===s.company) existingRow = row;
+        const name = td ? (td.firstChild ? td.firstChild.textContent.trim() : td.textContent.trim()) : '';
+        if(name===s.company) existingRow = row;
       });
       if(existingRow){
         const amtTd = existingRow.querySelectorAll('td')[3];
