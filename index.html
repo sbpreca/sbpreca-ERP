@@ -715,7 +715,7 @@ input[readonly]{background:#f5f5f5;color:#999}
       </div>
       <input type="hidden" id="an-tab" value="all">
       <button class="btn btn-po" style="margin-left:8px" onclick="printAnnualReport()">보고서 PDF</button>
-      <span style="font-size:11px;color:#999;align-self:center;margin-left:6px">※ 1~2분기(상반기)는 수동 입력, 3분기(7월)부터는 발주 데이터에서 출하일 기준 자동 집계돼요</span>
+      <span style="font-size:11px;color:#999;align-self:center;margin-left:6px">※ 1~5월은 수동 입력입니다. 2Q는 6월, 3Q는 7~9월, 4Q는 10~12월 납품완료 공급가액입니다.</span>
     </div>
     <div class="metrics" id="an-metrics"></div>
 
@@ -727,7 +727,7 @@ input[readonly]{background:#f5f5f5;color:#999}
         <thead><tr>
           <th>매출처</th><th>품목</th><th style="width:70px">분류</th>
           <th class="r" style="width:100px">1~5월(수동)</th>
-          <th class="r" style="width:90px;background:#f0f0f0">2Q(6월)</th>
+          <th class="r" style="width:90px;background:#f0f0f0">2Q</th>
           <th class="r" style="width:90px;background:#f0f0f0">3Q</th>
           <th class="r" style="width:90px;background:#f0f0f0">4Q</th>
           <th class="r" style="width:90px;font-weight:700">연계</th>
@@ -753,7 +753,7 @@ input[readonly]{background:#f5f5f5;color:#999}
         <thead><tr>
           <th>매입처</th><th>품목</th><th style="width:70px">분류</th>
           <th class="r" style="width:100px">1~5월(수동)</th>
-          <th class="r" style="width:90px;background:#f0f0f0">2Q(6월)</th>
+          <th class="r" style="width:90px;background:#f0f0f0">2Q</th>
           <th class="r" style="width:90px;background:#f0f0f0">3Q</th>
           <th class="r" style="width:90px;background:#f0f0f0">4Q</th>
           <th class="r" style="width:90px;font-weight:700">연계</th>
@@ -774,7 +774,7 @@ input[readonly]{background:#f5f5f5;color:#999}
     <div class="section-box">
       <div class="section-title">매출총이익 (매출 - 매입)</div>
       <table class="data-tbl">
-        <thead><tr><th>구분</th><th class="r">상반기(수동)</th><th class="r">3Q(7~9월)</th><th class="r">4Q(10~12월)</th><th class="r">연계</th></tr></thead>
+        <thead><tr><th>구분</th><th class="r">1~5월(수동)</th><th class="r">2Q</th><th class="r">3Q(7~9월)</th><th class="r">4Q(10~12월)</th><th class="r">연계</th></tr></thead>
         <tbody id="an-gross-body"></tbody>
       </table>
     </div>
@@ -3942,28 +3942,29 @@ function renderAnnual(){
 
   const tot=(rows,k)=>rows.reduce((s,r)=>s+r[k],0);
   function subtotalRow(rows,label,cls){
+    const qty=tot(rows,'ttlq');
     return `<tr class="${cls||''}" style="background:${cls==='tot'?'':'#f0f0f0'}">
       <td colspan="3" style="padding:8px 12px;font-weight:600">${label}</td>
       <td class="r">${fmt(tot(rows,'h1'))}</td>
       <td class="r">${fmt(tot(rows,'m6'))}</td>
-      <td class="r">${fmt(tot(rows,'m7'))}</td><td class="r">${fmt(tot(rows,'m8'))}</td><td class="r">${fmt(tot(rows,'m9'))}</td>
       <td class="r">${fmt(tot(rows,'q3'))}</td>
-      <td class="r">${fmt(tot(rows,'m10'))}</td><td class="r">${fmt(tot(rows,'m11'))}</td><td class="r">${fmt(tot(rows,'m12'))}</td>
       <td class="r">${fmt(tot(rows,'q4'))}</td>
-      <td class="r" style="font-weight:700">${fmt(tot(rows,'ttl'))}</td><td></td>
+      <td class="r" style="font-weight:700">${fmt(tot(rows,'ttl'))}</td>
+      <td class="r">${qty?fmt(qty):'-'}</td>
+      <td></td>
     </tr>`;
   }
 
   function renderTable(rows,category,bodyId,footId){
     const body=document.getElementById(bodyId);
     if(!rows.length){
-      body.innerHTML=`<tr><td colspan="14" style="text-align:center;color:#bbb;padding:1.5rem">데이터가 없어요. 아래에서 행을 추가해주세요</td></tr>`;
+      body.innerHTML=`<tr><td colspan="10" style="text-align:center;color:#bbb;padding:1.5rem">데이터가 없어요. 아래에서 행을 추가해주세요</td></tr>`;
     }else if(curTab==='all'){
       const order=['조명','원부자재','수수료','미분류'];
       body.innerHTML=order.map(cat=>{
         const grp=rows.filter(r=>r.cat===cat);
         if(!grp.length) return '';
-        return `<tr style="background:#f8f8f8"><td colspan="14" style="padding:6px 12px;font-size:11px;font-weight:700;color:#555">${cat}</td></tr>`
+        return `<tr style="background:#f8f8f8"><td colspan="10" style="padding:6px 12px;font-size:11px;font-weight:700;color:#555">${cat}</td></tr>`
           +renderPartyGroups(grp,category)
           +subtotalRow(grp,cat+' 소계');
       }).join('');
@@ -3977,10 +3978,11 @@ function renderAnnual(){
 
   const sum=(rows,k)=>rows.reduce((s,r)=>s+r[k],0);
   const sellH1=sum(sellRows,'h1'), buyH1=sum(buyRows,'h1');
+  const sellQ2=sum(sellRows,'m6'), buyQ2=sum(buyRows,'m6');
   const sellQ3=sum(sellRows,'q3'), buyQ3=sum(buyRows,'q3');
   const sellQ4=sum(sellRows,'q4'), buyQ4=sum(buyRows,'q4');
   const sellTtl=sum(sellRows,'ttl'), buyTtl=sum(buyRows,'ttl');
-  const gH1=sellH1-buyH1, gQ3=sellQ3-buyQ3, gQ4=sellQ4-buyQ4, gTtl=sellTtl-buyTtl;
+  const gH1=sellH1-buyH1, gQ2=sellQ2-buyQ2, gQ3=sellQ3-buyQ3, gQ4=sellQ4-buyQ4, gTtl=sellTtl-buyTtl;
 
   const labelPfx=curY+'년'+(curTab==='all'?'':' · '+curTab);
   document.getElementById('an-metrics').innerHTML=`
@@ -3990,9 +3992,9 @@ function renderAnnual(){
     <div class="metric"><div class="metric-lbl">매출총이익률</div><div class="metric-val">${sellTtl?(gTtl/sellTtl*100).toFixed(1):0}%</div></div>`;
 
   document.getElementById('an-gross-body').innerHTML=`
-    <tr><td style="padding:10px 12px">매출</td><td class="r">${fmtW(sellH1)}</td><td class="r">${fmtW(sellQ3)}</td><td class="r">${fmtW(sellQ4)}</td><td class="r" style="font-weight:700">${fmtW(sellTtl)}</td></tr>
-    <tr><td style="padding:10px 12px">매입</td><td class="r">${fmtW(buyH1)}</td><td class="r">${fmtW(buyQ3)}</td><td class="r">${fmtW(buyQ4)}</td><td class="r" style="font-weight:700">${fmtW(buyTtl)}</td></tr>
-    <tr class="tot"><td style="padding:10px 12px">매출총이익</td><td class="r">${fmtW(gH1)}</td><td class="r">${fmtW(gQ3)}</td><td class="r">${fmtW(gQ4)}</td><td class="r">${fmtW(gTtl)}</td></tr>`;
+    <tr><td style="padding:10px 12px">매출</td><td class="r">${fmtW(sellH1)}</td><td class="r">${fmtW(sellQ2)}</td><td class="r">${fmtW(sellQ3)}</td><td class="r">${fmtW(sellQ4)}</td><td class="r" style="font-weight:700">${fmtW(sellTtl)}</td></tr>
+    <tr><td style="padding:10px 12px">매입</td><td class="r">${fmtW(buyH1)}</td><td class="r">${fmtW(buyQ2)}</td><td class="r">${fmtW(buyQ3)}</td><td class="r">${fmtW(buyQ4)}</td><td class="r" style="font-weight:700">${fmtW(buyTtl)}</td></tr>
+    <tr class="tot"><td style="padding:10px 12px">매출총이익</td><td class="r">${fmtW(gH1)}</td><td class="r">${fmtW(gQ2)}</td><td class="r">${fmtW(gQ3)}</td><td class="r">${fmtW(gQ4)}</td><td class="r">${fmtW(gTtl)}</td></tr>`;
 
   _annualCache={curY,curTab,sellRows,buyRows};
 }
@@ -4952,8 +4954,7 @@ function printAnnualReport(){
   function rowTr(r){
     const itemLabel=r.item||(r.cat==='조명'?'(업체 전체)':'');
     return `<tr><td class="l">${r.party}</td><td class="l">${itemLabel}</td><td>${r.cat}</td>
-      <td>${fmt(r.h1)}</td><td>${fmt(r.m7)}</td><td>${fmt(r.m8)}</td><td>${fmt(r.m9)}</td><td>${fmt(r.q3)}</td>
-      <td>${fmt(r.m10)}</td><td>${fmt(r.m11)}</td><td>${fmt(r.m12)}</td><td>${fmt(r.q4)}</td><td>${fmt(r.ttl)}</td></tr>`;
+      <td>${fmt(r.h1)}</td><td>${fmt(r.m6)}</td><td>${fmt(r.q3)}</td><td>${fmt(r.q4)}</td><td>${fmt(r.ttl)}</td></tr>`;
   }
   function subTr(arr,lbl,cls){
     return `<tr class="${cls}"><td class="l" colspan="3">${lbl}</td>
@@ -4963,16 +4964,16 @@ function printAnnualReport(){
   function tableHtml(rows,label,partyLabel){
     const headerRow=`<tr>
       <th style="width:110px">${partyLabel}</th><th style="width:70px">품목</th><th style="width:50px">분류</th>
-      <th>상반기</th><th>7월</th><th>8월</th><th>9월</th><th>3Q</th><th>10월</th><th>11월</th><th>12월</th><th>4Q</th><th>연계</th>
+      <th>1~5월</th><th>2Q</th><th>3Q</th><th>4Q</th><th>연계</th>
     </tr>`;
     let body='';
     if(!rows.length){
-      body=`<tr><td colspan="13" style="text-align:center;color:#999;padding:14px">데이터 없음</td></tr>`;
+      body=`<tr><td colspan="8" style="text-align:center;color:#999;padding:14px">데이터 없음</td></tr>`;
     }else if(curTab==='all'){
       body=order.map(cat=>{
         const grp=rows.filter(r=>r.cat===cat);
         if(!grp.length) return '';
-        return `<tr class="grp-head"><td colspan="13">${cat}</td></tr>`+grp.map(rowTr).join('')+subTr(grp,cat+' 소계','grp-sub');
+        return `<tr class="grp-head"><td colspan="8">${cat}</td></tr>`+grp.map(rowTr).join('')+subTr(grp,cat+' 소계','grp-sub');
       }).join('');
     }else{
       body=rows.map(rowTr).join('');
@@ -4985,9 +4986,10 @@ function printAnnualReport(){
   const sum=(rows,k)=>rows.reduce((s,r)=>s+r[k],0);
   const sellTtl=sum(sellRows,'ttl'), buyTtl=sum(buyRows,'ttl'), gTtl=sellTtl-buyTtl;
   const sellH1=sum(sellRows,'h1'), buyH1=sum(buyRows,'h1');
+  const sellQ2=sum(sellRows,'m6'), buyQ2=sum(buyRows,'m6');
   const sellQ3=sum(sellRows,'q3'), buyQ3=sum(buyRows,'q3');
   const sellQ4=sum(sellRows,'q4'), buyQ4=sum(buyRows,'q4');
-  const gH1=sellH1-buyH1, gQ3=sellQ3-buyQ3, gQ4=sellQ4-buyQ4;
+  const gH1=sellH1-buyH1, gQ2=sellQ2-buyQ2, gQ3=sellQ3-buyQ3, gQ4=sellQ4-buyQ4;
 
   const html=`<div class="report-page">
     <div class="report-title">${curY}년 연간 매출·매입 현황 보고서</div>
@@ -4997,11 +4999,11 @@ function printAnnualReport(){
     ${tableHtml(buyRows,'매입 현황','매입처')}
     <div class="report-section-title">매출총이익 요약</div>
     <table class="report-tbl">
-      <thead><tr><th style="width:120px">구분</th><th>상반기(수동)</th><th>3Q(7~9월)</th><th>4Q(10~12월)</th><th>연계</th></tr></thead>
+      <thead><tr><th style="width:120px">구분</th><th>1~5월(수동)</th><th>2Q</th><th>3Q(7~9월)</th><th>4Q(10~12월)</th><th>연계</th></tr></thead>
       <tbody>
-        <tr><td class="l">매출</td><td>${fmt(sellH1)}</td><td>${fmt(sellQ3)}</td><td>${fmt(sellQ4)}</td><td>${fmt(sellTtl)}</td></tr>
-        <tr><td class="l">매입</td><td>${fmt(buyH1)}</td><td>${fmt(buyQ3)}</td><td>${fmt(buyQ4)}</td><td>${fmt(buyTtl)}</td></tr>
-        <tr class="grand"><td class="l">매출총이익</td><td>${fmt(gH1)}</td><td>${fmt(gQ3)}</td><td>${fmt(gQ4)}</td><td>${fmt(gTtl)}</td></tr>
+        <tr><td class="l">매출</td><td>${fmt(sellH1)}</td><td>${fmt(sellQ2)}</td><td>${fmt(sellQ3)}</td><td>${fmt(sellQ4)}</td><td>${fmt(sellTtl)}</td></tr>
+        <tr><td class="l">매입</td><td>${fmt(buyH1)}</td><td>${fmt(buyQ2)}</td><td>${fmt(buyQ3)}</td><td>${fmt(buyQ4)}</td><td>${fmt(buyTtl)}</td></tr>
+        <tr class="grand"><td class="l">매출총이익</td><td>${fmt(gH1)}</td><td>${fmt(gQ2)}</td><td>${fmt(gQ3)}</td><td>${fmt(gQ4)}</td><td>${fmt(gTtl)}</td></tr>
       </tbody>
     </table>
   </div>`;
