@@ -437,14 +437,15 @@ input[readonly]{background:#f5f5f5;color:#999}
     <div class="section-box" style="margin-bottom:14px">
       <div class="section-title"><span>📅 분할 입출금 예정</span><span style="font-size:12px;color:#888;font-weight:400;margin-left:8px">앞으로 받을/줄 금액 (양수=수령, 음수=지급)</span></div>
       <table class="data-tbl">
-        <thead><tr><th>업체명</th><th class="r" style="width:140px">금액</th><th style="width:110px">예정일</th><th>비고</th><th style="width:70px;text-align:center">완료</th><th style="width:36px"></th></tr></thead>
+        <thead><tr><th>업체명</th><th class="r" style="width:140px">금액</th><th style="width:110px">예정일</th><th style="width:110px">세금계산서<br>발행월</th><th>비고</th><th style="width:70px;text-align:center">완료</th><th style="width:36px"></th></tr></thead>
         <tbody id="cl-split-body"></tbody>
       </table>
       <div style="padding:10px 12px;display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid #eee">
         <input id="sp-new-company" placeholder="업체명" style="width:130px">
         <input type="number" id="sp-new-amt" placeholder="금액 (음수=지급)" style="width:150px">
         <input type="date" id="sp-new-date" style="width:140px">
-        <input id="sp-new-note" placeholder="비고 (선택)" style="width:180px">
+        <input type="month" id="sp-new-tax" placeholder="세금계산서 발행월" style="width:140px">
+        <input id="sp-new-note" placeholder="비고 (선택)" style="width:150px">
         <button class="btn btn-save" onclick="addSplitPayment()">+ 추가</button>
       </div>
     </div>
@@ -3508,6 +3509,8 @@ function renderAdvancePayments(){
             <td class="r" style="color:${color};font-weight:700">${isNeg?'-':'+'} ${fmtW(Math.abs(s.amount))}</td>
             <td><input type="date" value="${s.due_date||''}" style="width:100%;font-size:11px;border:1px solid #eee;padding:3px;border-radius:4px"
               onchange="saveSplitField('${s.id}','due_date',this.value)"></td>
+            <td><input type="month" value="${s.tax_date?s.tax_date.slice(0,7):''}" style="width:100%;font-size:11px;border:1px solid #eee;padding:3px;border-radius:4px"
+              onchange="saveSplitField('${s.id}','tax_date',this.value?this.value+'-01':'')"></td>
             <td><input value="${s.note||''}" style="width:100%;font-size:11px;border:1px solid #eee;padding:3px;border-radius:4px"
               onchange="saveSplitField('${s.id}','note',this.value)"></td>
             <td style="text-align:center"><input type="checkbox" ${s.settled?'checked':''} title="완료"
@@ -3552,14 +3555,17 @@ async function addSplitPayment(){
   const company = document.getElementById('sp-new-company').value.trim();
   const amount = +(document.getElementById('sp-new-amt').value)||0;
   const due_date = document.getElementById('sp-new-date').value||null;
+  const tax_month = document.getElementById('sp-new-tax').value||null;
+  const tax_date = tax_month ? tax_month+'-01' : null;
   const note = document.getElementById('sp-new-note').value.trim();
   if(!company||!amount){ alert('업체명과 금액을 입력해주세요'); return; }
-  const {data,error} = await sb.from('split_payments').insert({company,amount,due_date,note,settled:false}).select();
+  const {data,error} = await sb.from('split_payments').insert({company,amount,due_date,tax_date,note,settled:false}).select();
   if(error){ console.error(error); return; }
   splitPayments.push(data[0]);
   document.getElementById('sp-new-company').value='';
   document.getElementById('sp-new-amt').value='';
   document.getElementById('sp-new-date').value='';
+  document.getElementById('sp-new-tax').value='';
   document.getElementById('sp-new-note').value='';
   renderAdvancePayments();
 }
