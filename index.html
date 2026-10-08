@@ -403,35 +403,9 @@ input[readonly]{background:#f5f5f5;color:#999}
       </table>
     </div>
 
-    <div class="section-box" style="margin-bottom:14px">
-      <div class="section-title"><span>선급금 지급 내역 (매입처에 미리 준 돈)</span><span style="font-size:13px;color:#dc2626;font-weight:600" id="cl-prepaid-sum"></span></div>
-      <table class="data-tbl">
-        <thead><tr><th>매입처</th><th class="r" style="width:130px">금액</th><th style="width:110px">지급일</th><th style="width:110px">세금계산서<br>발행월</th><th>비고</th><th style="width:70px;text-align:center">정산완료</th><th style="width:36px"></th></tr></thead>
-        <tbody id="cl-prepaid-body"></tbody>
-      </table>
-      <div style="padding:10px 12px;display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid #eee">
-        <input id="ap-new-company" placeholder="매입처명" style="width:150px">
-        <input type="number" id="ap-new-amt" placeholder="금액" style="width:120px">
-        <input type="date" id="ap-new-date" style="width:140px">
-        <input id="ap-new-note" placeholder="비고 (선택)" style="width:180px">
-        <button class="btn btn-save" onclick="addAdvancePayment('선급금')">+ 추가</button>
-      </div>
-    </div>
+    
 
-    <div class="section-box" style="margin-bottom:14px">
-      <div class="section-title"><span>선수금 수령 내역 (매출처에서 미리 받은 돈)</span><span style="font-size:13px;color:#166534;font-weight:600" id="cl-advance-sum"></span></div>
-      <table class="data-tbl">
-        <thead><tr><th>매출처</th><th class="r" style="width:130px">금액</th><th style="width:110px">수령일</th><th style="width:110px">세금계산서<br>발행월</th><th>비고</th><th style="width:70px;text-align:center">정산완료</th><th style="width:36px"></th></tr></thead>
-        <tbody id="cl-advance-body"></tbody>
-      </table>
-      <div style="padding:10px 12px;display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid #eee">
-        <input id="ar-new-company" placeholder="매출처명" style="width:150px">
-        <input type="number" id="ar-new-amt" placeholder="금액" style="width:120px">
-        <input type="date" id="ar-new-date" style="width:140px">
-        <input id="ar-new-note" placeholder="비고 (선택)" style="width:180px">
-        <button class="btn btn-save" onclick="addAdvancePayment('선수금')">+ 추가</button>
-      </div>
-    </div>
+    
 
     <!-- 분할 입출금 예정 -->
     <div class="section-box" style="margin-bottom:14px">
@@ -3482,17 +3456,7 @@ function renderAdvancePayments(){
     </tr>`;
   }
 
-  document.getElementById('cl-prepaid-body').innerHTML = prepaid.length
-    ? prepaid.map(rowHtml).join('')
-    : `<tr><td colspan="6" style="text-align:center;color:#bbb;padding:1rem">없어요</td></tr>`;
-  document.getElementById('cl-advance-body').innerHTML = advance.length
-    ? advance.map(rowHtml).join('')
-    : `<tr><td colspan="6" style="text-align:center;color:#bbb;padding:1rem">없어요</td></tr>`;
-
-  const prepaidBal=prepaid.filter(a=>!a.settled).reduce((s,a)=>s+(+a.amount||0),0);
-  const advanceBal=advance.filter(a=>!a.settled).reduce((s,a)=>s+(+a.amount||0),0);
-  document.getElementById('cl-prepaid-sum').textContent=`미정산 잔액: ${fmtW(prepaidBal)}`;
-  document.getElementById('cl-advance-sum').textContent=`미정산 잔액: ${fmtW(advanceBal)}`;
+  // 선급금/선수금 섹션 제거됨 - 분할 입출금으로 통합
 
   // 분할 입출금 렌더링
   const splitEl = document.getElementById('cl-split-body');
