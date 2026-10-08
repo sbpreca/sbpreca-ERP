@@ -865,7 +865,7 @@ input[readonly]{background:#f5f5f5;color:#999}
   <div id="doc-frame">
     <div class="doc-btns">
       <button class="doc-print" onclick="window.print()">프린트 / PDF 저장</button>
-      <button class="doc-close" onclick="document.getElementById('overlay').style.display='none';hideMailBtn()">닫기</button>
+      <button class="doc-close" onclick="document.getElementById('overlay').style.display='none'">닫기</button>
       <span style="font-size:11px;color:#999;align-self:center;margin-left:8px">※ A4 용지로 인쇄해주세요</span>
     </div>
     <div id="doc-content"></div>
@@ -1027,181 +1027,6 @@ const sellerKey=s=>s||''; // 매출처명 그대로 사용
 
 const DEFAULT_SAMPLE_ORDERS=[{"no":"260507-01","date":"2026-05-07","note":"COA 메일 송부 요청 必","items":[{"buyer":"씨에프씨테라메이트","item":"CTO-C3","spec":"20KG/CAN","bqty":100,"bprice":277000,"bamt":27700000,"seller":"테크피아_CTO-C3","sqty":100,"sprice":297000,"samt":29700000,"ship":"2026-06-04","status":"납품완료"},{"buyer":"씨에프씨테라메이트","item":"CTO-B2","spec":"20KG/CAN","bqty":120,"bprice":294000,"bamt":35280000,"seller":"테크피아_CTO-B2","sqty":120,"sprice":323000,"samt":38760000,"ship":"2026-06-13","status":"납품완료"},{"buyer":"씨에프씨테라메이트","item":"CTO-C3","spec":"20KG/CAN","bqty":220,"bprice":277000,"bamt":60940000,"seller":"테크피아_CTO-C3","sqty":220,"sprice":297000,"samt":65340000,"ship":"2026-06-16","status":"납품완료"},{"buyer":"씨에프씨테라메이트","item":"CTO-B2","spec":"20KG/CAN","bqty":80,"bprice":294000,"bamt":23520000,"seller":"테크피아_CTO-B2","sqty":80,"sprice":323000,"samt":25840000,"ship":"2026-06-25","status":"납품완료"},{"buyer":"씨에프씨테라메이트","item":"CTO-C3","spec":"20KG/CAN","bqty":150,"bprice":277000,"bamt":41550000,"seller":"테크피아_CTO-C3","sqty":150,"sprice":297000,"samt":44550000,"ship":"2026-07-03","status":"미납품"},{"buyer":"씨에프씨테라메이트","item":"CTO-C3","spec":"20KG/CAN","bqty":50,"bprice":277000,"bamt":13850000,"seller":"테크피아_CTO-C3","sqty":50,"sprice":297000,"samt":14850000,"ship":"2026-07-08","status":"미납품"}],"total_buy":202840000,"total_sell":219040000,"saved_at":"2026-05-07T00:00:00.000Z"},{"no":"260507-02","date":"2026-05-07","note":"COA 메일 송부 요청 必","items":[{"buyer":"나노신소재","item":"SR-40M","spec":"20KG/CAN","bqty":400,"bprice":71000,"bamt":28400000,"seller":"테크피아_SR-40M","sqty":400,"sprice":77000,"samt":30800000,"ship":"2026-06-16","status":"납품완료"},{"buyer":"나노신소재","item":"SR-40M","spec":"20KG/CAN","bqty":400,"bprice":71000,"bamt":28400000,"seller":"테크피아_SR-40M","sqty":400,"sprice":77000,"samt":30800000,"ship":"2026-06-29","status":"납품완료"}],"total_buy":56800000,"total_sell":61600000,"saved_at":"2026-05-07T00:00:00.000Z"},{"no":"260604-03","date":"2026-06-04","note":"COA 메일 송부 요청 必","items":[{"buyer":"헤펙","item":"투광등 w Pole _80W","spec":"U Pole ( 90D )","bqty":3,"bprice":215000,"bamt":645000,"seller":"건국전력","sqty":3,"sprice":235000,"samt":705000,"ship":"2026-06-05","status":"납품완료"},{"buyer":"헤펙","item":"내압방폭등_60W","spec":"60W, 팬던트","bqty":7,"bprice":290000,"bamt":2030000,"seller":"건국전력","sqty":7,"sprice":320000,"samt":2240000,"ship":"2026-06-05","status":"납품완료"},{"buyer":"헤펙","item":"배송비","spec":"","bqty":1,"bprice":40000,"bamt":40000,"seller":"건국전력","sqty":0,"sprice":0,"samt":0,"ship":"2026-06-05","status":"납품완료"}],"total_buy":2715000,"total_sell":2945000,"saved_at":"2026-06-04T00:00:00.000Z"},{"no":"260605-04","date":"2026-06-05","note":"COA 메일 송부 요청 必","items":[{"buyer":"씨에프씨테라메이트","item":"CTO-C3","spec":"20KG/CAN","bqty":100,"bprice":277000,"bamt":27700000,"seller":"테크피아_CTO-C3","sqty":100,"sprice":297000,"samt":29700000,"ship":"2026-07-10","status":"미납품"},{"buyer":"씨에프씨테라메이트","item":"CTO-B2","spec":"20KG/CAN","bqty":60,"bprice":294000,"bamt":17640000,"seller":"테크피아_CTO-B2","sqty":60,"sprice":323000,"samt":19380000,"ship":"2026-07-10","status":"미납품"},{"buyer":"씨에프씨테라메이트","item":"CTO-C3","spec":"20KG/CAN","bqty":100,"bprice":277000,"bamt":27700000,"seller":"테크피아_CTO-C3","sqty":100,"sprice":297000,"samt":29700000,"ship":"2026-07-15","status":"미납품"},{"buyer":"씨에프씨테라메이트","item":"CTO-C3","spec":"20KG/CAN","bqty":100,"bprice":277000,"bamt":27700000,"seller":"테크피아_CTO-C3","sqty":100,"sprice":297000,"samt":29700000,"ship":"2026-07-21","status":"미납품"}],"total_buy":100740000,"total_sell":108480000,"saved_at":"2026-06-05T00:00:00.000Z"},{"no":"260605-05","date":"2026-06-05","note":"COA 메일 송부 요청 必","items":[{"buyer":"나노신소재","item":"SR-40M","spec":"20KG/CAN","bqty":400,"bprice":71000,"bamt":28400000,"seller":"테크피아_SR-40M","sqty":400,"sprice":77000,"samt":30800000,"ship":"2026-07-07","status":"미납품"},{"buyer":"나노신소재","item":"SR-40M","spec":"20KG/CAN","bqty":600,"bprice":71000,"bamt":42600000,"seller":"테크피아_SR-40M","sqty":500,"sprice":77000,"samt":38500000,"ship":"2026-07-23","status":"미납품"}],"total_buy":71000000,"total_sell":69300000,"saved_at":"2026-06-05T00:00:00.000Z"},{"no":"260612-06","date":"2026-06-12","note":"COA 메일 송부 요청 必","items":[{"buyer":"라이네트","item":"CR-25","spec":"60W, 팬던트","bqty":200,"bprice":59000,"bamt":11800000,"seller":"오성전자","sqty":0,"sprice":0,"samt":0,"ship":"2026-06-19","status":"미납품"}],"total_buy":11800000,"total_sell":0,"saved_at":"2026-06-12T00:00:00.000Z"},{"no":"260612-07","date":"2026-06-12","note":"COA 메일 송부 요청 必","items":[{"buyer":"미래씨엔엔","item":"BL 평판등_40W","spec":"1285*320","bqty":200,"bprice":18500,"bamt":3700000,"seller":"대덕전자","sqty":0,"sprice":0,"samt":0,"ship":"2026-06-16","status":"미납품"}],"total_buy":3700000,"total_sell":0,"saved_at":"2026-06-12T00:00:00.000Z"}];
 let orders=[];
-/* ══════════ 네이버 메일 발송 ══════════ */
-let _mailCtx = null;
-
-function openMailOverlay(ctx){
-  _mailCtx = ctx;
-  // overlay가 열린 후에 버튼 업데이트
-  setTimeout(()=>{
-    const btn = document.getElementById('btn-send-mail');
-    if(!btn) return;
-    if(ctx){
-      btn.style.display = 'inline-flex';
-      btn.style.alignItems = 'center';
-      btn.style.gap = '6px';
-    } else {
-      btn.style.display = 'none';
-    }
-  }, 50);
-}
-
-function showMailBtn(ctx){ openMailOverlay(ctx); }
-function hideMailBtn(){
-  _mailCtx = null;
-  const btn = document.getElementById('btn-send-mail');
-  if(btn) btn.style.display = 'none';
-}
-
-function applyRoleRestrictions(currentPage){
-  if(isAdmin()) return; // 관리자는 제한 없음
-
-  // 조회 전용 탭에 안내 배너 표시
-  // 기존 배너 제거
-  document.querySelectorAll('.readonly-banner').forEach(el=>el.remove());
-
-  if(READONLY_TABS.includes(currentPage)){
-    const pageEl = document.getElementById('page-'+currentPage);
-    if(pageEl){
-      const banner = document.createElement('div');
-      banner.className = 'readonly-banner';
-      banner.style.cssText = 'background:#fef9c3;border:1px solid #fde047;border-radius:8px;padding:8px 16px;margin-bottom:12px;font-size:13px;color:#854d0e;display:flex;align-items:center;gap:8px';
-      banner.innerHTML = '🔒 조회 전용 — 이 탭은 관리자만 수정할 수 있어요.';
-      pageEl.insertBefore(banner, pageEl.firstChild);
-
-      // 데이터 변경 버튼만 비활성화 (저장, 삭제만 막음)
-      pageEl.querySelectorAll('button.btn-save, button.del-btn').forEach(el=>{
-        el.disabled = true;
-        el.style.opacity = '0.4';
-        el.style.cursor = 'not-allowed';
-      });
-      // 입력 필드만 readonly (금액 입력 등)
-      pageEl.querySelectorAll('input[type="number"], input[type="text"]:not([id*="search"]):not([id*="month"]):not([id*="year"]), textarea').forEach(el=>{
-        el.readOnly = true;
-        el.style.background = '#f9f9f9';
-      });
-    }
-  }else{
-    // 발주/납품 탭은 수정 가능 - 비활성화 해제
-    const pageEl = document.getElementById('page-'+currentPage);
-    if(pageEl){
-      pageEl.querySelectorAll('[disabled]').forEach(el=>{
-        el.disabled = false;
-        el.style.opacity = '';
-        el.style.cursor = '';
-      });
-      pageEl.querySelectorAll('[readonly]').forEach(el=>{
-        el.readOnly = false;
-        el.style.cursor = '';
-        el.style.background = '';
-      });
-    }
-  }
-}
-
-function toggleAnnualGroup(groupId){
-  const rows = document.querySelectorAll(`.${groupId}-row`);
-  const arrow = document.getElementById(`${groupId}-arrow`);
-  const isOpen = rows.length && rows[0].style.display !== 'none';
-  rows.forEach(r => r.style.display = isOpen ? 'none' : 'table-row');
-  if(arrow) arrow.textContent = isOpen ? '▸' : '▾';
-}
-
-function saveCfCheck(key, checked){
-  // 확인용이므로 로컬 메모리에만 저장 (새로고침 시 초기화)
-  if(checked) closingState[key] = '확인';
-  else delete closingState[key];
-}
-
-async function updateTsBadgesForDeliver(rows){
-  if(!rows.length) return;
-  try{
-    const orderNos=[...new Set(rows.map(r=>r.order_no))];
-    const {data}=await sb.from('mail_sent_log')
-      .select('order_no,sent_at').eq('mail_type','ts').in('order_no',orderNos);
-    if(!data) return;
-    const sentMap={};
-    data.forEach(r=>{ sentMap[r.order_no]=r.sent_at; });
-    rows.forEach(r=>{
-      const badge=document.getElementById(`mail-badge-ts-${r.order_no}-${r.item_idx}`);
-      if(!badge) return;
-      if(sentMap[r.order_no]){
-        badge.textContent=`✉${sentMap[r.order_no].slice(5,10)}`;
-        badge.style.color='#166534';
-      } else {
-        badge.textContent='';
-      }
-    });
-  }catch(e){ console.error('TS 뱃지 조회 실패:',e); }
-}
-
-async function sendMailNaver(){
-  if(!_mailCtx){ alert('메일 정보가 없어요'); return; }
-  const {to, subject, body, orderNo, type} = _mailCtx;
-  const mailtoUrl = `mailto:${to||''}?subject=${encodeURIComponent(subject||'')}&body=${encodeURIComponent(body||'')}`;
-  window.open(mailtoUrl, '_blank');
-  // 발송 기록 Supabase에 저장 (팀 공유)
-  if(orderNo && type){
-    const sentAt = new Date().toISOString();
-    try{
-      await sb.from('mail_sent_log').upsert(
-        {order_no: orderNo, mail_type: type, sent_at: sentAt, sent_to: to||''},
-        {onConflict: 'order_no,mail_type'}
-      );
-    }catch(e){ console.error('메일 기록 저장 실패:', e); }
-    updateMailSentBadge(orderNo, type);
-    // renderList/renderDeliver 새로고침으로 뱃지 반영
-    if(type==='po') renderList();
-    if(type==='ts') renderDeliver();
-  }
-}
-
-async function getMailSentRecord(orderNo, type){
-  try{
-    const {data} = await sb.from('mail_sent_log')
-      .select('*').eq('order_no', orderNo).eq('mail_type', type).maybeSingle();
-    return data || null;
-  }catch(e){ return null; }
-}
-
-async function updateMailSentBadge(orderNo, type){
-  const rec = await getMailSentRecord(orderNo, type);
-  const badge = document.getElementById(`mail-badge-${type}-${orderNo}`);
-  if(badge && rec){
-    badge.innerHTML = `✉ 발송됨 <span style="font-size:10px">${rec.sent_at.slice(0,10)}</span>`;
-    badge.style.color = '#166534';
-    badge.style.background = '#dcfce7';
-  }
-}
-
-async function updateMailBadgesForOrders(orderNos){
-  if(!orderNos.length) return;
-  try{
-    const {data} = await sb.from('mail_sent_log')
-      .select('order_no,mail_type,sent_at')
-      .in('order_no', orderNos);
-    if(!data) return;
-    data.forEach(rec=>{
-      const badge = document.getElementById(`mail-badge-${rec.mail_type}-${rec.order_no}`);
-      if(badge){
-        badge.innerHTML = `✉ ${rec.mail_type==='po'?'발주서':'명세서'} 발송됨 <span style="font-size:10px">${rec.sent_at.slice(0,10)}</span>`;
-        badge.style.color = '#166534';
-        badge.style.background = '#dcfce7';
-      }
-    });
-    // 발송 기록 없는 카드는 미발송 표시
-    orderNos.forEach(no=>{
-      const badge = document.getElementById(`mail-badge-po-${no}`);
-      if(badge && !badge.innerHTML.includes('발송됨')){
-        badge.textContent = '✉ 미발송';
-        badge.style.color = '#9ca3af';
-        badge.style.background = '#f3f4f6';
-      }
-    });
-  }catch(e){ console.error('뱃지 조회 실패:', e); }
-}
-
-
 /* ══════════ 데이터 저장/불러오기 (Supabase) ══════════ */
 
 // orders 배열 전체를 DB에 동기화 (간단한 방식: 전체 비교 후 upsert/삭제)
@@ -2128,19 +1953,6 @@ function showPO(){
   document.getElementById('doc-content').innerHTML=html;
   document.getElementById('dynamic-page-style').textContent='';
   document.getElementById('doc-frame').style.width='794px';
-  // 발주서 메일 버튼 - 매입처로 발송
-  try{
-    const firstBuyer_=Object.keys(groups)[0]||'';
-    const bi_=BUYERS[firstBuyer_]||{};
-    const mgr_=(MY.managers&&MY.managers[manager])||{};
-    const allItems_=Object.values(groups).flat();
-    const subj_=`[발주서] ${no} - ${MY.name}`;
-    const body_=`안녕하세요, ${firstBuyer_} ${bi_.contact||'담당자'}님.\n\n발주서를 송부드립니다. 확인 부탁드립니다.\n\n■ 발주번호: ${no}\n■ 발주일: ${date}\n■ 품목: ${allItems_.map(r=>r.item).join(', ')}\n■ 총 발주금액: ${fmtW(allItems_.reduce((s,r)=>s+r.bamt,0))}\n\n감사합니다.\n${MY.name} ${loginManager}\\n연락처: ${mgr_.tel||''}`;
-    showMailBtn({to:bi_.email||'', subject:subj_, body:body_, orderNo:no, type:'po'});
-  }catch(e){
-    console.error('showPO mail ctx error:', e);
-    showMailBtn({to:'', subject:`[발주서] ${no} - ${MY.name}`, body:'', orderNo:no, type:'po'});
-  }
   document.getElementById('overlay').style.display='block';
 }
 
@@ -2385,10 +2197,6 @@ function splitItem(idx){
 function quickTS(idx){
   // 해당 항목만 바로 거래명세표 생성
   const r=deliverRows[idx];if(!r)return;
-  const EMAIL_MGR_MAP_TS = {'flyingej@naver.com':'이은진','okehkim@naver.com':'김은희','qasn@naver.com':'신창수'};
-  const loginMgr = EMAIL_MGR_MAP_TS[_currentUserEmail] || MY.contact;
-  const fo=(MY.managers&&MY.managers[loginMgr])||{email:MY.email};
-  const manager=loginMgr;
   if(!r.samt){alert('공급가액이 없는 항목은 거래명세표를 발행할 수 없어요');return;}
   const today=new Date().toISOString().slice(0,10);
   // 같은 출하일+매출처 항목 자동으로 묶기
@@ -2454,21 +2262,7 @@ function quickTS(idx){
   document.getElementById('doc-content').innerHTML=html;
   document.getElementById('dynamic-page-style').textContent='';
   document.getElementById('doc-frame').style.width='794px';
-  showMailBtn(null); // 일단 숨기고 - 아래서 메일 컨텍스트 설정
   document.getElementById('overlay').style.display='block';
-  // 메일 버튼 설정 (첫 번째 아이템 기준 매출처 이메일)
-  try{
-    const si_=SELLERS[seller]||SELLERS[seller.split('_')[0]]||{};
-    const mgr_=(MY.managers&&MY.managers[manager])||{};
-    const tot_=items.reduce((s,r)=>s+r.samt,0);
-    const totV_=Math.round(tot_*0.1);
-    const subj_=`[거래명세표] ${tsNo} - ${MY.name}`;
-    const body_=`안녕하세요, ${seller.split('_')[0]} 담당자님.\n\n거래명세표를 송부드립니다.\n\n■ 문서번호: ${tsNo}\n■ 발행일: ${dy}년 ${dm}월 ${dd}일\n■ 품목: ${items.map(r=>r.item).join(', ')}\n■ 공급가액: ${fmtW(tot_)}\n■ 부가세: ${fmtW(totV_)}\n■ 합계: ${fmtW(tot_+totV_)}\n${certLinks_?'\n'+certLinks_:''}\n\n감사합니다.\n${MY.name} ${manager}\\n연락처: ${mgr_.tel||''}`;
-    showMailBtn({to:si_.email||'', subject:subj_, body:body_, orderNo:r.order_no, type:'ts'});
-  }catch(e){
-    console.error('quickTS mail ctx error:', e);
-    showMailBtn({to:'', subject:`[거래명세표] ${tsNo} - ${MY.name}`, body:'', orderNo:r&&r.order_no, type:'ts'});
-  }
   // 미납품이었던 항목만 납품완료로 전환
   items.forEach(r2=>{
     const o=orders.find(x=>x.no===r2.order_no);
@@ -2614,9 +2408,6 @@ function renderList(){
         <div class="card-amt"><span class="card-amt-lbl">매입</span><span class="card-amt-val">${fmtW(o.total_buy)}</span></div>
         <div class="card-amt"><span class="card-amt-lbl">매출</span><span class="card-amt-val" style="color:#15803d">${fmtW(o.total_sell)}</span></div>
         <div class="card-amt"><span class="card-amt-lbl">이익</span><span class="card-amt-val" style="color:#1d4ed8">${fmtW(m)} (${r}%)</span></div>
-      </div>
-      <div style="display:flex;align-items:center;gap:8px;margin-top:6px;margin-bottom:4px">
-        
       </div>
       <div class="card-btns">
         <button class="btn" style="font-size:12px;padding:5px 12px" onclick="loadOrder('${o.no}')">수정</button>
