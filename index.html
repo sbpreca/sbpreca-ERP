@@ -2755,7 +2755,8 @@ function setClosingTab(tab){
   renderClosing();
 }
 
-function renderClosing(){
+async function renderClosing(){
+  if(!taxInvoices || !taxInvoices.length) taxInvoices = await loadTaxInvoices();
   const cm=document.getElementById('cl-month').value;
   const tab=document.getElementById('cl-tab')?document.getElementById('cl-tab').value:'all';
   // 매입: 출하일(납품일) 기준 / 매출: 정산월 재지정(closing_month_override)이 있으면 그걸 우선, 없으면 출하일 기준
