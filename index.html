@@ -2664,7 +2664,7 @@ function bankOverheadHits(cm, row){
     if((+t.amount||0)<=1000) return false;
     const desc=String(t.description||'');
     if(partyMatch(row.company, desc)) return true;
-    if(normParty(row.company).includes('케이티') && /(?<![A-Za-z])KT/i.test(desc)) return true;
+    if(normParty(row.company).includes('케이티') && /KT055177540|KT055379410/.test(desc)) return true;
     if(String(row.company).includes('신화') && desc.includes('신화')) return true;
     if(texts.includes('임대') && (t.account==='지급임차료' || desc.includes('임대'))) return true;
     if((texts.includes('전기') || String(row.company).includes('전력')) && (t.account==='전력비' || desc.includes('전력'))) return true;
