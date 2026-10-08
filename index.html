@@ -414,13 +414,13 @@ input[readonly]{background:#f5f5f5;color:#999}
         <thead><tr><th>업체명</th><th class="r" style="width:140px">금액</th><th style="width:110px">예정일</th><th style="width:110px">세금계산서<br>발행월</th><th>비고</th><th style="width:70px;text-align:center">완료</th><th style="width:36px"></th></tr></thead>
         <tbody id="cl-split-body"></tbody>
       </table>
-      <div style="padding:10px 12px;display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid #eee">
-        <input id="sp-new-company" placeholder="업체명" style="width:130px">
-        <input type="number" id="sp-new-amt" placeholder="금액 (음수=지급)" style="width:150px">
-        <input type="date" id="sp-new-date" style="width:140px">
-        <input type="month" id="sp-new-tax" placeholder="세금계산서 발행월" style="width:140px">
-        <input id="sp-new-note" placeholder="비고 (선택)" style="width:130px">
-        <label style="font-size:12px;white-space:nowrap"><input type="checkbox" id="sp-new-vat"> VAT포함</label>
+      <div style="padding:10px 12px;display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid #eee;align-items:center">
+        <input id="sp-new-company" placeholder="업체명" style="width:120px">
+        <input type="number" id="sp-new-amt" placeholder="금액 (음수=지급)" style="width:140px">
+        <input type="date" id="sp-new-date" style="width:130px">
+        <input type="month" id="sp-new-tax" style="width:120px">
+        <input id="sp-new-note" placeholder="비고" style="width:100px">
+        <label style="font-size:12px;white-space:nowrap;display:flex;align-items:center;gap:4px"><input type="checkbox" id="sp-new-vat"> VAT포함</label>
         <button class="btn btn-save" onclick="addSplitPayment()">+ 추가</button>
       </div>
     </div>
