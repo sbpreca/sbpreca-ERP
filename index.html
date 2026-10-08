@@ -3057,9 +3057,8 @@ function renderCashflow(){
     .map(([name, v]) => {
       const vat = Math.round(v.amt * 0.1);
       const total = v.amt + vat;
-      const prepaid = prepaidMap[name] || 0;
       const deduct = splitPayDeduct[name] || 0;
-      const net = total - prepaid - deduct;
+      const net = total - deduct;
       totalPay += net;
       const due = v.dueDate || '';
       const cfPayKey = `cf_${cm}_buy_${name}`;
@@ -3089,9 +3088,9 @@ function renderCashflow(){
     .map(([name, v]) => {
       const vat = Math.round(v.amt * 0.1);
       const total = v.amt + vat;
-      const advance = advanceMap[name] || 0;
+      // 분할 입출금 중 이번 달 아닌 달에 예정된 금액 차감
       const deduct = splitRecvDeduct[name] || 0;
-      const net = total - advance - deduct;
+      const net = total - deduct;
       totalRecv += net;
       const due = v.dueDate || '';
       const cfRecvKey = `cf_${cm}_sell_${name}`;
@@ -3099,7 +3098,7 @@ function renderCashflow(){
       return `<tr style="${cfRecvChecked?'background:#f0fdf4;':''}">
         <td style="font-weight:600;${cfRecvChecked?'color:#166534;text-decoration:line-through':''}">${name}</td>
         <td class="r" style="${cfRecvChecked?'color:#166534':''}">${fmtW(total)}</td>
-        <td class="r" style="color:#166534">${advance > 0 ? '-'+fmtW(advance) : '-'}</td>
+        <td class="r" style="color:#166534">${deduct > 0 ? '-'+fmtW(deduct) : '-'}</td>
         <td class="r" style="font-weight:700;color:#166534">${fmtW(net)}</td>
         <td style="font-size:12px;color:#555;white-space:nowrap">${due||'-'}</td>
         <td style="text-align:center">
