@@ -2802,8 +2802,6 @@ async function renderClosing(){
   const shownSellTotal=tab==='all'?totSell:(tab==='조명'?lightSellEntries.reduce((s,[,v])=>s+v.amt,0):(tab==='원부자재'?matSellEntries.reduce((s,[,v])=>s+v.amt,0):feeSellEntries.reduce((s,[,v])=>s+v.amt,0)));
   const shownMargin=shownSellTotal-shownBuyTotal;
 
-  const prepaidBal=advancePayments.filter(a=>a.type==='선급금'&&!a.settled).reduce((s,a)=>s+(+a.amount||0),0);
-  const advanceBal=advancePayments.filter(a=>a.type==='선수금'&&!a.settled).reduce((s,a)=>s+(+a.amount||0),0);
   const htSellVat = taxInvoices.filter(t=>t.type==='sell'&&t.year_month===cm).reduce((s,t)=>s+(+t.vat_amt||0),0);
   const htBuyVat = taxInvoices.filter(t=>t.type==='buy'&&t.year_month===cm).reduce((s,t)=>s+(+t.vat_amt||0),0);
   // 분할 입출금 중 해당 월 세금계산서 발행분 추가
@@ -2839,8 +2837,6 @@ async function renderClosing(){
     <div class="metric"><div class="metric-lbl">${tab==='all'?'전체':tab} 매출 청구예정</div><div class="metric-val g">${fmtW(shownSellTotal*1.1)}</div></div>
     <div class="metric"><div class="metric-lbl">이익 (VAT 제외)</div><div class="metric-val b">${fmtW(shownMargin)}</div></div>
     <div class="metric"><div class="metric-lbl">이익률</div><div class="metric-val b">${shownSellTotal?(shownMargin/shownSellTotal*100).toFixed(1):0}%</div></div>
-    <div class="metric"><div class="metric-lbl">선급금 미정산 잔액</div><div class="metric-val" style="color:#dc2626">${fmtW(prepaidBal)}</div></div>
-    <div class="metric"><div class="metric-lbl">선수금 미정산 잔액</div><div class="metric-val" style="color:#166534">${fmtW(advanceBal)}</div></div>
     <div class="metric" style="border-left:3px solid #e5e7eb;padding-left:12px;margin-left:4px"><div class="metric-lbl">📊 매출세액 (마감기준)</div><div class="metric-val" style="color:#166534">${fmtW(appSellVat)}</div></div>
     <div class="metric"><div class="metric-lbl">📊 매입세액 (마감기준)</div><div class="metric-val" style="color:#dc2626">${fmtW(appBuyVat)}</div></div>
     <div class="metric"><div class="metric-lbl">💰 납부예상세액</div><div class="metric-val" style="color:${(shownSellTotal-shownBuyTotal)>=0?'#dc2626':'#166534'};font-weight:700">${fmtW(appSellVat - appBuyVat)}</div></div>
@@ -2942,21 +2938,6 @@ function renderCashflow(){
     const tradeMo = type==='buy'?(bm[name]?.tradeMo||cm):(sm[name]?.tradeMo||cm);
     return `${tradeMo}_${type}_${name}_${field}`;
   };
-
-  // 선급금/선수금 (pay_date 기준 해당 월만)
-  const prepaidMap = {};
-  const advanceMap = {};
-  advancePayments.forEach(a => {
-    const payMonth = a.pay_date ? a.pay_date.slice(0,7) : null;
-    if(cm && payMonth !== cm) return;
-    if(a.type==='선급금'){
-      if(!prepaidMap[a.company]) prepaidMap[a.company] = 0;
-      prepaidMap[a.company] += (+a.amount||0);
-    } else {
-      if(!advanceMap[a.company]) advanceMap[a.company] = 0;
-      advanceMap[a.company] += (+a.amount||0);
-    }
-  });
 
   // 다른 달 분할 입금/출금액을 이번 달 마감현황에서 차감
   const splitRecvDeduct = {};
@@ -3344,48 +3325,6 @@ async function renderHometax(){
 
 function renderAdvancePayments(){
   const cm=document.getElementById('cl-month').value;
-  // 정산완료된 건은 pay_date 기준으로 해당 월 이전이면 숨김
-  // (정산완료 + 이미 지난 달 → 다음 달 마감에서 표시 안 함)
-  const isVisible = a => {
-    if(!cm) return true; // 전체 보기면 항상 표시
-    const payMonth = a.pay_date ? a.pay_date.slice(0,7) : null;
-    if(!a.settled){
-      // 미정산: pay_date 없으면 항상 표시, 있으면 해당 월만
-      if(!payMonth) return true;
-      return payMonth === cm;
-    } else {
-      // 정산완료: pay_date가 조회월과 같을 때만 표시
-      if(!payMonth) return false; // 정산완료인데 날짜 없으면 숨김
-      return payMonth === cm;
-    }
-  };
-  const prepaid=advancePayments.filter(a=>a.type==='선급금' && isVisible(a));
-  const advance=advancePayments.filter(a=>a.type==='선수금' && isVisible(a));
-
-  function rowHtml(a,idx){
-    return `<tr>
-      <td>${a.company}</td>
-      <td class="r" style="padding:4px 8px">
-        <input type="number" value="${a.amount}" style="width:120px;text-align:right;border:1px solid #ddd;border-radius:4px;padding:4px 6px"
-          onchange="saveAdvanceField('${a.id}','amount',this.value)">
-      </td>
-      <td style="padding:4px 8px">
-        <input type="date" value="${a.pay_date||''}" style="width:100%;font-size:12px" onchange="saveAdvanceField('${a.id}','pay_date',this.value)">
-      </td>
-      <td style="padding:4px 8px">
-        <input type="month" value="${a.tax_date?a.tax_date.slice(0,7):''}" style="width:100%;font-size:12px"
-          title="세금계산서 발행월 — 손익계산서 부가세 반영 기준"
-          onchange="saveAdvanceField('${a.id}','tax_date',this.value?this.value+'-01':'')">
-      </td>
-      <td style="padding:4px 8px">
-        <input value="${(a.note||'').replace(/"/g,'&quot;')}" style="width:100%;border:1px solid #ddd;border-radius:4px;padding:4px 6px;font-size:12px" onchange="saveAdvanceField('${a.id}','note',this.value)">
-      </td>
-      <td style="text-align:center"><input type="checkbox" ${a.settled?'checked':''} onchange="saveAdvanceField('${a.id}','settled',this.checked)"></td>
-      <td style="text-align:center"><button class="del-btn" onclick="delAdvancePayment('${a.id}')">×</button></td>
-    </tr>`;
-  }
-
-  // 선급금/선수금 섹션 제거됨 - 분할 입출금으로 통합
 
   // 분할 입출금 렌더링
   const splitEl = document.getElementById('cl-split-body');
