@@ -3145,30 +3145,28 @@ function renderCashflow(){
     splitRecv.forEach(s=>{
       if(!s.settled) totalRecv += s.amount;
       // 같은 업체 기존 행 찾기
-      const rows = document.querySelectorAll('#cf-recv-body tr');
+      const rows = document.querySelectorAll('#cf-recv-body tr:not([data-split])');
       let existingRow = null;
       rows.forEach(row=>{
         const td = row.querySelector('td:first-child');
-        // innerText 첫 줄만 비교 (span 태그 내용 제외)
         const name = td ? (td.firstChild ? td.firstChild.textContent.trim() : td.textContent.trim()) : '';
         if(name===s.company) existingRow = row;
       });
-      if(existingRow){
-        // 금액조정 td(3번째)에 분할 금액 표시
+      if(existingRow && !s.settled){
+        // 마감현황 기반 행이 있고 미정산이면 금액조정에 반영
         const adjTd = existingRow.querySelectorAll('td')[2];
         const curAdj = parseInt(adjTd.textContent.replace(/[^0-9-]/g,''))||0;
         const newAdj = curAdj + s.amount;
         adjTd.textContent = (newAdj>=0?'+':'-') + fmtW(Math.abs(newAdj));
         adjTd.style.color = '#166534';
-        // 실수령액 td(4번째)도 업데이트
         const amtTd = existingRow.querySelectorAll('td')[3];
         const curNet = parseInt(amtTd.textContent.replace(/[^0-9]/g,''))||0;
         amtTd.textContent = fmtW(curNet + s.amount);
         amtTd.style.color = '#166534';
         amtTd.style.fontWeight = '700';
       } else {
-        // 기존 행 없으면 새 행 추가
-        document.getElementById('cf-recv-body').innerHTML += `<tr style="background:${s.settled?'#f5f5f5':'#f0fff4'}">
+        // 마감현황 기반 행이 없거나 정산완료면 별도 행으로 추가
+        document.getElementById('cf-recv-body').innerHTML += `<tr data-split="1" style="background:${s.settled?'#f5f5f5':'#f0fff4'}">
           <td style="font-weight:600;${s.settled?'text-decoration:line-through;color:#999':''}">${s.company} <span style="font-size:10px;color:#888">${s.note||'분할'}</span></td>
           <td class="r" style="color:#999">-</td>
           <td class="r" style="color:#166534">+${fmtW(s.amount)}</td>
@@ -3190,7 +3188,8 @@ function renderCashflow(){
         const name = td ? (td.firstChild ? td.firstChild.textContent.trim() : td.textContent.trim()) : '';
         if(name===s.company) existingRow = row;
       });
-      if(existingRow){
+      if(existingRow && !s.settled){
+        // 마감현황 기반 행이 있고 미정산이면 금액조정에 반영
         const adjTd = existingRow.querySelectorAll('td')[2];
         const curAdj = parseInt(adjTd.textContent.replace(/[^0-9-]/g,''))||0;
         const newAdj = curAdj - Math.abs(s.amount);
@@ -3202,7 +3201,8 @@ function renderCashflow(){
         amtTd.style.color = '#dc2626';
         amtTd.style.fontWeight = '700';
       } else {
-        document.getElementById('cf-pay-body').innerHTML += `<tr style="background:${s.settled?'#f5f5f5':'#fff0f0'}">
+        // 마감현황 기반 행이 없거나 정산완료면 별도 행으로 추가
+        document.getElementById('cf-pay-body').innerHTML += `<tr data-split="1" style="background:${s.settled?'#f5f5f5':'#fff0f0'}">
           <td style="font-weight:600;${s.settled?'text-decoration:line-through;color:#999':''}">${s.company} <span style="font-size:10px;color:#888">${s.note||'분할'}</span></td>
           <td class="r" style="color:#999">-</td>
           <td class="r" style="color:#166534">-${fmtW(Math.abs(s.amount))}</td>
