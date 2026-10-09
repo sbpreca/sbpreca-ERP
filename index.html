@@ -2950,11 +2950,35 @@ async function renderClosing(){
     <div class="metric"><div class="metric-lbl">💰 납부예상세액</div><div class="metric-val" style="color:${(shownSellTotal-shownBuyTotal)>=0?'#dc2626':'#166534'};font-weight:700">${fmtW(appSellVat - appBuyVat)}</div></div>
     ${htVatHtml}`;
 
+  // 납품 공급가액은 그대로 두고, 발급월이 다른 선수금·선급금은 그 달 부가세에만 더한다.
+  function adjInTab(a){
+    if(tab==='all') return true;
+    const cat=a.type==='sell' ? getSellerCategory(a.company) : (BUYERS[a.company]&&BUYERS[a.company].category);
+    return cat===tab;
+  }
+  function adjBlock(type){
+    const rows=vatAdjustments.filter(a=>a.year_month===cm && a.type===type && a.amount && adjInTab(a));
+    if(!rows.length) return {html:'', sum:0};
+    const sum=rows.reduce((s,a)=>s+(+a.amount||0),0);
+    const html='<tr style="background:#fffbeb"><td colspan="7" style="padding:8px 12px;font-size:11px;font-weight:700;color:#92400e">세금계산서 발급월이 납품월과 다른 금액 · 부가세는 이 달에 반영</td></tr>'
+      +rows.map(a=>{
+        const vat=Math.round((+a.amount||0)*0.1);
+        return '<tr style="background:#fffbeb"><td style="font-weight:600">'+a.company+' <span style="font-size:11px;color:#92400e">'+(a.note||'')+'</span></td><td class="r">'+fmtW(a.amount)+'</td><td class="r">'+fmtW(vat)+'</td><td class="r">'+fmtW((+a.amount||0)+vat)+'</td><td colspan="3" style="font-size:11px;color:#92400e">부가세 '+fmtW(vat)+'</td></tr>';
+      }).join('');
+    return {html, sum};
+  }
+  const buyAdj=adjBlock('buy');
+  const sellAdj=adjBlock('sell');
+  const buyVatFoot=Math.round((shownBuyTotal+buyAdj.sum)*0.1);
+  const sellVatFoot=Math.round((shownSellTotal+sellAdj.sum)*0.1);
+
   document.getElementById('cl-buy-body').innerHTML=buyHtml+
-    '<tr class="tot"><td>'+(tab==='all'?'전체':tab)+' 합계</td><td class="r">'+fmtW(shownBuyTotal)+'</td><td class="r">'+fmtW(Math.round(shownBuyTotal*0.1))+'</td><td class="r profit-val">'+fmtW(Math.round(shownBuyTotal*1.1))+'</td><td colspan="3"></td></tr>';
+    '<tr class="tot"><td>'+(tab==='all'?'전체':tab)+' 합계</td><td class="r">'+fmtW(shownBuyTotal)+'</td><td class="r">'+fmtW(buyVatFoot)+'</td><td class="r profit-val">'+fmtW(shownBuyTotal+buyVatFoot)+'</td><td colspan="3"></td></tr>'
+    +buyAdj.html;
 
   document.getElementById('cl-sell-body').innerHTML=sellHtml+
-    '<tr class="tot"><td>'+(tab==='all'?'전체':tab)+' 합계</td><td class="r">'+fmtW(shownSellTotal)+'</td><td class="r">'+fmtW(Math.round(shownSellTotal*0.1))+'</td><td class="r profit-val">'+fmtW(Math.round(shownSellTotal*1.1))+'</td><td colspan="3"></td></tr>';
+    '<tr class="tot"><td>'+(tab==='all'?'전체':tab)+' 합계</td><td class="r">'+fmtW(shownSellTotal)+'</td><td class="r">'+fmtW(sellVatFoot)+'</td><td class="r profit-val">'+fmtW(shownSellTotal+sellVatFoot)+'</td><td colspan="3"></td></tr>'
+    +sellAdj.html;
 
   renderOverhead(cm);
   renderAdvancePayments();
@@ -3023,6 +3047,19 @@ function renderCashflow(){
   sel.innerHTML = allMos.map(m=>`<option value="${m}"${m===cm?' selected':''}>${m}</option>`).join('');
   if(!sel.value && allMos[0]) sel.value = allMos[0];
 
+  // 같은 달이어도 예정일이 다르면 줄을 나눈다. 성화전설 거래와 오성전기 거래가 한 달에 겹칠 수 있다.
+  function addCashPart(map, name, tradeMo, dueMo, dueDate, amt){
+    if(!map[name]) map[name]={amt:0, tradeMo, dueDate, parts:[]};
+    let part=map[name].parts.find(p=>p.dueDate===dueDate);
+    if(!part){
+      part={amt:0, tradeMo, dueMo, dueDate, tradeMos:[], deduct:0};
+      map[name].parts.push(part);
+    }
+    part.amt+=amt;
+    part.tradeMos.push(tradeMo);
+    map[name].amt+=amt;
+  }
+
   // 4. cm 월에 해당하는 매입 집계
   const bm = {};
   Object.entries(buyByTradeMo).forEach(([tradeMo, companies])=>{
@@ -3030,8 +3067,8 @@ function renderCashflow(){
       const key = `${tradeMo}|${buyer}`;
       const dueMo = buyDueMap[key] || tradeMo; // 예정일 없으면 거래발생월
       if(dueMo !== cm) return;
-      if(!bm[buyer]) bm[buyer]={amt:0, tradeMo, dueDate: closingState[`${tradeMo}_buy_${buyer}_date`]||''};
-      bm[buyer].amt+=amt;
+      const dueDate=closingState[`${tradeMo}_buy_${buyer}_date`]||'';
+      addCashPart(bm, buyer, tradeMo, dueMo, dueDate, amt);
     });
   });
 
@@ -3044,8 +3081,8 @@ function renderCashflow(){
       const autoDue = computeDueDate(company, tradeMo);
       const dueMo = savedDue || ym(autoDue) || tradeMo;
       if(dueMo !== cm) return;
-      if(!sm[company]) sm[company]={amt:0, tradeMo, dueDate: closingState[`${tradeMo}_sell_${company}_date`]||autoDue||''};
-      sm[company].amt+=amt;
+      const dueDate=closingState[`${tradeMo}_sell_${company}_date`]||autoDue||'';
+      addCashPart(sm, company, tradeMo, dueMo, dueDate, amt);
     });
   });
 
@@ -3054,25 +3091,49 @@ function renderCashflow(){
     return `${tradeMo}_${type}_${name}_${field}`;
   };
 
-  // 다른 달 분할 입금/출금액을 이번 달 마감현황에서 차감
-  const splitRecvDeduct = {};
+  // 선수금으로 이미 세금계산서가 나간 매출은, 그 거래의 입금월에서 한 번만 빼 잔액만 남긴다.
+  // 분할 한 건이 업체가 나오는 달마다 빠지지 않게, 차감 부가세 조정과 공급가액이 맞는 건만 연결한다.
   const splitPayDeduct = {};
-  splitPayments.filter(s=>!s.settled && s.amount>0 && s.due_date && s.due_date.slice(0,7)!==cm).forEach(s=>{
-    if(sm[s.company]){ if(!splitRecvDeduct[s.company]) splitRecvDeduct[s.company]=0; splitRecvDeduct[s.company]+=s.amount; }
+  const splitSupplyAmt=s=>{
+    const amt=Math.abs(+s.amount||0);
+    return s.is_vat_included ? Math.round(amt/1.1) : amt;
+  };
+  const usedAdvanceSplits=new Set();
+  Object.entries(sm).forEach(([company, v])=>{
+    (v.parts||[v]).forEach(part=>{
+      (part.tradeMos||[part.tradeMo]).forEach(tradeMo=>{
+        vatAdjustments.filter(a=>a.type==='sell' && a.year_month===tradeMo && partyMatch(company, a.company||'') && (+a.amount)<0).forEach(a=>{
+          const supply=Math.abs(+a.amount||0);
+          const split=splitPayments.find(s=>s.amount>0 && !usedAdvanceSplits.has(s.id) && partyMatch(company, s.company||'') && Math.abs(splitSupplyAmt(s)-supply)<=2);
+          const cash=split ? Math.abs(+split.amount||0) + (split.is_vat_included?0:Math.round(Math.abs(+split.amount||0)*0.1)) : (supply+Math.round(supply*0.1));
+          if(split) usedAdvanceSplits.add(split.id);
+          part.deduct=(part.deduct||0)+cash;
+        });
+      });
+    });
   });
+  // 선급 출금은 세금계산서 월과 같은 매입 거래의 지급월에서만 잔액을 줄인다.
   splitPayments.filter(s=>!s.settled && s.amount<0 && s.due_date && s.due_date.slice(0,7)!==cm).forEach(s=>{
-    if(bm[s.company]){ if(!splitPayDeduct[s.company]) splitPayDeduct[s.company]=0; splitPayDeduct[s.company]+=Math.abs(s.amount); }
+    const row=bm[s.company];
+    if(!row) return;
+    const taxMo=(s.tax_date||'').slice(0,7);
+    const parts=row.parts||[row];
+    const part=taxMo ? parts.find(p=>(p.tradeMos||[p.tradeMo]).includes(taxMo)) : parts[0];
+    if(!part) return;
+    part.deduct=(part.deduct||0)+Math.abs(s.amount);
+    if(!splitPayDeduct[s.company]) splitPayDeduct[s.company]=0;
+    splitPayDeduct[s.company]+=Math.abs(s.amount);
   });
 
   // 매입처 지급 테이블
   let totalPay = 0;
   const payRows = Object.entries(bm)
-    .filter(([,v]) => v.amt > 0)
+    .flatMap(([name, v]) => (v.parts||[v]).filter(p=>p.amt>0).map(p=>[name, p]))
     .sort((a,b) => b[1].amt - a[1].amt)
     .map(([name, v]) => {
       const vat = Math.round(v.amt * 0.1);
       const total = v.amt + vat;
-      const deduct = splitPayDeduct[name] || 0;
+      const deduct = v.deduct || 0;
       const net = total - deduct;
       totalPay += net;
       const due = v.dueDate || '';
@@ -3098,13 +3159,12 @@ function renderCashflow(){
   // 매출처 수령 테이블
   let totalRecv = 0;
   const recvRows = Object.entries(sm)
-    .filter(([,v]) => v.amt > 0)
+    .flatMap(([name, v]) => (v.parts||[v]).filter(p=>p.amt>0).map(p=>[name, p]))
     .sort((a,b) => b[1].amt - a[1].amt)
     .map(([name, v]) => {
       const vat = Math.round(v.amt * 0.1);
       const total = v.amt + vat;
-      // 분할 입출금 중 이번 달 아닌 달에 예정된 금액 차감
-      const deduct = splitRecvDeduct[name] || 0;
+      const deduct = v.deduct || 0;
       const net = total - deduct;
       totalRecv += net;
       const due = v.dueDate || '';
