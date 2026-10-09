@@ -172,6 +172,18 @@ input[readonly]{background:#f5f5f5;color:#999}
 .report-tbl tr.grand td{background:#222;color:#fff;font-weight:700}
 .report-tbl tr{page-break-inside:avoid}
 
+#page-annual .section-box{overflow-x:auto}
+#page-annual .data-tbl{font-size:12px}
+#page-annual .data-tbl th,#page-annual .data-tbl td{padding:6px 4px;white-space:nowrap}
+#page-annual .an-m{min-width:72px}
+#page-annual .an-q{min-width:78px;background:#eef2f6}
+#page-annual .an-auto{background:#fafafa}
+#page-annual .an-total{font-weight:700;color:#1F4E79;min-width:84px}
+#page-annual .an-in{width:70px;text-align:right;border:1px solid #e5e7eb;border-radius:4px;padding:2px 4px;font-size:11px}
+#page-annual .an-qty{font-size:10px;color:#888;line-height:1.2}
+#page-annual .an-zero{color:#ccc}
+#page-annual .an-cat{font-size:11px;color:#666}
+
 @media print{
   body{background:#fff!important}
   #overlay{position:static!important;background:none!important;padding:0!important;display:block!important;overflow:visible!important}
@@ -717,66 +729,52 @@ input[readonly]{background:#f5f5f5;color:#999}
       </div>
       <input type="hidden" id="an-tab" value="all">
       <button class="btn btn-po" style="margin-left:8px" onclick="printAnnualReport()">보고서 PDF</button>
-      <span style="font-size:11px;color:#999;align-self:center;margin-left:6px">※ 1~5월은 수동 입력입니다. 2Q는 6월, 3Q는 7~9월, 4Q는 10~12월 납품완료 공급가액입니다.</span>
+      <span style="font-size:11px;color:#999;align-self:center;margin-left:6px">※ 1~5월은 수동 입력, 6~12월은 납품완료 공급가액입니다. 1Q 1–3월, 2Q 4–6월, 3Q 7–9월, 4Q 10–12월 합계입니다.</span>
     </div>
     <div class="metrics" id="an-metrics"></div>
 
     <div class="section-box" style="margin-bottom:14px">
       <div class="section-title">
-        <span>매출 현황 (매출처 × 품목)</span>
+        <span>매출 현황</span>
       </div>
       <table class="data-tbl">
-        <thead><tr>
-          <th>매출처</th><th>품목</th><th style="width:70px">분류</th>
-          <th class="r" style="width:100px">1~5월(수동)</th>
-          <th class="r" style="width:90px;background:#f0f0f0">2Q</th>
-          <th class="r" style="width:90px;background:#f0f0f0">3Q</th>
-          <th class="r" style="width:90px;background:#f0f0f0">4Q</th>
-          <th class="r" style="width:90px;font-weight:700">연계</th>
-          <th class="r" style="width:60px;color:#666">총수량</th><th style="width:36px"></th>
-        </tr></thead>
+        <thead id="an-sell-head"></thead>
         <tbody id="an-sell-body"></tbody>
         <tfoot id="an-sell-foot"></tfoot>
       </table>
       <div style="padding:10px 12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;border-top:1px solid #eee">
         <input id="an-sell-party" placeholder="매출처명 (예: 테크피아_CTO-C3)" style="width:200px">
-        <input id="an-sell-item" placeholder="품목 (조명 업체는 비워도 돼요)" style="width:180px">
-        <input type="number" id="an-sell-amt" placeholder="상반기 합계금액" style="width:150px">
+        <input id="an-sell-item" placeholder="품목 (원부자재만)" style="width:160px">
+        <select id="an-sell-month" style="width:72px"><option value="1">1월</option><option value="2">2월</option><option value="3">3월</option><option value="4">4월</option><option value="5">5월</option></select>
+        <input type="number" id="an-sell-amt" placeholder="해당 월 금액" style="width:130px">
         <button class="btn btn-save" onclick="addAnnualRow('매출')">+ 행 추가</button>
-        <span style="font-size:11px;color:#999">※ 조명 업체는 품목 구분 없이 업체 단위로 합산돼요</span>
+        <span style="font-size:11px;color:#999">※ 조명·수수료는 업체 합계만, 원부자재만 품목과 수량을 표시합니다</span>
       </div>
     </div>
 
     <div class="section-box" style="margin-bottom:14px">
       <div class="section-title">
-        <span>매입 현황 (매입처 × 품목)</span>
+        <span>매입 현황</span>
       </div>
       <table class="data-tbl">
-        <thead><tr>
-          <th>매입처</th><th>품목</th><th style="width:70px">분류</th>
-          <th class="r" style="width:100px">1~5월(수동)</th>
-          <th class="r" style="width:90px;background:#f0f0f0">2Q</th>
-          <th class="r" style="width:90px;background:#f0f0f0">3Q</th>
-          <th class="r" style="width:90px;background:#f0f0f0">4Q</th>
-          <th class="r" style="width:90px;font-weight:700">연계</th>
-          <th class="r" style="width:60px;color:#666">총수량</th><th style="width:36px"></th>
-        </tr></thead>
+        <thead id="an-buy-head"></thead>
         <tbody id="an-buy-body"></tbody>
         <tfoot id="an-buy-foot"></tfoot>
       </table>
       <div style="padding:10px 12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;border-top:1px solid #eee">
         <input id="an-buy-party" placeholder="매입처명" style="width:200px">
-        <input id="an-buy-item" placeholder="품목 (조명 업체는 비워도 돼요)" style="width:180px">
-        <input type="number" id="an-buy-amt" placeholder="상반기 합계금액" style="width:150px">
+        <input id="an-buy-item" placeholder="품목 (원부자재만)" style="width:160px">
+        <select id="an-buy-month" style="width:72px"><option value="1">1월</option><option value="2">2월</option><option value="3">3월</option><option value="4">4월</option><option value="5">5월</option></select>
+        <input type="number" id="an-buy-amt" placeholder="해당 월 금액" style="width:130px">
         <button class="btn btn-save" onclick="addAnnualRow('매입')">+ 행 추가</button>
-        <span style="font-size:11px;color:#999">※ 조명 업체는 품목 구분 없이 업체 단위로 합산돼요</span>
+        <span style="font-size:11px;color:#999">※ 조명·수수료는 업체 합계만, 원부자재만 품목과 수량을 표시합니다</span>
       </div>
     </div>
 
     <div class="section-box">
       <div class="section-title">매출총이익 (매출 - 매입)</div>
       <table class="data-tbl">
-        <thead><tr><th>구분</th><th class="r">1~5월(수동)</th><th class="r">2Q</th><th class="r">3Q(7~9월)</th><th class="r">4Q(10~12월)</th><th class="r">연계</th></tr></thead>
+        <thead id="an-gross-head"></thead>
         <tbody id="an-gross-body"></tbody>
       </table>
     </div>
@@ -3845,6 +3843,12 @@ function addOtherItem(){
 const yr=d=>d?d.slice(0,4):'';
 
 function annualRowKey(category,party,item){ return category+'|'+party+'|'+item; }
+function parseManualItem(item){
+  const m=String(item==null?'':item).match(/^(.*)::m(\d{1,2})$/);
+  if(m) return {base:m[1], month:+m[2]};
+  return {base:item||'', month:0};
+}
+function manualStoreItem(base, month){ return `${base||''}::m${month}`; }
 
 function setAnnualTab(tab){
   document.getElementById('an-tab').value=tab;
@@ -3877,7 +3881,6 @@ async function clearAllManualForParty(year, category, party){
 }
 
 function renderAnnual(){
-  // 연도 옵션 (발주 출하일 + 수동입력 데이터 + 올해)
   const nowYear=String(new Date().getFullYear());
   const years=[...new Set([
     ...orders.flatMap(o=>o.items.map(i=>i.ship?yr(i.ship):'')).filter(Boolean),
@@ -3890,67 +3893,57 @@ function renderAnnual(){
   ySel.value=curY;
 
   const curTab=document.getElementById('an-tab')?document.getElementById('an-tab').value:'all';
+  const showItem=curTab==='all'||curTab==='원부자재';
+  const showQty=showItem;
+  const colCount=1+(showItem?1:0)+1+12+4+1+(showQty?1:0)+1;
+  let gidSeq=0;
 
   function buildSection(category, buyerOrSellerKey, amtKey){
-    // 자동집계: 7~12월 (출하일 기준, 선택 연도)
-    // 조명 업체는 품목 구분 없이 업체 단위로만 합산, 원부자재는 품목별로 세분화
-    const monthAgg={}; // key -> {7:amt,...,12:amt}
+    const acc={};
+    function ensure(party, item){
+      const cat=partyCategory(category, party);
+      const base=cat==='원부자재'?(item||''):'';
+      const key=annualRowKey(category,party,base);
+      if(!acc[key]) acc[key]={key,party,item:base,cat,m:{},qty:{},qq:{},qqty:{},ttl:0,ttlq:0};
+      return acc[key];
+    }
+    function add(row, mo, amt, qty){
+      if(!mo) return;
+      row.m[mo]=(row.m[mo]||0)+amt;
+      row.qty[mo]=(row.qty[mo]||0)+(qty||0);
+    }
     orders.forEach(o=>{
       o.items.forEach(i=>{
         if(i.status!=='납품완료') return;
-        if(category==='매출' && i.closing_sell_exclude) return; // 반품예정 등 마감제외 표시된 매출은 연간현황에서도 제외
+        if(category==='매출' && i.closing_sell_exclude) return;
         const monthKey=category==='매출' ? sellMonthOf(i) : ym(i.ship);
         if(!monthKey || monthKey.slice(0,4)!==curY) return;
         const mo=+monthKey.slice(5,7);
-        if(mo<6) return; // 1~5월은 수동 입력 영역, 6월부터 자동집계
+        if(mo<6) return;
         const party=i[buyerOrSellerKey];
         if(!party) return;
-        const item=isLightParty(category,party) ? '' : (i.item||'');
-        const key=annualRowKey(category,party,item);
-        if(!monthAgg[key]) monthAgg[key]={};
-        if(!monthAgg[key][mo]) monthAgg[key][mo]={amt:0,qty:0};
-        monthAgg[key][mo].amt+=(i[amtKey]||0);
-        // 수량: 원부자재만 집계 (조명/수수료는 수량 없음)
-        const partycat=partyCategory(category,party);
-        if(partycat==='원부자재'){
-          const qtyKey=category==='매입'?'bqty':'sqty';
-          monthAgg[key][mo].qty+=(i[qtyKey]||0);
-        }
+        const cat=partyCategory(category, party);
+        const item=cat==='원부자재'?(i.item||''):'';
+        const qty=cat==='원부자재'?(i[category==='매입'?'bqty':'sqty']||0):0;
+        add(ensure(party,item), mo, i[amtKey]||0, qty);
       });
     });
-    // 수동입력 (상반기) - 조명 업체는 저장된 품목명과 무관하게 업체 단위로 합산
-    const manualRows=annualManual.filter(r=>String(r.year)===curY && r.category===category);
-    const manualMap={};
-    manualRows.forEach(r=>{
-      const item=isLightParty(category,r.party) ? '' : r.item;
-      const key=annualRowKey(category,r.party,item);
-      const prevAmt=manualMap[key]?(+manualMap[key].amount||0):0;
-      manualMap[key]={...r, item, amount:prevAmt+(+r.amount||0)};
+    annualManual.filter(r=>String(r.year)===curY && r.category===category).forEach(r=>{
+      const parsed=parseManualItem(r.item);
+      if(parsed.month<1 || parsed.month>5) return;
+      add(ensure(r.party, parsed.base), parsed.month, +r.amount||0, 0);
     });
-
-    const allKeys=[...new Set([...Object.keys(monthAgg), ...Object.keys(manualMap)])];
-    const rows=allKeys.map(key=>{
-      const [,party,item]=key.split('|');
-      const mrow=manualMap[key];
-      const h1=mrow?(+mrow.amount||0):0;
-      const mo=monthAgg[key]||{};
-      const m6=mo[6]?mo[6].amt:0, m6q=mo[6]?mo[6].qty:0;
-      const m7=mo[7]?mo[7].amt:0, m7q=mo[7]?mo[7].qty:0;
-      const m8=mo[8]?mo[8].amt:0, m8q=mo[8]?mo[8].qty:0;
-      const m9=mo[9]?mo[9].amt:0, m9q=mo[9]?mo[9].qty:0;
-      const m10=mo[10]?mo[10].amt:0, m10q=mo[10]?mo[10].qty:0;
-      const m11=mo[11]?mo[11].amt:0, m11q=mo[11]?mo[11].qty:0;
-      const m12=mo[12]?mo[12].amt:0, m12q=mo[12]?mo[12].qty:0;
-      const q3=m7+m8+m9, q3q=m7q+m8q+m9q;
-      const q4=m10+m11+m12, q4q=m10q+m11q+m12q;
-      const ttl=h1+m6+q3+q4;
-      const ttlq=m6q+q3q+q4q;
-      const cat=partyCategory(category,party);
-      return {key,party,item,cat,h1,m6,m6q,m7,m7q,m8,m8q,m9,m9q,q3,q3q,m10,m10q,m11,m11q,m12,m12q,q4,q4q,ttl,ttlq,manualId:mrow?mrow.id:null};
-    })
-    .filter(r=>r.ttl>0 || r.h1>0) // 금액이 전혀 없는 행 제거
-    .sort((a,b)=>(a.party+a.item).localeCompare(b.party+b.item));
-    return rows;
+    Object.values(acc).forEach(row=>{
+      for(let mo=1;mo<=12;mo++){
+        const q=mo<=3?1:mo<=6?2:mo<=9?3:4;
+        const amt=row.m[mo]||0, qty=row.qty[mo]||0;
+        row.qq[q]=(row.qq[q]||0)+amt;
+        row.qqty[q]=(row.qqty[q]||0)+qty;
+        row.ttl+=amt;
+        row.ttlq+=qty;
+      }
+    });
+    return Object.values(acc).filter(r=>r.ttl!==0).sort((a,b)=>(a.party+a.item).localeCompare(b.party+b.item));
   }
 
   const sellRowsAll=buildSection('매출','seller','samt');
@@ -3958,177 +3951,154 @@ function renderAnnual(){
   const sellRows=curTab==='all'?sellRowsAll:sellRowsAll.filter(r=>r.cat===curTab);
   const buyRows=curTab==='all'?buyRowsAll:buyRowsAll.filter(r=>r.cat===curTab);
 
-  // 업체별 그룹 렌더링 (클릭으로 품목 펼치기)
-  // _ 기준으로 상위 업체 그룹핑 (테크피아_CTO-C3 → 테크피아 아래 묶기)
-  function renderPartyGroups(rows, category){
-    const parentOf = p => p.includes('_') ? p.split('_')[0] : p;
-    const parents = [...new Set(rows.map(r=>parentOf(r.party)))];
-    return parents.map(parent=>{
-      const childParties = [...new Set(rows.filter(r=>parentOf(r.party)===parent).map(r=>r.party))];
-      if(childParties.length===1 && childParties[0]===parent){
-        // 단일 업체 (테크피아_* 없이 그냥 테크피아인 경우)
-        return partyGroupHtml(rows.filter(r=>r.party===parent), category);
+  function esc(s){ return String(s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
+  function qtyHtml(r, qty){
+    return (showQty && r.cat==='원부자재' && qty) ? `<div class="an-qty">${fmt(qty)}개</div>` : '';
+  }
+  function amountCells(r, category, editable){
+    let html='';
+    for(let mo=1;mo<=12;mo++){
+      const amt=r.m[mo]||0;
+      const q=qtyHtml(r, r.qty[mo]||0);
+      if(editable && mo<=5){
+        html+=`<td class="r an-m"><input class="an-in" type="number" value="${amt||''}" onchange="saveAnnualMonth('${category}','${esc(r.party)}','${esc(r.item)}',${mo},this.value)">${q}</td>`;
+      }else{
+        html+=`<td class="r an-m${mo>=6?' an-auto':''}">${amt?fmt(amt):'<span class="an-zero">-</span>'}${q}</td>`;
       }
-      // 여러 하위 품목이 있는 경우 - 상위 업체로 묶기
-      const allRows = rows.filter(r=>parentOf(r.party)===parent);
-      const cat = allRows[0].cat;
-      const showQty = cat==='원부자재';
-      const groupId = 'pg-'+category+'-'+parent.replace(/[^a-zA-Z0-9]/g,'_');
+    }
+    for(let qn=1;qn<=4;qn++){
+      const amt=r.qq[qn]||0;
+      html+=`<td class="r an-q">${amt?fmt(amt):'<span class="an-zero">-</span>'}${qtyHtml(r, r.qqty[qn]||0)}</td>`;
+    }
+    html+=`<td class="r an-total">${fmt(r.ttl)}</td>`;
+    if(showQty) html+=`<td class="r">${(r.cat==='원부자재'&&r.ttlq)?fmt(r.ttlq)+'개':'-'}</td>`;
+    return html;
+  }
+  function delBtn(category, r){
+    return `<button class="del-btn" onclick="delAnnualRow('${category}','${esc(r.party)}','${esc(r.item)}')">×</button>`;
+  }
+  function sumRows(rows){
+    const row={party:'',item:'',cat:'',m:{},qty:{},qq:{},qqty:{},ttl:0,ttlq:0};
+    rows.forEach(r=>{
+      for(let mo=1;mo<=12;mo++){
+        row.m[mo]=(row.m[mo]||0)+(r.m[mo]||0);
+        row.qty[mo]=(row.qty[mo]||0)+(r.qty[mo]||0);
+      }
+      for(let qn=1;qn<=4;qn++){
+        row.qq[qn]=(row.qq[qn]||0)+(r.qq[qn]||0);
+        row.qqty[qn]=(row.qqty[qn]||0)+(r.qqty[qn]||0);
+      }
+      row.ttl+=r.ttl;
+      row.ttlq+=r.ttlq;
+    });
+    return row;
+  }
+  function sumCells(row){
+    let html='';
+    for(let mo=1;mo<=12;mo++){
+      const amt=row.m[mo]||0;
+      const q=(showQty && row.qty[mo])?`<div class="an-qty">${fmt(row.qty[mo])}개</div>`:'';
+      html+=`<td class="r an-m${mo>=6?' an-auto':''}">${amt?fmt(amt):'<span class="an-zero">-</span>'}${q}</td>`;
+    }
+    for(let qn=1;qn<=4;qn++){
+      const amt=row.qq[qn]||0;
+      const q=(showQty && row.qqty[qn])?`<div class="an-qty">${fmt(row.qqty[qn])}개</div>`:'';
+      html+=`<td class="r an-q">${amt?fmt(amt):'<span class="an-zero">-</span>'}${q}</td>`;
+    }
+    html+=`<td class="r an-total">${fmt(row.ttl)}</td>`;
+    if(showQty) html+=`<td class="r">${row.ttlq?fmt(row.ttlq)+'개':'-'}</td>`;
+    return html;
+  }
 
-      // 상위 업체 합계
-      const sumH1=allRows.reduce((s,r)=>s+r.h1,0);
-      const sumM6=allRows.reduce((s,r)=>s+r.m6,0);
-      const sumQ3=allRows.reduce((s,r)=>s+r.q3,0);
-      const sumQ4=allRows.reduce((s,r)=>s+r.q4,0);
-      const sumTtl=allRows.reduce((s,r)=>s+r.ttl,0);
-      const sumM6q=showQty?allRows.reduce((s,r)=>s+r.m6q,0):0;
-      const sumQ3q=showQty?allRows.reduce((s,r)=>s+r.q3q,0):0;
-      const sumQ4q=showQty?allRows.reduce((s,r)=>s+r.q4q,0):0;
-      const sumTtlq=sumM6q+sumQ3q+sumQ4q;
-
-      // 상위 업체 헤더 행
-      const parentHeader = `<tr style="cursor:pointer;background:#f0f4ff" onclick="toggleAnnualGroup('${groupId}')">
-        <td colspan="2" style="font-weight:700;padding:8px 12px;color:#1F4E79">
-          <span id="${groupId}-arrow" style="margin-right:6px;font-size:11px">▸</span>${parent}
-        </td>
-        <td style="font-size:11px;color:#666">${cat}</td>
-        <td class="r" style="font-weight:600">${sumH1?fmt(sumH1):'-'}</td>
-        <td class="r" style="font-weight:700;background:#e8eef8">${sumM6?fmt(sumM6)+(showQty&&sumM6q?`<br><span style="font-size:10px;color:#888">${sumM6q}개</span>`:''):'- '}</td>
-        <td class="r" style="font-weight:700;background:#e8eef8">${sumQ3?fmt(sumQ3)+(showQty&&sumQ3q?`<br><span style="font-size:10px;color:#888">${sumQ3q}개</span>`:''):'- '}</td>
-        <td class="r" style="font-weight:700;background:#e8eef8">${sumQ4?fmt(sumQ4)+(showQty&&sumQ4q?`<br><span style="font-size:10px;color:#888">${sumQ4q}개</span>`:''):'- '}</td>
-        <td class="r" style="font-weight:700;color:#1F4E79">${fmt(sumTtl)}</td>
-        <td class="r" style="font-size:12px;color:#666">${showQty&&sumTtlq?sumTtlq+'개':'-'}</td>
+  function renderPartyGroups(rows, category){
+    const parentOf=p=>p.includes('_')?p.split('_')[0]:p;
+    const parents=[...new Set(rows.map(r=>parentOf(r.party)))];
+    return parents.map(parent=>{
+      const allRows=rows.filter(r=>parentOf(r.party)===parent);
+      const cat=allRows[0].cat;
+      const material=cat==='원부자재';
+      const multi=material && (allRows.length>1 || new Set(allRows.map(r=>r.party)).size>1);
+      if(!multi){
+        return allRows.map(r=>{
+          const itemCell=showItem?`<td>${material?(r.item||'-'):'-'}</td>`:'';
+          return `<tr>
+            <td style="font-weight:600;padding:8px 10px">${r.party}</td>
+            ${itemCell}
+            <td class="an-cat">${r.cat}</td>
+            ${amountCells(r, category, true)}
+            <td style="text-align:center">${delBtn(category, r)}</td>
+          </tr>`;
+        }).join('');
+      }
+      const groupId='ag'+(gidSeq++);
+      const sum=sumRows(allRows);
+      sum.cat='원부자재';
+      const itemCell=showItem?'<td style="color:#888;font-size:11px">품목별</td>':'';
+      const header=`<tr style="cursor:pointer;background:#f4f7fb" onclick="toggleAnnualGroup('${groupId}')">
+        <td style="font-weight:700;padding:8px 10px;color:#1F4E79"><span id="${groupId}-arrow" style="margin-right:6px;font-size:11px">▸</span>${parent}</td>
+        ${itemCell}
+        <td class="an-cat">${cat}</td>
+        ${sumCells(sum)}
         <td></td>
       </tr>`;
-
-      // 하위 품목 행들 (기본 숨김)
-      const childRows = childParties.map(cp=>{
-        const cpRows = rows.filter(r=>r.party===cp);
-        const itemName = cp.includes('_') ? cp.split('_').slice(1).join('_') : cp; // 업체명_ 제거하고 품목명만 표시
-        // partyGroupHtml을 호출하되 groupId를 상위에 연결
-        return cpRows.map(r=>`<tr class="${groupId}-row" style="display:none;background:#f7f9ff">
-          <td colspan="2" style="padding-left:28px;font-size:12px;color:#333;font-weight:500">└ ${itemName}</td>
-          <td style="font-size:11px;color:#aaa">-</td>
-          <td class="r" style="padding:3px 8px">
-            <input type="number" value="${r.h1}" style="width:90px;text-align:right;border:1px solid #ddd;border-radius:4px;padding:3px 5px;font-size:11px"
-              onchange="saveAnnualH1('${category}','${r.party.replace(/'/g,"\\'")}','${r.item.replace(/'/g,"\\'")}',this.value)">
-          </td>
-          <td class="r" style="font-size:12px;color:#555;background:#f9f9f9">${fmt(r.m6)}${(showQty&&r.m6q)?`<br><span style="color:#999;font-size:10px">${r.m6q}개</span>`:''}</td>
-          <td class="r" style="font-size:12px;color:#555;background:#f9f9f9">${fmt(r.q3)}${(showQty&&r.q3q)?`<br><span style="color:#999;font-size:10px">${r.q3q}개</span>`:''}</td>
-          <td class="r" style="font-size:12px;color:#555;background:#f9f9f9">${fmt(r.q4)}${(showQty&&r.q4q)?`<br><span style="color:#999;font-size:10px">${r.q4q}개</span>`:''}</td>
-          <td class="r" style="font-size:12px;font-weight:600">${fmt(r.ttl)}</td>
-          <td class="r" style="font-size:12px;color:#666">${(showQty&&r.ttlq)?r.ttlq+'개':'-'}</td>
-          <td style="text-align:center">${(r.h1||r.ttl)?`<button class="del-btn" onclick="delAnnualRow('${category}','${r.party.replace(/'/g,"\\'")}','${r.item.replace(/'/g,"\\'")}')">×</button>`:''}</td>
-        </tr>`).join('');
+      const details=allRows.map(r=>{
+        const label=r.party.includes('_')?r.party.split('_').slice(1).join('_'):(r.item||r.party);
+        const itemCell2=showItem?`<td style="padding-left:16px">${r.item||label}</td>`:'';
+        return `<tr class="${groupId}-row" style="display:none;background:#f8fafc">
+          <td style="padding-left:22px;font-size:12px;color:#333">└ ${label}</td>
+          ${itemCell2}
+          <td class="an-cat">-</td>
+          ${amountCells(r, category, true)}
+          <td style="text-align:center">${delBtn(category, r)}</td>
+        </tr>`;
       }).join('');
-
-      return parentHeader + childRows;
+      return header+details;
     }).join('');
   }
 
-  function partyGroupHtml(partyRows, category){
-    const party = partyRows[0].party;
-    const cat = partyRows[0].cat;
-    const groupId = 'ag-' + category + '-' + party.replace(/[^a-zA-Z0-9]/g,'_');
-
-    // 업체 합계
-    const sumH1 = partyRows.reduce((s,r)=>s+r.h1,0);
-    const sumM6 = partyRows.reduce((s,r)=>s+r.m6,0);
-    const sumM7 = partyRows.reduce((s,r)=>s+r.m7,0);
-    const sumM8 = partyRows.reduce((s,r)=>s+r.m8,0);
-    const sumM9 = partyRows.reduce((s,r)=>s+r.m9,0);
-    const sumM10 = partyRows.reduce((s,r)=>s+r.m10,0);
-    const sumM11 = partyRows.reduce((s,r)=>s+r.m11,0);
-    const sumM12 = partyRows.reduce((s,r)=>s+r.m12,0);
-    const sumQ3 = sumM7+sumM8+sumM9;
-    const sumQ4 = sumM10+sumM11+sumM12;
-    const sumTtl = sumH1+sumM6+sumQ3+sumQ4;
-
-    // 업체 헤더 행 (클릭으로 펼치기)
-    const sumQ2=sumM6;
-    const showQty = cat==='원부자재'; // 원부자재만 수량 표시
-    const sumQ2q=showQty?partyRows.reduce((s,r)=>s+r.m6q,0):0;
-    const sumQ3q=showQty?partyRows.reduce((s,r)=>s+r.q3q,0):0;
-    const sumQ4q=showQty?partyRows.reduce((s,r)=>s+r.q4q,0):0;
-    const sumTtlq=sumQ2q+sumQ3q+sumQ4q;
-    const headerRow = `<tr style="cursor:pointer;background:#fafafa" onclick="toggleAnnualGroup('${groupId}')">
-        <td colspan="2" style="font-weight:600;padding:8px 12px">
-          <span id="${groupId}-arrow" style="margin-right:6px;font-size:11px">▸</span>${party}
-        </td>
-        <td style="font-size:11px;color:${cat==='미분류'?'#bbb':'#666'}">${cat}</td>
-        <td class="r" style="font-weight:600;background:#fafafa">${sumH1?fmt(sumH1):'-'}</td>
-        <td class="r" style="font-weight:700;background:#f0f0f0">${sumQ2?fmt(sumQ2)+(showQty&&sumQ2q?`<br><span style="font-size:10px;color:#888">${sumQ2q}개</span>`:''):'- '}</td>
-        <td class="r" style="font-weight:700;background:#f0f0f0">${sumQ3?fmt(sumQ3)+(showQty&&sumQ3q?`<br><span style="font-size:10px;color:#888">${sumQ3q}개</span>`:''):'- '}</td>
-        <td class="r" style="font-weight:700;background:#f0f0f0">${sumQ4?fmt(sumQ4)+(showQty&&sumQ4q?`<br><span style="font-size:10px;color:#888">${sumQ4q}개</span>`:''):'- '}</td>
-        <td class="r" style="font-weight:700;color:#1F4E79">${fmt(sumTtl)}</td>
-        <td class="r" style="font-size:12px;color:#666">${showQty&&sumTtlq?sumTtlq+'개':'-'}</td>
-        <td></td>
-      </tr>`;
-
-    // 품목별 상세 행 (기본 숨김)
-    const detailRows = partyRows.map(r=>`<tr class="${groupId}-row" style="display:none;background:#f7f9fc">
-        <td colspan="2" style="padding-left:28px;font-size:12px;color:#333;font-weight:500">└ ${r.item||'(전체)'}</td>
-        <td style="font-size:11px;color:#aaa">-</td>
-        <td class="r" style="padding:3px 8px">
-          <input type="number" value="${r.h1}" style="width:90px;text-align:right;border:1px solid #ddd;border-radius:4px;padding:3px 5px;font-size:11px"
-            onchange="saveAnnualH1('${category}','${r.party.replace(/'/g,"\\'")}','${r.item.replace(/'/g,"\\'")}',this.value)">
-        </td>
-        <td class="r" style="font-size:12px;color:#555;background:#f9f9f9">${fmt(r.m6)}${(showQty&&r.m6q)?`<br><span style="color:#999;font-size:10px">${r.m6q}개</span>`:''}</td>
-        <td class="r" style="font-size:12px;color:#555;background:#f9f9f9">${fmt(r.q3)}${(showQty&&r.q3q)?`<br><span style="color:#999;font-size:10px">${r.q3q}개</span>`:''}</td>
-        <td class="r" style="font-size:12px;color:#555;background:#f9f9f9">${fmt(r.q4)}${(showQty&&r.q4q)?`<br><span style="color:#999;font-size:10px">${r.q4q}개</span>`:''}</td>
-        <td class="r" style="font-size:12px;font-weight:600">${fmt(r.ttl)}</td>
-        <td class="r" style="font-size:12px;color:#666">${(showQty&&r.ttlq)?r.ttlq+'개':'-'}</td>
-        <td style="text-align:center">${(r.h1||r.ttl)?`<button class="del-btn" onclick="delAnnualRow('${category}','${r.party.replace(/'/g,"\\'")}','${r.item.replace(/'/g,"\\'")}')">×</button>`:''}</td>
-      </tr>`).join('');
-
-    return headerRow + detailRows;
-  }
-
-
-  const tot=(rows,k)=>rows.reduce((s,r)=>s+r[k],0);
-  function subtotalRow(rows,label,cls){
-    const qty=tot(rows,'ttlq');
+  function subtotalRow(rows, label, cls){
+    const sum=sumRows(rows);
+    const span=1+(showItem?1:0)+1;
     return `<tr class="${cls||''}" style="background:${cls==='tot'?'':'#f0f0f0'}">
-      <td colspan="3" style="padding:8px 12px;font-weight:600">${label}</td>
-      <td class="r">${fmt(tot(rows,'h1'))}</td>
-      <td class="r">${fmt(tot(rows,'m6'))}</td>
-      <td class="r">${fmt(tot(rows,'q3'))}</td>
-      <td class="r">${fmt(tot(rows,'q4'))}</td>
-      <td class="r" style="font-weight:700">${fmt(tot(rows,'ttl'))}</td>
-      <td class="r">${qty?fmt(qty):'-'}</td>
+      <td colspan="${span}" style="padding:8px 10px;font-weight:600">${label}</td>
+      ${sumCells(sum)}
       <td></td>
     </tr>`;
   }
 
-  function renderTable(rows,category,bodyId,footId){
+  function headHtml(partyLabel){
+    const itemTh=showItem?'<th>품목</th>':'';
+    const qtyTh=showQty?'<th class="r">수량</th>':'';
+    const months=[1,2,3,4,5,6,7,8,9,10,11,12].map(m=>`<th class="r an-m">${m}월</th>`).join('');
+    const qs=[['1Q','1–3월'],['2Q','4–6월'],['3Q','7–9월'],['4Q','10–12월']].map(([q,tip])=>`<th class="r an-q" title="${tip}">${q}</th>`).join('');
+    return `<tr><th>${partyLabel}</th>${itemTh}<th>분류</th>${months}${qs}<th class="r">연간</th>${qtyTh}<th style="width:36px"></th></tr>`;
+  }
+
+  function renderTable(rows, category, headId, bodyId, footId, partyLabel){
+    document.getElementById(headId).innerHTML=headHtml(partyLabel);
     const body=document.getElementById(bodyId);
     if(!rows.length){
-      body.innerHTML=`<tr><td colspan="10" style="text-align:center;color:#bbb;padding:1.5rem">데이터가 없어요. 아래에서 행을 추가해주세요</td></tr>`;
+      body.innerHTML=`<tr><td colspan="${colCount}" style="text-align:center;color:#bbb;padding:1.5rem">데이터가 없어요. 아래에서 행을 추가해주세요</td></tr>`;
     }else if(curTab==='all'){
       const order=['조명','원부자재','수수료','미분류'];
       body.innerHTML=order.map(cat=>{
         const grp=rows.filter(r=>r.cat===cat);
         if(!grp.length) return '';
-        return `<tr style="background:#f8f8f8"><td colspan="10" style="padding:6px 12px;font-size:11px;font-weight:700;color:#555">${cat}</td></tr>`
-          +renderPartyGroups(grp,category)
-          +subtotalRow(grp,cat+' 소계');
+        return `<tr style="background:#f8f8f8"><td colspan="${colCount}" style="padding:6px 12px;font-size:11px;font-weight:700;color:#555">${cat}</td></tr>`
+          +renderPartyGroups(grp, category)
+          +subtotalRow(grp, cat+' 소계');
       }).join('');
     }else{
-      body.innerHTML=renderPartyGroups(rows,category);
+      body.innerHTML=renderPartyGroups(rows, category);
     }
-    document.getElementById(footId).innerHTML=subtotalRow(rows,(curTab==='all'?'전체':curTab)+' 합계','tot');
+    document.getElementById(footId).innerHTML=subtotalRow(rows, (curTab==='all'?'전체':curTab)+' 합계', 'tot');
   }
-  renderTable(sellRows,'매출','an-sell-body','an-sell-foot');
-  renderTable(buyRows,'매입','an-buy-body','an-buy-foot');
+  renderTable(sellRows,'매출','an-sell-head','an-sell-body','an-sell-foot','매출처');
+  renderTable(buyRows,'매입','an-buy-head','an-buy-body','an-buy-foot','매입처');
 
   const sum=(rows,k)=>rows.reduce((s,r)=>s+r[k],0);
-  const sellH1=sum(sellRows,'h1'), buyH1=sum(buyRows,'h1');
-  const sellQ2=sum(sellRows,'m6'), buyQ2=sum(buyRows,'m6');
-  const sellQ3=sum(sellRows,'q3'), buyQ3=sum(buyRows,'q3');
-  const sellQ4=sum(sellRows,'q4'), buyQ4=sum(buyRows,'q4');
   const sellTtl=sum(sellRows,'ttl'), buyTtl=sum(buyRows,'ttl');
-  const gH1=sellH1-buyH1, gQ2=sellQ2-buyQ2, gQ3=sellQ3-buyQ3, gQ4=sellQ4-buyQ4, gTtl=sellTtl-buyTtl;
-
+  const gTtl=sellTtl-buyTtl;
   const labelPfx=curY+'년'+(curTab==='all'?'':' · '+curTab);
   document.getElementById('an-metrics').innerHTML=`
     <div class="metric"><div class="metric-lbl">${labelPfx} 매출 합계</div><div class="metric-val">${fmtW(sellTtl)}</div></div>
@@ -4136,13 +4106,32 @@ function renderAnnual(){
     <div class="metric"><div class="metric-lbl">${labelPfx} 매출총이익</div><div class="metric-val ${gTtl>=0?'g':'b'}">${fmtW(gTtl)}</div></div>
     <div class="metric"><div class="metric-lbl">매출총이익률</div><div class="metric-val">${sellTtl?(gTtl/sellTtl*100).toFixed(1):0}%</div></div>`;
 
+  const sellSum=sumRows(sellRows), buySum=sumRows(buyRows);
+  const gross=sumRows([{...sellSum}]);
+  for(let mo=1;mo<=12;mo++) gross.m[mo]=(sellSum.m[mo]||0)-(buySum.m[mo]||0);
+  for(let qn=1;qn<=4;qn++) gross.qq[qn]=(sellSum.qq[qn]||0)-(buySum.qq[qn]||0);
+  gross.ttl=sellSum.ttl-buySum.ttl;
+  function grossCells(row){
+    let html='';
+    for(let mo=1;mo<=12;mo++){
+      const amt=row.m[mo]||0;
+      html+=`<td class="r an-m${mo>=6?' an-auto':''}">${fmtW(amt)}</td>`;
+    }
+    for(let qn=1;qn<=4;qn++) html+=`<td class="r an-q">${fmtW(row.qq[qn]||0)}</td>`;
+    html+=`<td class="r an-total">${fmtW(row.ttl)}</td>`;
+    return html;
+  }
+  const gMonths=[1,2,3,4,5,6,7,8,9,10,11,12].map(m=>`<th class="r an-m">${m}월</th>`).join('');
+  const gQs=['1Q','2Q','3Q','4Q'].map(q=>`<th class="r an-q">${q}</th>`).join('');
+  document.getElementById('an-gross-head').innerHTML=`<tr><th>구분</th>${gMonths}${gQs}<th class="r">연간</th></tr>`;
   document.getElementById('an-gross-body').innerHTML=`
-    <tr><td style="padding:10px 12px">매출</td><td class="r">${fmtW(sellH1)}</td><td class="r">${fmtW(sellQ2)}</td><td class="r">${fmtW(sellQ3)}</td><td class="r">${fmtW(sellQ4)}</td><td class="r" style="font-weight:700">${fmtW(sellTtl)}</td></tr>
-    <tr><td style="padding:10px 12px">매입</td><td class="r">${fmtW(buyH1)}</td><td class="r">${fmtW(buyQ2)}</td><td class="r">${fmtW(buyQ3)}</td><td class="r">${fmtW(buyQ4)}</td><td class="r" style="font-weight:700">${fmtW(buyTtl)}</td></tr>
-    <tr class="tot"><td style="padding:10px 12px">매출총이익</td><td class="r">${fmtW(gH1)}</td><td class="r">${fmtW(gQ2)}</td><td class="r">${fmtW(gQ3)}</td><td class="r">${fmtW(gQ4)}</td><td class="r">${fmtW(gTtl)}</td></tr>`;
+    <tr><td style="padding:10px 12px">매출</td>${grossCells(sellSum)}</tr>
+    <tr><td style="padding:10px 12px">매입</td>${grossCells(buySum)}</tr>
+    <tr class="tot"><td style="padding:10px 12px">매출총이익</td>${grossCells(gross)}</tr>`;
 
-  _annualCache={curY,curTab,sellRows,buyRows};
+  _annualCache={curY,curTab,sellRows,buyRows,showItem,showQty};
 }
+
 /* ══════════════ 엑셀 다운로드 (앱 → 엑셀) ══════════════ */
 
 /* ══════════════ 발주 엑셀 업로드 (엑셀 → 앱, 중복 자동 검사) ══════════════ */
@@ -5105,6 +5094,7 @@ function printBalanceReport(){
   document.getElementById('overlay').style.display='block';
 }
 
+
 function printAnnualReport(){
   renderAnnual();
   if(!_annualCache) return;
@@ -5112,31 +5102,45 @@ function printAnnualReport(){
   const tabLabel=curTab==='all'?'전체':curTab;
   const today=new Date().toISOString().slice(0,10).replace(/-/g,'.');
   const order=['조명','원부자재','수수료','미분류'];
-  const tot=(arr,k)=>arr.reduce((s,r)=>s+r[k],0);
+  const showItem=curTab==='all'||curTab==='원부자재';
+  const colCount=1+(showItem?1:0)+1+12+4+1;
 
+  function monthTds(r){
+    let html='';
+    for(let mo=1;mo<=12;mo++) html+=`<td>${r.m[mo]?fmt(r.m[mo]):''}</td>`;
+    for(let qn=1;qn<=4;qn++) html+=`<td>${r.qq[qn]?fmt(r.qq[qn]):''}</td>`;
+    html+=`<td>${fmt(r.ttl)}</td>`;
+    return html;
+  }
+  function sumOf(rows){
+    const row={m:{},qq:{},ttl:0};
+    rows.forEach(r=>{
+      for(let mo=1;mo<=12;mo++) row.m[mo]=(row.m[mo]||0)+(r.m[mo]||0);
+      for(let qn=1;qn<=4;qn++) row.qq[qn]=(row.qq[qn]||0)+(r.qq[qn]||0);
+      row.ttl+=r.ttl;
+    });
+    return row;
+  }
   function rowTr(r){
-    const itemLabel=r.item||(r.cat==='조명'?'(업체 전체)':'');
-    return `<tr><td class="l">${r.party}</td><td class="l">${itemLabel}</td><td>${r.cat}</td>
-      <td>${fmt(r.h1)}</td><td>${fmt(r.m6)}</td><td>${fmt(r.q3)}</td><td>${fmt(r.q4)}</td><td>${fmt(r.ttl)}</td></tr>`;
+    const itemTd=showItem?`<td class="l">${r.cat==='원부자재'?(r.item||''):''}</td>`:'';
+    return `<tr><td class="l">${r.party}</td>${itemTd}<td>${r.cat}</td>${monthTds(r)}</tr>`;
   }
   function subTr(arr,lbl,cls){
-    return `<tr class="${cls}"><td class="l" colspan="3">${lbl}</td>
-      <td>${fmt(tot(arr,'h1'))}</td><td>${fmt(tot(arr,'m6'))}</td><td>${fmt(tot(arr,'q3'))}</td>
-      <td>${fmt(tot(arr,'q4'))}</td><td>${fmt(tot(arr,'ttl'))}</td></tr>`;
+    const span=1+(showItem?1:0)+1;
+    return `<tr class="${cls}"><td class="l" colspan="${span}">${lbl}</td>${monthTds(sumOf(arr))}</tr>`;
   }
   function tableHtml(rows,label,partyLabel){
-    const headerRow=`<tr>
-      <th style="width:110px">${partyLabel}</th><th style="width:70px">품목</th><th style="width:50px">분류</th>
-      <th>1~5월</th><th>2Q</th><th>3Q</th><th>4Q</th><th>연계</th>
-    </tr>`;
+    const itemTh=showItem?'<th>품목</th>':'';
+    const months=[1,2,3,4,5,6,7,8,9,10,11,12].map(m=>`<th>${m}월</th>`).join('');
+    const headerRow=`<tr><th>${partyLabel}</th>${itemTh}<th>분류</th>${months}<th>1Q</th><th>2Q</th><th>3Q</th><th>4Q</th><th>연간</th></tr>`;
     let body='';
     if(!rows.length){
-      body=`<tr><td colspan="8" style="text-align:center;color:#999;padding:14px">데이터 없음</td></tr>`;
+      body=`<tr><td colspan="${colCount}" style="text-align:center;color:#999;padding:14px">데이터 없음</td></tr>`;
     }else if(curTab==='all'){
       body=order.map(cat=>{
         const grp=rows.filter(r=>r.cat===cat);
         if(!grp.length) return '';
-        return `<tr class="grp-head"><td colspan="8">${cat}</td></tr>`+grp.map(rowTr).join('')+subTr(grp,cat+' 소계','grp-sub');
+        return `<tr class="grp-head"><td colspan="${colCount}">${cat}</td></tr>`+grp.map(rowTr).join('')+subTr(grp,cat+' 소계','grp-sub');
       }).join('');
     }else{
       body=rows.map(rowTr).join('');
@@ -5145,16 +5149,12 @@ function printAnnualReport(){
     return `<div class="report-section-title">${label}</div>
       <table class="report-tbl"><thead>${headerRow}</thead><tbody>${body}</tbody></table>`;
   }
-
-  const sum=(rows,k)=>rows.reduce((s,r)=>s+r[k],0);
-  const sellTtl=sum(sellRows,'ttl'), buyTtl=sum(buyRows,'ttl'), gTtl=sellTtl-buyTtl;
-  const sellH1=sum(sellRows,'h1'), buyH1=sum(buyRows,'h1');
-  const sellQ2=sum(sellRows,'m6'), buyQ2=sum(buyRows,'m6');
-  const sellQ3=sum(sellRows,'q3'), buyQ3=sum(buyRows,'q3');
-  const sellQ4=sum(sellRows,'q4'), buyQ4=sum(buyRows,'q4');
-  const gH1=sellH1-buyH1, gQ2=sellQ2-buyQ2, gQ3=sellQ3-buyQ3, gQ4=sellQ4-buyQ4;
-
-  const html=`<div class="report-page">
+  const sellSum=sumOf(sellRows), buySum=sumOf(buyRows);
+  const gross={m:{},qq:{},ttl:sellSum.ttl-buySum.ttl};
+  for(let mo=1;mo<=12;mo++) gross.m[mo]=(sellSum.m[mo]||0)-(buySum.m[mo]||0);
+  for(let qn=1;qn<=4;qn++) gross.qq[qn]=(sellSum.qq[qn]||0)-(buySum.qq[qn]||0);
+  const months=[1,2,3,4,5,6,7,8,9,10,11,12].map(m=>`<th>${m}월</th>`).join('');
+  const html=`<div class="report-page" style="width:1500px">
     <div class="report-title">${curY}년 연간 매출·매입 현황 보고서</div>
     <div class="report-sub">${MY.name}　|　구분: ${tabLabel}　|　출력일: ${today}</div>
     ${tableHtml(sellRows,'매출 현황','매출처')}
@@ -5162,54 +5162,59 @@ function printAnnualReport(){
     ${tableHtml(buyRows,'매입 현황','매입처')}
     <div class="report-section-title">매출총이익 요약</div>
     <table class="report-tbl">
-      <thead><tr><th style="width:120px">구분</th><th>1~5월(수동)</th><th>2Q</th><th>3Q(7~9월)</th><th>4Q(10~12월)</th><th>연계</th></tr></thead>
+      <thead><tr><th>구분</th>${months}<th>1Q</th><th>2Q</th><th>3Q</th><th>4Q</th><th>연간</th></tr></thead>
       <tbody>
-        <tr><td class="l">매출</td><td>${fmt(sellH1)}</td><td>${fmt(sellQ2)}</td><td>${fmt(sellQ3)}</td><td>${fmt(sellQ4)}</td><td>${fmt(sellTtl)}</td></tr>
-        <tr><td class="l">매입</td><td>${fmt(buyH1)}</td><td>${fmt(buyQ2)}</td><td>${fmt(buyQ3)}</td><td>${fmt(buyQ4)}</td><td>${fmt(buyTtl)}</td></tr>
-        <tr class="grand"><td class="l">매출총이익</td><td>${fmt(gH1)}</td><td>${fmt(gQ2)}</td><td>${fmt(gQ3)}</td><td>${fmt(gQ4)}</td><td>${fmt(gTtl)}</td></tr>
+        <tr><td class="l">매출</td>${monthTds(sellSum)}</tr>
+        <tr><td class="l">매입</td>${monthTds(buySum)}</tr>
+        <tr class="grand"><td class="l">매출총이익</td>${monthTds(gross)}</tr>
       </tbody>
     </table>
   </div>`;
   document.getElementById('doc-content').innerHTML=html;
-  document.getElementById('dynamic-page-style').textContent='@media print{ @page{ size:A4 landscape; margin:10mm; } }';
-  document.getElementById('doc-frame').style.width='1160px';
+  document.getElementById('dynamic-page-style').textContent='@media print{ @page{ size:A4 landscape; margin:8mm; } }';
+  document.getElementById('doc-frame').style.width='1540px';
   document.getElementById('overlay').style.display='block';
 }
 
-async function saveAnnualH1(category,party,item,value){
+async function saveAnnualMonth(category,party,item,month,value){
   const curY=document.getElementById('an-year').value;
   const amount=+value||0;
-  if(isLightParty(category,party)){
-    // 조명 업체: 품목 무관하게 하나로 합쳐서 관리 (기존 항목 전부 지우고 하나로 재저장)
-    await clearAllManualForParty(curY,category,party);
-    annualManual = annualManual.filter(r=>!(String(r.year)===String(curY)&&r.category===category&&r.party===party));
-    if(amount>0){
-      const row=await upsertAnnualManual({year:curY,category,party,item:'',amount});
-      if(row) annualManual.push(row);
+  const stored=manualStoreItem(item, month);
+  const idx=annualManual.findIndex(r=>String(r.year)===String(curY)&&r.category===category&&r.party===party&&r.item===stored);
+  if(amount<=0){
+    if(idx>=0){
+      const id=annualManual[idx].id;
+      annualManual.splice(idx,1);
+      if(id) await deleteAnnualManualRow(id);
     }
   }else{
-    const row=await upsertAnnualManual({year:curY,category,party,item,amount});
+    const row=await upsertAnnualManual({year:+curY||curY,category,party,item:stored,amount});
     if(row){
-      const idx=annualManual.findIndex(r=>String(r.year)===String(curY)&&r.category===category&&r.party===party&&r.item===item);
       if(idx>=0) annualManual[idx]=row; else annualManual.push(row);
     }
+  }
+  const legacyIdx=annualManual.findIndex(r=>String(r.year)===String(curY)&&r.category===category&&r.party===party&&r.item===(item||'')&&!parseManualItem(r.item).month);
+  if(legacyIdx>=0){
+    const id=annualManual[legacyIdx].id;
+    annualManual.splice(legacyIdx,1);
+    if(id) await deleteAnnualManualRow(id);
   }
   renderAnnual();
 }
 
 async function delAnnualRow(category,party,item){
   const curY=document.getElementById('an-year').value;
-  if(isLightParty(category,party)){
-    await clearAllManualForParty(curY,category,party);
-    annualManual = annualManual.filter(r=>!(String(r.year)===String(curY)&&r.category===category&&r.party===party));
-    renderAnnual();
-    return;
+  const material=partyCategory(category,party)==='원부자재';
+  const targets=annualManual.filter(r=>{
+    if(String(r.year)!==String(curY)||r.category!==category||r.party!==party) return false;
+    if(!material) return true;
+    const parsed=parseManualItem(r.item);
+    return parsed.base===item || r.item===item;
+  });
+  annualManual=annualManual.filter(r=>!targets.includes(r));
+  for(const t of targets){
+    if(t.id) await deleteAnnualManualRow(t.id);
   }
-  const idx=annualManual.findIndex(r=>String(r.year)===String(curY)&&r.category===category&&r.party===party&&r.item===item);
-  if(idx<0) return;
-  const id=annualManual[idx].id;
-  annualManual.splice(idx,1);
-  await deleteAnnualManualRow(id);
   renderAnnual();
 }
 
@@ -5217,23 +5222,17 @@ async function addAnnualRow(category){
   const pfx=category==='매출'?'an-sell':'an-buy';
   const party=document.getElementById(pfx+'-party').value.trim();
   let item=document.getElementById(pfx+'-item').value.trim();
+  const month=+document.getElementById(pfx+'-month').value||1;
   const amount=+document.getElementById(pfx+'-amt').value||0;
   if(!party){ alert('업체명을 입력해주세요'); return; }
-  const light=isLightParty(category,party);
-  if(light){ item=''; }
-  else if(!item){ alert('품목을 입력해주세요'); return; }
+  if(partyCategory(category,party)!=='원부자재') item='';
+  else if(!item){ alert('원부자재는 품목을 입력해주세요'); return; }
+  if(amount<=0){ alert('금액을 입력해주세요'); return; }
   const curY=document.getElementById('an-year').value||String(new Date().getFullYear());
-  if(light){
-    // 조명 업체는 하나의 행으로만 관리 (기존 값 있으면 덮어씀)
-    await clearAllManualForParty(curY,category,party);
-    annualManual = annualManual.filter(r=>!(String(r.year)===String(curY)&&r.category===category&&r.party===party));
-  }
-  const row=await upsertAnnualManual({year:curY,category,party,item,amount});
-  if(row) annualManual.push(row);
+  await saveAnnualMonth(category, party, item, month, amount);
   document.getElementById(pfx+'-party').value='';
   document.getElementById(pfx+'-item').value='';
   document.getElementById(pfx+'-amt').value='';
-  renderAnnual();
 }
 
 async function startApp(){
