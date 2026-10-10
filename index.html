@@ -686,7 +686,7 @@ input[readonly]{background:#f5f5f5;color:#999}
         <input type="file" id="tx-file" accept=".xlsx,.xls" onchange="handleTxFile(event)">
         <span id="tx-file-status" style="font-size:12px;color:#888"></span>
       </div>
-      <p style="font-size:12px;color:#999;padding:0 12px 10px">※ 은행 거래내역(입금액/출금액/내용 컬럼)과 카드 이용내역(가맹점명/이용금액 컬럼)을 자동으로 구분해서 읽어요. 규칙이 없는 카드 사용은 계정을 비워 둡니다. 계정을 정하고 저장하면 다음 업로드부터 그 규칙으로 분류됩니다. 매출/매입 거래도 넣으셔도 되지만, 손익계산서에는 반영 안 되고 "비손익"으로 따로 잡혀요 (잔액 확인용).</p>
+      <p style="font-size:12px;color:#999;padding:0 12px 10px">※ 은행 거래내역(입금액/출금액/내용 컬럼)과 카드 이용내역(가맹점명/이용금액 컬럼)을 자동으로 구분해서 읽어요. 규칙이 없는 카드 사용은 계정을 비워 둡니다. 계정을 정하고 저장하면 다음 업로드부터 그 규칙으로 분류됩니다. 같은 구분으로 같은 달을 다시 올리면 이미 저장된 거래는 제외하고 새 거래만 분류합니다. 매출/매입 거래도 넣으셔도 되지만, 손익계산서에는 반영 안 되고 "비손익"으로 따로 잡혀요 (잔액 확인용).</p>
     </div>
 
     <div class="section-box" id="tx-review-box" style="margin-bottom:14px;display:none">
@@ -4420,31 +4420,47 @@ async function upsertTxRule(keyword,account){
   if(error){ console.error(error); return null; }
   return data&&data[0];
 }
+function txIdentityKey(r){
+  const date=String(r.tx_date||'').slice(0,10);
+  const amount=Math.round(+r.amount||0);
+  const desc=String(r.description||'').trim();
+  return [r.source||'', r.account_label||'', date, desc, amount, r.direction||''].join('|');
+}
+async function existingTxKeySet(source, accountLabel, months){
+  const keys=new Set();
+  for(const ym of months){
+    if(!ym) continue;
+    const {data, error}=await sb.from('bank_tx')
+      .select('source,account_label,tx_date,description,amount,direction')
+      .eq('source', source)
+      .eq('account_label', accountLabel)
+      .eq('year_month', ym);
+    if(error){ console.error(error); continue; }
+    (data||[]).forEach(r=>keys.add(txIdentityKey(r)));
+  }
+  return keys;
+}
+function keepNewTxRows(rows, existing){
+  const seen=new Set();
+  const fresh=[];
+  let skipped=0;
+  rows.forEach(r=>{
+    const key=txIdentityKey(r);
+    if(seen.has(key) || (existing && existing.has(key))){ skipped++; return; }
+    seen.add(key);
+    fresh.push(r);
+  });
+  return {fresh, skipped};
+}
 async function saveBankTxRows(rows){
-  // 업로드 전 동일 source+account_label 기존 데이터 삭제 후 재삽입 (완전한 중복 방지)
+  // 같은 구분·같은 달에 이미 있는 거래는 유지하고, 새 거래만 추가한다.
   if(!rows.length) return true;
   const source = rows[0].source;
   const accountLabel = rows[0].account_label;
   const months = [...new Set(rows.map(r=>r.year_month))];
-
-  // 해당 source+account_label+month 기존 데이터 삭제
-  for(const ym of months){
-    const {error:delErr} = await sb.from('bank_tx')
-      .delete()
-      .eq('source', source)
-      .eq('account_label', accountLabel)
-      .eq('year_month', ym);
-    if(delErr){ console.error('삭제 에러:', delErr); }
-  }
-
-  // 파일 내 중복 제거 (같은 source+account_label+tx_date+description+amount+direction)
-  const seen = new Set();
-  const dedupedRows = rows.filter(r=>{
-    const key = `${r.source}|${r.account_label}|${r.tx_date}|${r.description}|${r.amount}|${r.direction}`;
-    if(seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  const existing = await existingTxKeySet(source, accountLabel, months);
+  const {fresh:dedupedRows}=keepNewTxRows(rows, existing);
+  if(!dedupedRows.length) return true;
 
   // 50건씩 나눠서 새로 삽입
   const chunkSize = 50;
@@ -4558,7 +4574,17 @@ async function handleTxFile(e){
     return;
   }
 
-  txRowsPending = parsed.map(p=>{
+  const months=[...new Set(parsed.map(p=>String(p.tx_date||'').slice(0,7)).filter(m=>/^\d{4}-\d{2}$/.test(m)))];
+  const existing=await existingTxKeySet(parsed[0].source, label, months);
+  const {fresh, skipped}=keepNewTxRows(parsed, existing);
+  if(!fresh.length){
+    alert(`${label}에 이미 있는 거래 ${skipped}건이라, 새로 넣을 내역이 없어요.`);
+    document.getElementById('tx-file-status').textContent=`새 내역 없음 (${skipped}건 제외)`;
+    document.getElementById('tx-file').value='';
+    return;
+  }
+
+  txRowsPending = fresh.map(p=>{
     // 은행 거래에서 500원은 항상 이체수수료 (신창수/김은희/이은진 등 이름과 무관하게)
     if(p.source==='bank' && p.amount===500){
       return {...p, account:'지급수수료', ruleKeyword:p.description, saveRule:false};
@@ -4567,7 +4593,7 @@ async function handleTxFile(e){
     const defaultAccount = matched ? matched.account : '';
     return {...p, account: defaultAccount, vat_type: vatTypeFor(p.description, defaultAccount), ruleKeyword: matched?matched.keyword:p.description, saveRule: !matched};
   });
-  document.getElementById('tx-file-status').textContent=`${parsed.length}건 불러옴 (${isBank?'은행':'카드'} 형식)`;
+  document.getElementById('tx-file-status').textContent=`새 내역 ${fresh.length}건${skipped?` (이미 저장된 ${skipped}건 제외)`:''} · ${isBank?'은행':'카드'} · ${label}`;
   renderTxReview();
 }
 
