@@ -686,7 +686,7 @@ input[readonly]{background:#f5f5f5;color:#999}
         <input type="file" id="tx-file" accept=".xlsx,.xls" onchange="handleTxFile(event)">
         <span id="tx-file-status" style="font-size:12px;color:#888"></span>
       </div>
-      <p style="font-size:12px;color:#999;padding:0 12px 10px">※ 은행 거래내역(입금액/출금액/내용 컬럼)과 카드 이용내역(가맹점명/이용금액 컬럼)을 자동으로 구분해서 읽어요. 매출/매입 거래도 넣으셔도 되지만, 손익계산서에는 반영 안 되고 "비손익"으로 따로 잡혀요 (잔액 확인용).</p>
+      <p style="font-size:12px;color:#999;padding:0 12px 10px">※ 은행 거래내역(입금액/출금액/내용 컬럼)과 카드 이용내역(가맹점명/이용금액 컬럼)을 자동으로 구분해서 읽어요. 규칙이 없는 카드 사용은 계정을 비워 둡니다. 계정을 정하고 저장하면 다음 업로드부터 그 규칙으로 분류됩니다. 매출/매입 거래도 넣으셔도 되지만, 손익계산서에는 반영 안 되고 "비손익"으로 따로 잡혀요 (잔액 확인용).</p>
     </div>
 
     <div class="section-box" id="tx-review-box" style="margin-bottom:14px;display:none">
@@ -4466,11 +4466,18 @@ function personalPhoneSupport(desc){
 function matchTxRule(desc){
   let best=null;
   txRules.forEach(r=>{
-    if(desc.includes(r.keyword)){
+    if(r.keyword && desc.includes(r.keyword)){
       if(!best || r.keyword.length>best.keyword.length) best=r;
     }
   });
   return best;
+}
+function vatTypeFor(description, account){
+  if(personalPhoneSupport(description)) return '불공제';
+  if(!account) return '';
+  if(ACCOUNT_VAT_TYPE[account]) return ACCOUNT_VAT_TYPE[account];
+  if(ACCOUNT_PLTYPE[account]==='판관비') return '공제';
+  return '해당없음';
 }
 
 function excelDateToStr(v){
@@ -4557,11 +4564,8 @@ async function handleTxFile(e){
       return {...p, account:'지급수수료', ruleKeyword:p.description, saveRule:false};
     }
     const matched=matchTxRule(p.description);
-    const defaultAccount = matched ? matched.account : (p.source==='card' ? '복리후생비' : '');
-    const vatType = personalPhoneSupport(p.description)
-      ? '불공제'
-      : (ACCOUNT_VAT_TYPE[defaultAccount] || (ACCOUNT_PLTYPE[defaultAccount]==='판관비' ? '공제' : '해당없음'));
-    return {...p, account: defaultAccount, vat_type: vatType, ruleKeyword: matched?matched.keyword:p.description, saveRule: !matched};
+    const defaultAccount = matched ? matched.account : '';
+    return {...p, account: defaultAccount, vat_type: vatTypeFor(p.description, defaultAccount), ruleKeyword: matched?matched.keyword:p.description, saveRule: !matched};
   });
   document.getElementById('tx-file-status').textContent=`${parsed.length}건 불러옴 (${isBank?'은행':'카드'} 형식)`;
   renderTxReview();
@@ -4584,15 +4588,28 @@ function renderTxReview(){
       </select>
     </td>
     <td style="text-align:center;font-size:11px" id="vat-type-${i}">
-      <span style="color:${r.vat_type==='불공제'?'#dc2626':r.vat_type==='면세'?'#888':'#166534'}">${r.vat_type||'공제'}</span>
+      <span style="color:${r.vat_type==='불공제'?'#dc2626':r.vat_type==='면세'?'#888':r.vat_type==='공제'?'#166534':'#888'}">${r.vat_type||'-'}</span>
     </td>
     <td style="padding:2px 4px">
       <input value="${r.ruleKeyword.replace(/"/g,'&quot;')}" style="width:100%;font-size:11px;padding:3px" onchange="txRowsPending[${i}].ruleKeyword=this.value">
     </td>
-    <td style="text-align:center"><input type="checkbox" ${r.saveRule?'checked':''} onchange="txRowsPending[${i}].saveRule=this.checked"></td>
+    <td style="text-align:center"><input id="tx-rule-${i}" type="checkbox" ${r.saveRule?'checked':''} onchange="txRowsPending[${i}].saveRule=this.checked"></td>
   </tr>`).join('');
 }
-function renderTxReviewRowState(i){ /* select 변경만 반영, 재렌더 불필요 */ }
+function renderTxReviewRowState(i){
+  const r=txRowsPending[i];
+  if(!r) return;
+  r.vat_type=vatTypeFor(r.description, r.account);
+  r.saveRule=true;
+  const vatEl=document.getElementById('vat-type-'+i);
+  if(vatEl){
+    const label=r.vat_type||'-';
+    const color=r.vat_type==='불공제'?'#dc2626':r.vat_type==='면세'?'#888':r.vat_type==='공제'?'#166534':'#888';
+    vatEl.innerHTML=`<span style="color:${color}">${label}</span>`;
+  }
+  const chk=document.getElementById('tx-rule-'+i);
+  if(chk) chk.checked=true;
+}
 
 async function saveTxReview(){
   const missing=txRowsPending.filter(r=>!r.account);
@@ -4612,7 +4629,7 @@ async function saveTxReview(){
   const rows=txRowsPending.map(r=>({
     source:r.source, account_label:r.account_label, tx_date:r.tx_date, description:r.description,
     amount:r.amount, direction:r.direction, account:r.account, pl_type:ACCOUNT_PLTYPE[r.account]||'비손익',
-    vat_type:personalPhoneSupport(r.description)?'불공제':(r.vat_type||(ACCOUNT_PLTYPE[r.account]==='판관비'?(ACCOUNT_VAT_TYPE[r.account]||'공제'):'해당없음')),
+    vat_type:vatTypeFor(r.description, r.account),
     year_month:r.tx_date.slice(0,7)
   }));
   const ok=await saveBankTxRows(rows);
