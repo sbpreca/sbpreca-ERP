@@ -3084,33 +3084,58 @@ function renderCashflow(){
     return s.is_vat_included ? Math.round(amt/1.1) : amt;
   };
   const usedAdvanceSplits=new Set();
+  const appliedPaySplitIds=new Set();
+  function cashCompanyRow(map, company){
+    if(map[company]) return map[company];
+    const name=Object.keys(map).find(n=>partyMatch(n, company));
+    return name ? map[name] : null;
+  }
   Object.entries(sm).forEach(([company, v])=>{
     (v.parts||[v]).forEach(part=>{
-      (part.tradeMos||[part.tradeMo]).forEach(tradeMo=>{
+      [...new Set(part.tradeMos||[part.tradeMo])].forEach(tradeMo=>{
         vatAdjustments.filter(a=>a.type==='sell' && a.year_month===tradeMo && partyMatch(company, a.company||'') && (+a.amount)<0).forEach(a=>{
           const supply=Math.abs(+a.amount||0);
           const split=splitPayments.find(s=>s.amount>0 && !usedAdvanceSplits.has(s.id) && partyMatch(company, s.company||'') && Math.abs(splitSupplyAmt(s)-supply)<=2);
           const cash=split ? Math.abs(+split.amount||0) + (split.is_vat_included?0:Math.round(Math.abs(+split.amount||0)*0.1)) : (supply+Math.round(supply*0.1));
           if(split) usedAdvanceSplits.add(split.id);
           part.deduct=(part.deduct||0)+cash;
+          if(!part.deductNotes) part.deductNotes=[];
+          if(split && split.note) part.deductNotes.push(split.note);
         });
       });
     });
   });
-  // 선급 출금은 이미 지급(정산)했어도, 세금계산서 월과 같은 매입의 잔금 지급월에서 잔액을 줄인다.
-  // 선급금 자체의 지급월(예정월=조회월)에서는 빼지 않아 그 달 출금 행과 겹치지 않는다.
-  splitPayments.filter(s=>s.amount<0 && s.due_date && s.due_date.slice(0,7)!==cm).forEach(s=>{
-    const row=bm[s.company];
+  // 부가세 조정과 금액이 맞지 않은 선수금도, 세금계산서 발행월이 매출월과 같으면 그 입금월 잔액에서 뺀다.
+  // 이미 다른 달 매출의 선수금 상계로 연결된 건은 여기서 한 번 더 빼지 않는다.
+  const linkedToSellAdj=s=>vatAdjustments.some(a=>a.type==='sell' && (+a.amount)<0 && partyMatch(s.company, a.company||'') && Math.abs(Math.abs(+a.amount||0)-splitSupplyAmt(s))<=2);
+  splitPayments.filter(s=>s.amount>0 && !usedAdvanceSplits.has(s.id) && !linkedToSellAdj(s)).forEach(s=>{
+    const row=cashCompanyRow(sm, s.company);
     if(!row) return;
     const taxMo=(s.tax_date||'').slice(0,7);
-    const parts=row.parts||[row];
-    const part=taxMo ? parts.find(p=>(p.tradeMos||[p.tradeMo]).includes(taxMo)) : parts[0];
+    if(!taxMo) return;
+    const part=(row.parts||[row]).find(p=>(p.tradeMos||[p.tradeMo]).includes(taxMo));
+    if(!part) return;
+    const cash=Math.abs(+s.amount||0)+(s.is_vat_included?0:Math.round(Math.abs(+s.amount||0)*0.1));
+    part.deduct=(part.deduct||0)+cash;
+    if(!part.deductNotes) part.deductNotes=[];
+    if(s.note) part.deductNotes.push(s.note);
+    usedAdvanceSplits.add(s.id);
+  });
+  // 선급금은 이미 지급했어도 세금계산서 발행월과 같은 매입의 지급월 잔액에서 뺀다.
+  // 선급금을 낸 달이 잔금 지급월과 같아도 잔액에서는 빼되, 아래 분할 행에서 같은 금액을 다시 빼지는 않는다.
+  splitPayments.filter(s=>s.amount<0).forEach(s=>{
+    const row=cashCompanyRow(bm, s.company);
+    if(!row) return;
+    const taxMo=(s.tax_date||'').slice(0,7);
+    if(!taxMo) return;
+    const part=(row.parts||[row]).find(p=>(p.tradeMos||[p.tradeMo]).includes(taxMo));
     if(!part) return;
     part.deduct=(part.deduct||0)+Math.abs(s.amount);
     if(!part.deductNotes) part.deductNotes=[];
     if(s.note) part.deductNotes.push(s.note);
     if(!splitPayDeduct[s.company]) splitPayDeduct[s.company]=0;
     splitPayDeduct[s.company]+=Math.abs(s.amount);
+    appliedPaySplitIds.add(s.id);
   });
 
   // 매입처 지급 테이블
@@ -3161,7 +3186,7 @@ function renderCashflow(){
       return `<tr style="${cfRecvChecked?'background:#f0fdf4;':''}">
         <td style="font-weight:600;${cfRecvChecked?'color:#166534;text-decoration:line-through':''}">${name}</td>
         <td class="r" style="${cfRecvChecked?'color:#166534':''}">${fmtW(total)}</td>
-        <td class="r" style="color:#166534">${deduct > 0 ? '-'+fmtW(deduct) : '-'}</td>
+        <td class="r" style="color:#166534" title="${deduct > 0 ? (v.deductNotes||[]).map(escHtml).join(', ') : ''}">${deduct > 0 ? '-'+fmtW(deduct) : '-'}</td>
         <td class="r" style="font-weight:700;color:#166534">${fmtW(net)}</td>
         <td style="font-size:12px;color:#555;white-space:nowrap">${due||'-'}</td>
         <td style="text-align:center">
@@ -3206,6 +3231,9 @@ function renderCashflow(){
 
     // 수령 - 분할 입금은 별도 행으로 추가 (청구액/실수령액 분리 표시)
     splitRecv.forEach(s=>{
+      if(usedAdvanceSplits.has(s.id)){
+        if(!s.settled) return;
+      }
       if(!s.settled) totalRecv += s.amount;
       // 같은 업체 기존 행 찾기
       const rows = document.querySelectorAll('#cf-recv-body tr:not([data-split])');
@@ -3243,6 +3271,9 @@ function renderCashflow(){
 
     // 지급 - 분할 출금도 동일하게
     splitPay.forEach(s=>{
+      if(appliedPaySplitIds.has(s.id)){
+        if(!s.settled) return;
+      }
       if(!s.settled) totalPay += Math.abs(s.amount);
       const rows = document.querySelectorAll('#cf-pay-body tr');
       let existingRow = null;
@@ -3531,20 +3562,21 @@ function renderAdvancePayments(){
     const visibleSplits = splitPayments.filter(s=>{
       if(!cm) return true;
       const dueMo = s.due_date ? s.due_date.slice(0,7) : null;
-      if(!s.settled) return !dueMo || dueMo===cm;
-      return dueMo===cm;
+      const taxMo = s.tax_date ? s.tax_date.slice(0,7) : null;
+      return dueMo===cm || taxMo===cm || (!s.settled && !dueMo);
     });
     splitEl.innerHTML = visibleSplits.length
       ? visibleSplits.map(s=>{
           const isNeg = s.amount < 0;
           const color = isNeg ? '#dc2626' : '#166534';
+          const taxMonth = s.tax_date ? String(s.tax_date).slice(0,7) : '';
           return `<tr>
             <td style="font-size:12px;font-weight:600">${s.company}</td>
             <td class="r" style="color:${color};font-weight:700">${isNeg?'-':'+'} ${fmtW(Math.abs(s.amount))}</td>
             <td><input type="date" value="${s.due_date||''}" style="width:100%;font-size:11px;border:1px solid #eee;padding:3px;border-radius:4px"
               onchange="saveSplitField('${s.id}','due_date',this.value)"></td>
-            <td><input type="month" value="${s.tax_date?s.tax_date.slice(0,7):''}" style="width:100%;font-size:11px;border:1px solid #eee;padding:3px;border-radius:4px"
-              onchange="saveSplitField('${s.id}','tax_date',this.value?this.value+'-01':'')"></td>
+            <td><input type="month" data-split-id="${s.id}" data-field="tax_date" value="${taxMonth}" style="width:100%;min-width:118px;font-size:11px;border:1px solid #eee;padding:3px;border-radius:4px"
+              onchange="saveSplitField('${s.id}','tax_date',this.value)"></td>
             <td><input value="${s.note||''}" style="width:100%;font-size:11px;border:1px solid #eee;padding:3px;border-radius:4px"
               onchange="saveSplitField('${s.id}','note',this.value)"></td>
             <td style="text-align:center"><input type="checkbox" ${s.settled?'checked':''} title="완료"
@@ -3616,8 +3648,36 @@ async function addSplitPayment(){
 async function saveSplitField(id, field, value){
   const s = splitPayments.find(x=>x.id===id);
   if(!s) return;
-  s[field] = field==='settled' ? value : (field==='amount' ? (+value||0) : value);
-  await sb.from('split_payments').update({[field]:s[field]}).eq('id',id);
+  const prev = s[field];
+  let next = value;
+  if(field==='tax_date'){
+    const month = String(value||'').slice(0,7);
+    if(month && !/^\d{4}-\d{2}$/.test(month)) return;
+    // 월 입력칸을 다시 그릴 때 빈 change가 한 번 더 나와 방금 저장한 달을 지운다.
+    if(!month){
+      const el=document.querySelector(`input[data-split-id="${id}"][data-field="tax_date"]`);
+      if(el && /^\d{4}-\d{2}$/.test(el.value)) return;
+      next=null;
+    } else next=month+'-01';
+  } else if(field==='settled'){
+    next=!!value;
+  } else if(field==='amount'){
+    next=+value||0;
+  }
+  s[field]=next;
+  const {error}=await sb.from('split_payments').update({[field]:s[field]}).eq('id',id);
+  if(error){
+    console.error(error);
+    s[field]=prev;
+    alert('저장하지 못했어요. 다시 입력해주세요.');
+    renderAdvancePayments();
+    return;
+  }
+  if(field==='tax_date'){
+    const el=document.querySelector(`input[data-split-id="${id}"][data-field="tax_date"]`);
+    if(el) el.value=next?String(next).slice(0,7):'';
+    return;
+  }
   renderAdvancePayments();
 }
 
