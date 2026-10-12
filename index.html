@@ -2738,6 +2738,91 @@ function renderOverhead(cm){
 }
 
 let _txLoaded=false;
+
+function splitSupplyAmt(s){
+  const amt=Math.abs(+s.amount||0);
+  return s.is_vat_included ? Math.round(amt/1.1) : amt;
+}
+function splitProject(note){
+  const text=normParty(note);
+  if(text.includes('성화')) return '성화전설';
+  if(text.includes('오성')) return '오성전기';
+  return '';
+}
+function buildPurchaseParts(){
+  const map={};
+  orders.flatMap(o=>o.items).forEach(i=>{
+    if(i.closing_sell_exclude) return;
+    if(!(i.buyer && i.bamt && i.ship)) return;
+    const tradeMo=ym(i.ship);
+    const dueDate=closingState[`${tradeMo}_buy_${i.buyer}_date`]||'';
+    const dueMo=dueDate ? dueDate.slice(0,7) : tradeMo;
+    const seller=(i.seller||'').split('_')[0];
+    const key=i.buyer+'|'+tradeMo+'|'+dueDate;
+    if(!map[key]) map[key]={name:i.buyer, tradeMo, dueMo, dueDate, amt:0, sellers:new Set(), deduct:0, deductNotes:[]};
+    map[key].amt+=i.bamt;
+    if(seller) map[key].sellers.add(seller);
+  });
+  return Object.values(map);
+}
+// 선급금은 세금계산서 발행월이 아니라, 비고에 적힌 납품(오성·성화)의 잔액에서 뺀다.
+function allocatePurchaseAdvances(parts){
+  const applied=new Map();
+  splitPayments.filter(s=>s.amount<0).forEach(s=>{
+    const who=splitProject(s.note);
+    const anchor=(s.due_date||s.tax_date||'').slice(0,7);
+    let candidates=parts.filter(p=>partyMatch(p.name, s.company||''));
+    if(who) candidates=candidates.filter(p=>p.sellers.has(who));
+    else {
+      const taxMo=(s.tax_date||'').slice(0,7);
+      if(taxMo) candidates=candidates.filter(p=>p.tradeMo===taxMo);
+    }
+    if(!candidates.length) return;
+    const fromAnchor=anchor ? candidates.filter(p=>p.tradeMo>=anchor) : candidates;
+    const pool=fromAnchor.length ? fromAnchor : candidates;
+    pool.sort((a,b)=>a.tradeMo.localeCompare(b.tradeMo)||String(a.dueDate).localeCompare(String(b.dueDate)));
+    const part=pool[0];
+    part.deduct+=Math.abs(+s.amount||0);
+    if(s.note) part.deductNotes.push(s.note);
+    applied.set(s.id, part);
+  });
+  return applied;
+}
+function purchaseAdvanceOf(name, tradeMo){
+  const parts=_purchaseParts.filter(p=>p.name===name && (!tradeMo || p.tradeMo===tradeMo));
+  return {
+    deduct:parts.reduce((s,p)=>s+p.deduct,0),
+    notes:[...new Set(parts.flatMap(p=>p.deductNotes))]
+  };
+}
+// 이미 받은 선수금만 청구 잔액에서 뺀다. 잔금과 같은 날 들어올 재발행 금액은 잔액에 남겨 둔다.
+function priorReceipts(company, tradeMo, dueDate, used){
+  let deduct=0;
+  const notes=[];
+  const applied=[];
+  const held=[];
+  used=used||new Set();
+  vatAdjustments.filter(a=>a.type==='sell' && a.year_month===tradeMo && partyMatch(company, a.company||'') && (+a.amount)<0).forEach(a=>{
+    const supply=Math.abs(+a.amount||0);
+    const split=splitPayments.find(s=>s.amount>0 && !used.has(s.id) && partyMatch(company, s.company||'') && Math.abs(splitSupplyAmt(s)-supply)<=2);
+    if(split && dueDate && split.due_date && !(split.due_date<dueDate)){
+      used.add(split.id);
+      held.push(split.id);
+      return;
+    }
+    if(split) used.add(split.id);
+    const cash=split
+      ? (Math.abs(+split.amount||0)+(split.is_vat_included?0:Math.round(Math.abs(+split.amount||0)*0.1)))
+      : (supply+Math.round(supply*0.1));
+    deduct+=cash;
+    if(split) applied.push(split.id);
+    if(split && split.note) notes.push(split.note);
+  });
+  return {deduct, notes, applied, held};
+}
+let _purchaseParts=[];
+let _buyAdvanceApplied=new Map();
+
 async function renderClosing(){
   if(!taxInvoices || !taxInvoices.length) taxInvoices = await loadTaxInvoices();
   if(!_txLoaded){
@@ -2803,6 +2888,30 @@ async function renderClosing(){
     sm[company].items[i.item].samt+=i.samt;
   });
 
+  _purchaseParts=buildPurchaseParts();
+  _buyAdvanceApplied=allocatePurchaseAdvances(_purchaseParts);
+  Object.entries(bm).forEach(([name,v])=>{
+    const adv=purchaseAdvanceOf(name, cm);
+    v.advance=adv.deduct;
+    v.advanceNotes=adv.notes;
+    v.payNet=Math.round(v.amt*1.1)-adv.deduct;
+  });
+  Object.entries(sm).forEach(([name,v])=>{
+    const months=cm?[cm]:[...new Set(orders.flatMap(o=>o.items).filter(i=>(i.seller||'').split('_')[0]===name && sellMonthOf(i)).map(i=>sellMonthOf(i)))];
+    const used=new Set();
+    let deduct=0;
+    const notes=[];
+    months.forEach(mo=>{
+      const due=closingState[`${mo}_sell_${name}_date`]||computeDueDate(name, mo)||'';
+      const rec=priorReceipts(name, mo, due, used);
+      deduct+=rec.deduct;
+      rec.notes.forEach(n=>{ if(!notes.includes(n)) notes.push(n); });
+    });
+    v.advance=deduct;
+    v.advanceNotes=notes;
+    v.payNet=Math.round(v.amt*1.1)-deduct;
+  });
+
   const totBuy=Object.values(bm).reduce((s,v)=>s+v.amt,0);
   const totSell=Object.values(sm).reduce((s,v)=>s+v.amt,0);
   const margin=totSell-totBuy;
@@ -2835,9 +2944,11 @@ async function renderClosing(){
 
   function buyRowHtml(name, v, idx){
     const vat=Math.round(v.amt*0.1);
+    const pay=v.payNet!=null?v.payNet:(v.amt+vat);
     const detailId='buy-detail-'+idx;
     const itemRows=Object.entries(v.items).map(([item,iv])=>'<tr class="'+detailId+'-row" style="display:none;background:#fbfbfb"><td style="padding-left:28px;font-size:12px;color:#666">└ '+item+' <span style="color:#999">('+fmt(iv.bqty)+'개)</span></td><td class="r" style="font-size:12px;color:#666;white-space:nowrap">'+fmtW(iv.bamt)+'</td><td colspan="5"></td></tr>').join('');
-    return '<tr style="cursor:pointer" onclick="toggleDetail(\''+detailId+'\',this)"><td style="font-weight:600">▸ '+name+'</td><td class="r" style="white-space:nowrap">'+fmtW(v.amt)+'</td><td class="r" style="white-space:nowrap">'+fmtW(vat)+'</td><td class="r profit-val" style="white-space:nowrap">'+fmtW(v.amt+vat)+'</td><td onclick="event.stopPropagation()">'+dateInput('buy',name)+'</td><td class="c" onclick="event.stopPropagation()">'+stSelect('buy',name,'tax',['미발급','발급완료'])+'</td><td class="c" onclick="event.stopPropagation()">'+stSelect('buy',name,'done',['미완료','완료'])+'</td></tr>'+itemRows;
+    const tip=v.advance?('선급금 '+fmtW(v.advance)+(v.advanceNotes&&v.advanceNotes.length?' · '+v.advanceNotes.join(', '):'')):'';
+    return '<tr style="cursor:pointer" onclick="toggleDetail(\''+detailId+'\',this)"><td style="font-weight:600">▸ '+name+'</td><td class="r" style="white-space:nowrap">'+fmtW(v.amt)+'</td><td class="r" style="white-space:nowrap">'+fmtW(vat)+'</td><td class="r profit-val" style="white-space:nowrap" title="'+escHtml(tip)+'">'+fmtW(pay)+'</td><td onclick="event.stopPropagation()">'+dateInput('buy',name)+'</td><td class="c" onclick="event.stopPropagation()">'+stSelect('buy',name,'tax',['미발급','발급완료'])+'</td><td class="c" onclick="event.stopPropagation()">'+stSelect('buy',name,'done',['미완료','완료'])+'</td></tr>'+itemRows;
   }
 
   function sellRowHtml(name, v, idx){
@@ -2849,7 +2960,9 @@ async function renderClosing(){
     const rowDisplay='display:none;';
     const itemRows=Object.entries(v.items).map(([item,iv])=>'<tr class="'+detailId+'-row" style="'+rowDisplay+'background:#fbfbfb"><td style="padding-left:28px;font-size:12px;color:#666">└ '+item+' <span style="color:#999">('+fmt(iv.sqty)+'개)</span></td><td class="r" style="font-size:12px;color:#666;white-space:nowrap">'+fmtW(iv.samt)+'</td><td colspan="5"></td></tr>').join('');
     const clickAttr=hasMultiple?(' style="cursor:pointer" onclick="toggleDetail(\''+detailId+'\',this)"'):'';
-    return '<tr'+clickAttr+'><td style="font-weight:600">'+arrow+name+'</td><td class="r" style="white-space:nowrap">'+fmtW(v.amt)+'</td><td class="r" style="white-space:nowrap">'+fmtW(vat)+'</td><td class="r profit-val" style="white-space:nowrap">'+fmtW(v.amt+vat)+'</td><td onclick="event.stopPropagation()">'+dateInput('sell',name)+'</td><td class="c" onclick="event.stopPropagation()">'+stSelect('sell',name,'tax',['미발급','발급완료'])+'</td><td class="c" onclick="event.stopPropagation()">'+stSelect('sell',name,'done',['미완료','완료'])+'</td></tr>'+itemRows;
+    const pay=v.payNet!=null?v.payNet:(v.amt+vat);
+    const tip=v.advance?('선수금 '+fmtW(v.advance)+(v.advanceNotes&&v.advanceNotes.length?' · '+v.advanceNotes.join(', '):'')):'';
+    return '<tr'+clickAttr+'><td style="font-weight:600">'+arrow+name+'</td><td class="r" style="white-space:nowrap">'+fmtW(v.amt)+'</td><td class="r" style="white-space:nowrap">'+fmtW(vat)+'</td><td class="r profit-val" style="white-space:nowrap" title="'+escHtml(tip)+'">'+fmtW(pay)+'</td><td onclick="event.stopPropagation()">'+dateInput('sell',name)+'</td><td class="c" onclick="event.stopPropagation()">'+stSelect('sell',name,'tax',['미발급','발급완료'])+'</td><td class="c" onclick="event.stopPropagation()">'+stSelect('sell',name,'done',['미완료','완료'])+'</td></tr>'+itemRows;
   }
 
   const renderBuyGroup=(entries,label)=>{
@@ -2857,14 +2970,16 @@ async function renderClosing(){
     if(!f2.length) return '';
     const rows=f2.sort((a,b)=>b[1].amt-a[1].amt).map(([name,v],i)=>buyRowHtml(name,v,label+i)).join('');
     const sub=f2.reduce((s,[,v])=>s+v.amt,0);
-    return '<tr style="background:#f8f8f8"><td colspan="7" style="padding:6px 12px;font-size:11px;font-weight:700;color:#555">'+label+'</td></tr>'+rows+'<tr style="background:#f0f0f0"><td style="padding:8px 12px;font-weight:600">'+label+' 소계</td><td class="r">'+fmtW(sub)+'</td><td class="r">'+fmtW(Math.round(sub*0.1))+'</td><td class="r profit-val">'+fmtW(Math.round(sub*1.1))+'</td><td colspan="3"></td></tr>';
+    const subPay=f2.reduce((s,[,v])=>s+(v.payNet!=null?v.payNet:Math.round(v.amt*1.1)),0);
+    return '<tr style="background:#f8f8f8"><td colspan="7" style="padding:6px 12px;font-size:11px;font-weight:700;color:#555">'+label+'</td></tr>'+rows+'<tr style="background:#f0f0f0"><td style="padding:8px 12px;font-weight:600">'+label+' 소계</td><td class="r">'+fmtW(sub)+'</td><td class="r">'+fmtW(Math.round(sub*0.1))+'</td><td class="r profit-val">'+fmtW(subPay)+'</td><td colspan="3"></td></tr>';
   };
   const renderSellGroup=(entries,label)=>{
     const f2=entries.filter(([,v])=>v.amt>0);
     if(!f2.length) return '';
     const rows=f2.sort((a,b)=>b[1].amt-a[1].amt).map(([name,v],i)=>sellRowHtml(name,v,label+i)).join('');
     const sub=f2.reduce((s,[,v])=>s+v.amt,0);
-    return '<tr style="background:#f8f8f8"><td colspan="7" style="padding:6px 12px;font-size:11px;font-weight:700;color:#555">'+label+'</td></tr>'+rows+'<tr style="background:#f0f0f0"><td style="padding:8px 12px;font-weight:600">'+label+' 소계</td><td class="r">'+fmtW(sub)+'</td><td class="r">'+fmtW(Math.round(sub*0.1))+'</td><td class="r profit-val">'+fmtW(Math.round(sub*1.1))+'</td><td colspan="3"></td></tr>';
+    const subPay=f2.reduce((s,[,v])=>s+(v.payNet!=null?v.payNet:Math.round(v.amt*1.1)),0);
+    return '<tr style="background:#f8f8f8"><td colspan="7" style="padding:6px 12px;font-size:11px;font-weight:700;color:#555">'+label+'</td></tr>'+rows+'<tr style="background:#f0f0f0"><td style="padding:8px 12px;font-weight:600">'+label+' 소계</td><td class="r">'+fmtW(sub)+'</td><td class="r">'+fmtW(Math.round(sub*0.1))+'</td><td class="r profit-val">'+fmtW(subPay)+'</td><td colspan="3"></td></tr>';
   };
 
   // 매출처 회사명 기준으로 category 조회 (테크피아_CTO-C3 등 하위 품목 키 중 하나로 매칭)
@@ -2900,8 +3015,14 @@ async function renderClosing(){
     sellHtml=renderSellGroup(feeSellEntries,'수수료');
   }
 
+  const payOf=v=>v.payNet!=null?v.payNet:Math.round(v.amt*1.1);
+  const netSum=entries=>entries.reduce((s,[,v])=>s+payOf(v),0);
   const shownBuyTotal=tab==='all'?totBuy:(tab==='조명'?lightBuyEntries.reduce((s,[,v])=>s+v.amt,0):(tab==='원부자재'?matBuyEntries.reduce((s,[,v])=>s+v.amt,0):feeBuyEntries.reduce((s,[,v])=>s+v.amt,0)));
   const shownSellTotal=tab==='all'?totSell:(tab==='조명'?lightSellEntries.reduce((s,[,v])=>s+v.amt,0):(tab==='원부자재'?matSellEntries.reduce((s,[,v])=>s+v.amt,0):feeSellEntries.reduce((s,[,v])=>s+v.amt,0)));
+  const shownBuyEntries=tab==='all'?Object.entries(bm):(tab==='조명'?lightBuyEntries:(tab==='원부자재'?matBuyEntries:feeBuyEntries));
+  const shownSellEntries=tab==='all'?Object.entries(sm):(tab==='조명'?lightSellEntries:(tab==='원부자재'?matSellEntries:feeSellEntries));
+  const shownBuyNet=netSum(shownBuyEntries);
+  const shownSellNet=netSum(shownSellEntries);
   const shownMargin=shownSellTotal-shownBuyTotal;
 
   const htSellVat = taxInvoices.filter(t=>t.type==='sell'&&t.year_month===cm).reduce((s,t)=>s+(+t.vat_amt||0),0);
@@ -2936,8 +3057,8 @@ async function renderClosing(){
       + '</div></div>';
   }
   document.getElementById('cl-metrics').innerHTML=`
-    <div class="metric"><div class="metric-lbl">${tab==='all'?'전체':tab} 매입 결제예정</div><div class="metric-val">${fmtW(shownBuyTotal*1.1)}</div></div>
-    <div class="metric"><div class="metric-lbl">${tab==='all'?'전체':tab} 매출 청구예정</div><div class="metric-val g">${fmtW(shownSellTotal*1.1)}</div></div>
+    <div class="metric"><div class="metric-lbl">${tab==='all'?'전체':tab} 매입 결제예정</div><div class="metric-val">${fmtW(shownBuyNet)}</div></div>
+    <div class="metric"><div class="metric-lbl">${tab==='all'?'전체':tab} 매출 청구예정</div><div class="metric-val g">${fmtW(shownSellNet)}</div></div>
     <div class="metric"><div class="metric-lbl">이익 (VAT 제외)</div><div class="metric-val b">${fmtW(shownMargin)}</div></div>
     <div class="metric"><div class="metric-lbl">이익률</div><div class="metric-val b">${shownSellTotal?(shownMargin/shownSellTotal*100).toFixed(1):0}%</div></div>
     <div class="metric" style="border-left:3px solid #e5e7eb;padding-left:12px;margin-left:4px"><div class="metric-lbl">📊 매출세액 (마감기준)</div><div class="metric-val" style="color:#166534">${fmtW(appSellVat)}</div></div>
@@ -2968,11 +3089,11 @@ async function renderClosing(){
   const sellVatFoot=Math.round((shownSellTotal+sellAdj.sum)*0.1);
 
   document.getElementById('cl-buy-body').innerHTML=buyHtml+
-    '<tr class="tot"><td>'+(tab==='all'?'전체':tab)+' 합계</td><td class="r">'+fmtW(shownBuyTotal)+'</td><td class="r">'+fmtW(buyVatFoot)+'</td><td class="r profit-val">'+fmtW(shownBuyTotal+buyVatFoot)+'</td><td colspan="3"></td></tr>'
+    '<tr class="tot"><td>'+(tab==='all'?'전체':tab)+' 합계</td><td class="r">'+fmtW(shownBuyTotal)+'</td><td class="r">'+fmtW(buyVatFoot)+'</td><td class="r profit-val">'+fmtW(shownBuyNet)+'</td><td colspan="3"></td></tr>'
     +buyAdj.html;
 
   document.getElementById('cl-sell-body').innerHTML=sellHtml+
-    '<tr class="tot"><td>'+(tab==='all'?'전체':tab)+' 합계</td><td class="r">'+fmtW(shownSellTotal)+'</td><td class="r">'+fmtW(sellVatFoot)+'</td><td class="r profit-val">'+fmtW(shownSellTotal+sellVatFoot)+'</td><td colspan="3"></td></tr>'
+    '<tr class="tot"><td>'+(tab==='all'?'전체':tab)+' 합계</td><td class="r">'+fmtW(shownSellTotal)+'</td><td class="r">'+fmtW(sellVatFoot)+'</td><td class="r profit-val">'+fmtW(shownSellNet)+'</td><td colspan="3"></td></tr>'
     +sellAdj.html;
 
   renderOverhead(cm);
@@ -3035,6 +3156,7 @@ function renderCashflow(){
       dueMoSet.add(saved || ym(computeDueDate(name, tradeMo)) || tradeMo);
     });
   });
+  splitPayments.forEach(s=>{ if(s.due_date) dueMoSet.add(s.due_date.slice(0,7)); });
   const allMos = [...dueMoSet].filter(Boolean).sort().reverse();
 
   const sel = document.getElementById('cf-month');
@@ -3055,16 +3177,16 @@ function renderCashflow(){
     map[name].amt+=amt;
   }
 
-  // 4. cm 월에 해당하는 매입 집계
+  // 4. 선급금은 납품처(오성·성화)의 잔액에 붙여 두고, 이번 달이 지급월인 잔액만 보여 준다.
+  _purchaseParts=buildPurchaseParts();
+  _buyAdvanceApplied=allocatePurchaseAdvances(_purchaseParts);
   const bm = {};
-  Object.entries(buyByTradeMo).forEach(([tradeMo, companies])=>{
-    Object.entries(companies).forEach(([buyer, amt])=>{
-      const key = `${tradeMo}|${buyer}`;
-      const dueMo = buyDueMap[key] || tradeMo; // 예정일 없으면 거래발생월
-      if(dueMo !== cm) return;
-      const dueDate=closingState[`${tradeMo}_buy_${buyer}_date`]||'';
-      addCashPart(bm, buyer, tradeMo, dueMo, dueDate, amt);
-    });
+  _purchaseParts.filter(p=>p.dueMo===cm).forEach(p=>{
+    addCashPart(bm, p.name, p.tradeMo, p.dueMo, p.dueDate, p.amt);
+    const part=bm[p.name].parts.find(x=>x.dueDate===p.dueDate);
+    part.deduct=(part.deduct||0)+p.deduct;
+    part.deductNotes=(part.deductNotes||[]).concat(p.deductNotes);
+    if(!part.tradeMos.includes(p.tradeMo)) part.tradeMos.push(p.tradeMo);
   });
 
   // 5. cm 월에 해당하는 매출 집계
@@ -3086,66 +3208,21 @@ function renderCashflow(){
     return `${tradeMo}_${type}_${name}_${field}`;
   };
 
-  // 선수금으로 이미 세금계산서가 나간 매출은, 그 거래의 입금월에서 한 번만 빼 잔액만 남긴다.
-  // 분할 한 건이 업체가 나오는 달마다 빠지지 않게, 차감 부가세 조정과 공급가액이 맞는 건만 연결한다.
-  const splitPayDeduct = {};
-  const splitSupplyAmt=s=>{
-    const amt=Math.abs(+s.amount||0);
-    return s.is_vat_included ? Math.round(amt/1.1) : amt;
-  };
+  // 선수금은 잔금보다 앞서 들어온 것만 그 매출의 입금월 잔액에서 뺀다.
   const usedAdvanceSplits=new Set();
-  const appliedPaySplitIds=new Set();
-  function cashCompanyRow(map, company){
-    if(map[company]) return map[company];
-    const name=Object.keys(map).find(n=>partyMatch(n, company));
-    return name ? map[name] : null;
-  }
+  const heldWithInvoice=new Set();
+  const receiptUsed=new Set();
   Object.entries(sm).forEach(([company, v])=>{
     (v.parts||[v]).forEach(part=>{
       [...new Set(part.tradeMos||[part.tradeMo])].forEach(tradeMo=>{
-        vatAdjustments.filter(a=>a.type==='sell' && a.year_month===tradeMo && partyMatch(company, a.company||'') && (+a.amount)<0).forEach(a=>{
-          const supply=Math.abs(+a.amount||0);
-          const split=splitPayments.find(s=>s.amount>0 && !usedAdvanceSplits.has(s.id) && partyMatch(company, s.company||'') && Math.abs(splitSupplyAmt(s)-supply)<=2);
-          const cash=split ? Math.abs(+split.amount||0) + (split.is_vat_included?0:Math.round(Math.abs(+split.amount||0)*0.1)) : (supply+Math.round(supply*0.1));
-          if(split) usedAdvanceSplits.add(split.id);
-          part.deduct=(part.deduct||0)+cash;
-          if(!part.deductNotes) part.deductNotes=[];
-          if(split && split.note) part.deductNotes.push(split.note);
-        });
+        const rec=priorReceipts(company, tradeMo, part.dueDate||'', receiptUsed);
+        part.deduct=(part.deduct||0)+rec.deduct;
+        if(!part.deductNotes) part.deductNotes=[];
+        rec.notes.forEach(n=>{ if(!part.deductNotes.includes(n)) part.deductNotes.push(n); });
+        rec.applied.forEach(id=>usedAdvanceSplits.add(id));
+        rec.held.forEach(id=>heldWithInvoice.add(id));
       });
     });
-  });
-  // 부가세 조정과 금액이 맞지 않은 선수금도, 세금계산서 발행월이 매출월과 같으면 그 입금월 잔액에서 뺀다.
-  // 이미 다른 달 매출의 선수금 상계로 연결된 건은 여기서 한 번 더 빼지 않는다.
-  const linkedToSellAdj=s=>vatAdjustments.some(a=>a.type==='sell' && (+a.amount)<0 && partyMatch(s.company, a.company||'') && Math.abs(Math.abs(+a.amount||0)-splitSupplyAmt(s))<=2);
-  splitPayments.filter(s=>s.amount>0 && !usedAdvanceSplits.has(s.id) && !linkedToSellAdj(s)).forEach(s=>{
-    const row=cashCompanyRow(sm, s.company);
-    if(!row) return;
-    const taxMo=(s.tax_date||'').slice(0,7);
-    if(!taxMo) return;
-    const part=(row.parts||[row]).find(p=>(p.tradeMos||[p.tradeMo]).includes(taxMo));
-    if(!part) return;
-    const cash=Math.abs(+s.amount||0)+(s.is_vat_included?0:Math.round(Math.abs(+s.amount||0)*0.1));
-    part.deduct=(part.deduct||0)+cash;
-    if(!part.deductNotes) part.deductNotes=[];
-    if(s.note) part.deductNotes.push(s.note);
-    usedAdvanceSplits.add(s.id);
-  });
-  // 선급금은 이미 지급했어도 세금계산서 발행월과 같은 매입의 지급월 잔액에서 뺀다.
-  // 선급금을 낸 달이 잔금 지급월과 같아도 잔액에서는 빼되, 아래 분할 행에서 같은 금액을 다시 빼지는 않는다.
-  splitPayments.filter(s=>s.amount<0).forEach(s=>{
-    const row=cashCompanyRow(bm, s.company);
-    if(!row) return;
-    const taxMo=(s.tax_date||'').slice(0,7);
-    if(!taxMo) return;
-    const part=(row.parts||[row]).find(p=>(p.tradeMos||[p.tradeMo]).includes(taxMo));
-    if(!part) return;
-    part.deduct=(part.deduct||0)+Math.abs(s.amount);
-    if(!part.deductNotes) part.deductNotes=[];
-    if(s.note) part.deductNotes.push(s.note);
-    if(!splitPayDeduct[s.company]) splitPayDeduct[s.company]=0;
-    splitPayDeduct[s.company]+=Math.abs(s.amount);
-    appliedPaySplitIds.add(s.id);
   });
 
   // 매입처 지급 테이블
@@ -3175,8 +3252,7 @@ function renderCashflow(){
       </tr>`;
     }).join('');
 
-  document.getElementById('cf-pay-body').innerHTML = payRows ||
-    '<tr><td colspan="6" style="text-align:center;color:#bbb;padding:1.5rem">내역 없음</td></tr>';
+  document.getElementById('cf-pay-body').innerHTML = payRows;
   document.getElementById('cf-pay-total').textContent = '총 ' + fmtW(totalPay);
 
   // 매출처 수령 테이블
@@ -3206,118 +3282,41 @@ function renderCashflow(){
       </tr>`;
     }).join('');
 
-  document.getElementById('cf-recv-body').innerHTML = recvRows ||
-    '<tr><td colspan="6" style="text-align:center;color:#bbb;padding:1.5rem">내역 없음</td></tr>';
+  document.getElementById('cf-recv-body').innerHTML = recvRows;
   document.getElementById('cf-recv-total').textContent = '총 ' + fmtW(totalRecv);
 
-  // 다른 달에 분할 입금 예정인 금액을 이번 달 마감현황 금액에서 차감
-  // 예: 성화전설 11월 입금예정인데, 10월에 분할 입금 1,340,900원 있으면
-  splitPayments.filter(s=>s.amount<0 && s.due_date && s.due_date.slice(0,7)!==cm).forEach(s=>{
-    if(!splitPayDeduct[s.company]) splitPayDeduct[s.company]=0;
-    if(bm[s.company]) splitPayDeduct[s.company] += Math.abs(s.amount);
+  // 잔액에 이미 반영된 분할은 다시 더하지 않는다.
+  // 다른 달 잔액에서 빠진 선수금·선급금은, 실제로 오간 달에 실입출금으로 넣는다.
+  function splitCashRow(s, sign){
+    const cash=Math.abs(+s.amount||0);
+    const color=sign>0?'#166534':'#dc2626';
+    const mark=sign>0?'+':'-';
+    return `<tr data-split="1" style="background:${sign>0?'#f0fff4':'#fff0f0'}">
+      <td style="font-weight:600">${escHtml(s.company)} <span style="font-size:10px;color:#888">${escHtml(s.note||'분할')}</span></td>
+      <td class="r" style="color:#999">-</td>
+      <td class="r" style="color:${color}">${mark}${fmtW(cash)}</td>
+      <td class="r" style="font-weight:700;color:${color}">${fmtW(cash)}</td>
+      <td style="font-size:12px;color:#555;white-space:nowrap">${s.due_date||'-'}</td>
+      <td style="text-align:center"><input type="checkbox" ${s.settled?'checked':''} onchange="saveSplitField('${s.id}','settled',this.checked);renderCashflow()"></td>
+    </tr>`;
+  }
+  splitPayments.filter(s=>s.amount>0 && s.due_date && s.due_date.slice(0,7)===cm).forEach(s=>{
+    if(usedAdvanceSplits.has(s.id) || heldWithInvoice.has(s.id)) return;
+    totalRecv += Math.abs(+s.amount||0);
+    document.getElementById('cf-recv-body').innerHTML += splitCashRow(s, 1);
   });
-
-// 분할 입출금 예정 (split_payments) - 예정일 기준
-  const splitRecv = splitPayments.filter(s=>s.amount>0 && s.due_date && s.due_date.slice(0,7)===cm);
-  const splitPay = splitPayments.filter(s=>s.amount<0 && s.due_date && s.due_date.slice(0,7)===cm);
-
-  if(splitRecv.length || splitPay.length){
-    const splitRecvHtml = splitRecv.map(s=>`<tr style="background:#f0fff4">
-      <td style="font-weight:600">${s.company} <span style="font-size:10px;color:#888">${s.note||''}</span></td>
-      <td class="r" style="color:#166534">${fmtW(s.amount)}</td>
-      <td class="r" style="color:#999">-</td>
-      <td class="r" style="font-weight:700;color:#166534">${fmtW(s.amount)}</td>
-      <td style="font-size:12px;color:#555;white-space:nowrap">${s.due_date||'-'} <span style="font-size:10px;color:#888">분할</span></td>
-      <td style="text-align:center"><input type="checkbox" onchange="saveSplitField('${s.id}','settled',this.checked);renderCashflow()"></td>
-    </tr>`).join('');
-    const splitPayHtml = splitPay.map(s=>`<tr style="background:#fff0f0">
-      <td style="font-weight:600">${s.company} <span style="font-size:10px;color:#888">${s.note||''}</span></td>
-      <td class="r" style="color:#dc2626">${fmtW(Math.abs(s.amount))}</td>
-      <td class="r" style="color:#999">-</td>
-      <td class="r" style="font-weight:700;color:#dc2626">${fmtW(Math.abs(s.amount))}</td>
-      <td style="font-size:12px;color:#555;white-space:nowrap">${s.due_date||'-'} <span style="font-size:10px;color:#888">분할</span></td>
-      <td style="text-align:center"><input type="checkbox" onchange="saveSplitField('${s.id}','settled',this.checked);renderCashflow()"></td>
-    </tr>`).join('');
-
-    // 수령 - 분할 입금은 별도 행으로 추가 (청구액/실수령액 분리 표시)
-    splitRecv.forEach(s=>{
-      if(usedAdvanceSplits.has(s.id)){
-        if(!s.settled) return;
-      }
-      if(!s.settled) totalRecv += s.amount;
-      // 같은 업체 기존 행 찾기
-      const rows = document.querySelectorAll('#cf-recv-body tr:not([data-split])');
-      let existingRow = null;
-      rows.forEach(row=>{
-        const td = row.querySelector('td:first-child');
-        const name = td ? (td.firstChild ? td.firstChild.textContent.trim() : td.textContent.trim()) : '';
-        if(name===s.company) existingRow = row;
-      });
-      if(existingRow && !s.settled){
-        // 마감현황 기반 행이 있고 미정산이면 금액조정에 반영
-        const adjTd = existingRow.querySelectorAll('td')[2];
-        const curAdj = parseInt(adjTd.textContent.replace(/[^0-9-]/g,''))||0;
-        const newAdj = curAdj + s.amount;
-        adjTd.textContent = (newAdj>=0?'+':'-') + fmtW(Math.abs(newAdj));
-        adjTd.style.color = '#166534';
-        const amtTd = existingRow.querySelectorAll('td')[3];
-        const curNet = parseInt(amtTd.textContent.replace(/[^0-9]/g,''))||0;
-        amtTd.textContent = fmtW(curNet + s.amount);
-        amtTd.style.color = '#166534';
-        amtTd.style.fontWeight = '700';
-      } else {
-        // 마감현황 기반 행이 없거나 정산완료면 별도 행으로 추가
-        document.getElementById('cf-recv-body').innerHTML += `<tr data-split="1" style="background:${s.settled?'#f5f5f5':'#f0fff4'}">
-          <td style="font-weight:600;${s.settled?'text-decoration:line-through;color:#999':''}">${s.company} <span style="font-size:10px;color:#888">${s.note||'분할'}</span></td>
-          <td class="r" style="color:#999">-</td>
-          <td class="r" style="color:#166534">+${fmtW(s.amount)}</td>
-          <td class="r" style="font-weight:700;color:${s.settled?'#999':'#166534'}">${fmtW(s.amount)}</td>
-          <td style="font-size:12px;color:#555;white-space:nowrap">${s.due_date||'-'}</td>
-          <td style="text-align:center"><input type="checkbox" ${s.settled?'checked':''} onchange="saveSplitField('${s.id}','settled',this.checked);renderCashflow()"></td>
-        </tr>`;
-      }
-    });
-    document.getElementById('cf-recv-total').textContent = '총 ' + fmtW(totalRecv);
-
-    // 지급 - 분할 출금도 동일하게
-    splitPay.forEach(s=>{
-      if(appliedPaySplitIds.has(s.id)){
-        if(!s.settled) return;
-      }
-      if(!s.settled) totalPay += Math.abs(s.amount);
-      const rows = document.querySelectorAll('#cf-pay-body tr');
-      let existingRow = null;
-      rows.forEach(row=>{
-        const td = row.querySelector('td:first-child');
-        const name = td ? (td.firstChild ? td.firstChild.textContent.trim() : td.textContent.trim()) : '';
-        if(name===s.company) existingRow = row;
-      });
-      if(existingRow && !s.settled){
-        // 마감현황 기반 행이 있고 미정산이면 금액조정에 반영
-        const adjTd = existingRow.querySelectorAll('td')[2];
-        const curAdj = parseInt(adjTd.textContent.replace(/[^0-9-]/g,''))||0;
-        const newAdj = curAdj - Math.abs(s.amount);
-        adjTd.textContent = '-' + fmtW(Math.abs(newAdj));
-        adjTd.style.color = '#166534';
-        const amtTd = existingRow.querySelectorAll('td')[3];
-        const curNet = parseInt(amtTd.textContent.replace(/[^0-9]/g,''))||0;
-        amtTd.textContent = fmtW(curNet - Math.abs(s.amount));
-        amtTd.style.color = '#dc2626';
-        amtTd.style.fontWeight = '700';
-      } else {
-        // 마감현황 기반 행이 없거나 정산완료면 별도 행으로 추가
-        document.getElementById('cf-pay-body').innerHTML += `<tr data-split="1" style="background:${s.settled?'#f5f5f5':'#fff0f0'}">
-          <td style="font-weight:600;${s.settled?'text-decoration:line-through;color:#999':''}">${s.company} <span style="font-size:10px;color:#888">${s.note||'분할'}</span></td>
-          <td class="r" style="color:#999">-</td>
-          <td class="r" style="color:#166534">-${fmtW(Math.abs(s.amount))}</td>
-          <td class="r" style="font-weight:700;color:${s.settled?'#999':'#dc2626'}">${fmtW(Math.abs(s.amount))}</td>
-          <td style="font-size:12px;color:#555;white-space:nowrap">${s.due_date||'-'}</td>
-          <td style="text-align:center"><input type="checkbox" ${s.settled?'checked':''} onchange="saveSplitField('${s.id}','settled',this.checked);renderCashflow()"></td>
-        </tr>`;
-      }
-    });
-    document.getElementById('cf-pay-total').textContent = '총 ' + fmtW(totalPay);
-  } // end splitRecv/splitPay
+  splitPayments.filter(s=>s.amount<0 && s.due_date && s.due_date.slice(0,7)===cm).forEach(s=>{
+    const part=_buyAdvanceApplied.get(s.id);
+    if(part && part.dueMo===cm) return;
+    totalPay += Math.abs(+s.amount||0);
+    document.getElementById('cf-pay-body').innerHTML += splitCashRow(s, -1);
+  });
+  if(!document.getElementById('cf-recv-body').innerHTML.trim())
+    document.getElementById('cf-recv-body').innerHTML='<tr><td colspan="6" style="text-align:center;color:#bbb;padding:1.5rem">내역 없음</td></tr>';
+  if(!document.getElementById('cf-pay-body').innerHTML.trim())
+    document.getElementById('cf-pay-body').innerHTML='<tr><td colspan="6" style="text-align:center;color:#bbb;padding:1.5rem">내역 없음</td></tr>';
+  document.getElementById('cf-recv-total').textContent = '총 ' + fmtW(totalRecv);
+  document.getElementById('cf-pay-total').textContent = '총 ' + fmtW(totalPay);
 
   // 순현금흐름 요약
   const net = totalRecv - totalPay;
@@ -4454,7 +4453,8 @@ function exportClosingExcel(){
   rows.push([`매입처별 결제 마감 (${cm||'전체'})`]);
   Object.entries(bm).sort((a,b)=>b[1].amt-a[1].amt).forEach(([name,v])=>{
     const vat=Math.round(v.amt*0.1);
-    rows.push(['매입',name,v.amt,vat,v.amt+vat,
+    const pay=v.payNet!=null?v.payNet:(v.amt+vat);
+    rows.push(['매입',name,v.amt,vat,pay,
       closingState[stKey('buy',name,'date')]||computeDueDate(name,cm),
       closingState[stKey('buy',name,'tax')]||'미발급',
       closingState[stKey('buy',name,'done')]||'미완료']);
@@ -4469,7 +4469,8 @@ function exportClosingExcel(){
   rows.push([`매출처별 청구 마감 (${cm||'전체'})`]);
   Object.entries(sm).sort((a,b)=>b[1].amt-a[1].amt).forEach(([name,v])=>{
     const vat=Math.round(v.amt*0.1);
-    rows.push(['매출',name,v.amt,vat,v.amt+vat,
+    const pay=v.payNet!=null?v.payNet:(v.amt+vat);
+    rows.push(['매출',name,v.amt,vat,pay,
       closingState[stKey('sell',name,'date')]||computeDueDate(name,cm),
       closingState[stKey('sell',name,'tax')]||'미발급',
       closingState[stKey('sell',name,'done')]||'미완료']);
@@ -5004,15 +5005,17 @@ function printClosingReport(){
     if(!list.length) return '';
     const rows=list.map(([name,v])=>{
       const vat=Math.round(v.amt*0.1);
+      const pay=v.payNet!=null?v.payNet:(v.amt+vat);
       const due=closingState[stKey(type,name,'date')]||computeDueDate(name,cm);
       const tax=closingState[stKey(type,name,'tax')]||'미발급';
       const done=closingState[stKey(type,name,'done')]||'미완료';
-      return `<tr><td class="l">${name}</td><td>${fmt(v.amt)}</td><td>${fmt(vat)}</td><td>${fmt(v.amt+vat)}</td><td>${due||'-'}</td><td>${tax}</td><td>${done}</td></tr>`;
+      return `<tr><td class="l">${name}</td><td>${fmt(v.amt)}</td><td>${fmt(vat)}</td><td>${fmt(pay)}</td><td>${due||'-'}</td><td>${tax}</td><td>${done}</td></tr>`;
     }).join('');
     const sub=list.reduce((s,[,v])=>s+v.amt,0);
     const subVat=Math.round(sub*0.1);
+    const subPay=list.reduce((s,[,v])=>s+(v.payNet!=null?v.payNet:Math.round(v.amt*1.1)),0);
     return `<tr class="grp-head"><td colspan="7">${label}</td></tr>${rows}
-      <tr class="grand"><td class="l">${label} 소계</td><td>${fmt(sub)}</td><td>${fmt(subVat)}</td><td>${fmt(sub+subVat)}</td><td colspan="3"></td></tr>`;
+      <tr class="grand"><td class="l">${label} 소계</td><td>${fmt(sub)}</td><td>${fmt(subVat)}</td><td>${fmt(subPay)}</td><td colspan="3"></td></tr>`;
   }
 
   const html=`<div class="report-page" style="width:794px">
@@ -5155,7 +5158,7 @@ function _doPrintClosingByCompany(cm, bm, sm, stKey){
           ${itemRows}
           <tr class="grand">
             <td class="l" style="font-weight:700">${name} 합계</td>
-            <td>${fmt(v.amt)}</td><td>${fmt(vat)}</td><td>${fmt(v.amt+vat)}</td>
+            <td>${fmt(v.amt)}</td><td>${fmt(vat)}</td><td>${fmt(v.payNet!=null?v.payNet:(v.amt+vat))}</td>
             <td>${due||'-'}</td><td>${tax}</td><td>${done}</td>
           </tr>
         </tbody>
