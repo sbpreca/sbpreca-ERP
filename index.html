@@ -500,6 +500,13 @@ input[readonly]{background:#f5f5f5;color:#999}
         </table>
       </div>
     </div>
+    <div class="section-box" style="margin-top:16px">
+      <div class="section-title" style="justify-content:space-between">
+        <span>업체별 미지급·미수금 잔액</span>
+        <span style="font-size:12px;color:#888;font-weight:400">선수금·선급금이 있는 업체 · 조회월까지 납품분 중 확인하지 않은 잔액</span>
+      </div>
+      <div id="cf-balance"></div>
+    </div>
     <!-- 순현금흐름 요약 -->
     <div class="section-box" style="margin-top:16px">
       <div class="section-title">💰 순현금흐름 요약</div>
@@ -2823,6 +2830,126 @@ function priorReceipts(company, tradeMo, dueDate, used){
 let _purchaseParts=[];
 let _buyAdvanceApplied=new Map();
 
+function buildSalesParts(){
+  const map={};
+  orders.flatMap(o=>o.items).forEach(i=>{
+    if(i.status!=='납품완료' || i.closing_sell_exclude) return;
+    if(!(i.seller && i.samt && sellMonthOf(i))) return;
+    const company=(i.seller||'').split('_')[0];
+    const tradeMo=sellMonthOf(i);
+    const dueDate=closingState[`${tradeMo}_sell_${company}_date`]||computeDueDate(company, tradeMo)||'';
+    const dueMo=dueDate ? String(dueDate).slice(0,7) : tradeMo;
+    const key=company+'|'+tradeMo+'|'+dueDate;
+    if(!map[key]) map[key]={name:company, tradeMo, dueMo, dueDate, amt:0};
+    map[key].amt+=i.samt;
+  });
+  const parts=Object.values(map).sort((a,b)=>a.tradeMo.localeCompare(b.tradeMo)||String(a.dueDate).localeCompare(String(b.dueDate)));
+  const used=new Set();
+  parts.forEach(p=>{
+    const rec=priorReceipts(p.name, p.tradeMo, p.dueDate, used);
+    p.deduct=rec.deduct;
+    p.deductNotes=rec.notes;
+    p.appliedIds=rec.applied;
+  });
+  return parts;
+}
+function cashConfirmed(kind, dueMo, name){
+  return closingState[`cf_${dueMo}_${kind}_${name}`]==='확인';
+}
+function openAdvanceBalances(cm){
+  const names=[];
+  splitPayments.forEach(s=>{
+    const name=s.company||'';
+    if(name && !names.some(n=>partyMatch(n, name))) names.push(name);
+  });
+  const sales=buildSalesParts();
+  const blocks=[];
+  names.forEach(name=>{
+    const hasPay=splitPayments.some(s=>s.amount<0 && partyMatch(s.company||'', name));
+    const hasRecv=splitPayments.some(s=>s.amount>0 && partyMatch(s.company||'', name));
+    if(hasPay){
+      const lines=[];
+      _purchaseParts.filter(p=>partyMatch(p.name, name) && p.tradeMo<=cm).forEach(p=>{
+        const gross=Math.round(p.amt*1.1);
+        const net=gross-(p.deduct||0);
+        if(cashConfirmed('buy', p.dueMo, p.name)) return;
+        if(!net) return;
+        lines.push({tradeMo:p.tradeMo, due:p.dueDate||'', gross, advance:p.deduct||0, net, note:(p.deductNotes||[]).join(', ')});
+      });
+      _buyAdvanceApplied.forEach((part,id)=>{
+        if(!partyMatch(part.name, name) || part.tradeMo<=cm) return;
+        const sp=splitPayments.find(s=>s.id===id);
+        if(!sp) return;
+        const dueMo=(sp.due_date||'').slice(0,7);
+        if(!dueMo || dueMo>cm) return;
+        lines.push({tradeMo:part.tradeMo, due:sp.due_date||'', gross:0, advance:Math.abs(+sp.amount||0), net:-Math.abs(+sp.amount||0), note:(sp.note||'선급금')+' · 이후 납품'});
+      });
+      lines.sort((a,b)=>String(a.tradeMo).localeCompare(String(b.tradeMo))||String(a.due).localeCompare(String(b.due)));
+      if(lines.length) blocks.push({name, kind:'pay', lines, total:lines.reduce((s,l)=>s+l.net,0)});
+    }
+    if(hasRecv){
+      const lines=[];
+      sales.filter(p=>partyMatch(p.name, name) && p.tradeMo<=cm).forEach(p=>{
+        const gross=Math.round(p.amt*1.1);
+        const net=gross-(p.deduct||0);
+        if(cashConfirmed('sell', p.dueMo, p.name)) return;
+        if(!net) return;
+        lines.push({tradeMo:p.tradeMo, due:p.dueDate||'', gross, advance:p.deduct||0, net, note:(p.deductNotes||[]).join(', ')});
+      });
+      sales.filter(p=>partyMatch(p.name, name) && p.tradeMo>cm).forEach(p=>{
+        (p.appliedIds||[]).forEach(id=>{
+          const sp=splitPayments.find(s=>s.id===id);
+          if(!sp) return;
+          const dueMo=(sp.due_date||'').slice(0,7);
+          if(!dueMo || dueMo>cm) return;
+          lines.push({tradeMo:p.tradeMo, due:sp.due_date||'', gross:0, advance:Math.abs(+sp.amount||0), net:-Math.abs(+sp.amount||0), note:(sp.note||'선수금')+' · 이후 납품'});
+        });
+      });
+      lines.sort((a,b)=>String(a.tradeMo).localeCompare(String(b.tradeMo))||String(a.due).localeCompare(String(b.due)));
+      if(lines.length) blocks.push({name, kind:'recv', lines, total:lines.reduce((s,l)=>s+l.net,0)});
+    }
+  });
+  return blocks;
+}
+function renderOpenBalances(cm){
+  const el=document.getElementById('cf-balance');
+  if(!el) return;
+  const blocks=openAdvanceBalances(cm);
+  if(!blocks.length){
+    el.innerHTML='<p style="margin:0;padding:12px;color:#999;font-size:13px">선수금·선급금이 등록된 업체가 없습니다.</p>';
+    return;
+  }
+  el.innerHTML=blocks.map(b=>{
+    const label=b.kind==='pay' ? (b.total>=0?'미지급잔액':'선급금 잔액') : (b.total>=0?'미수금 잔액':'선수금 잔액');
+    const color=b.kind==='pay'?'#dc2626':'#166534';
+    const rows=b.lines.length?b.lines.map(l=>`<tr>
+      <td>${l.tradeMo}</td>
+      <td style="white-space:nowrap">${l.due||'-'}</td>
+      <td class="r">${l.gross?fmtW(l.gross):'-'}</td>
+      <td class="r">${l.advance?fmtW(l.advance):'-'}</td>
+      <td class="r" style="font-weight:700;color:${l.net<0?'#166534':color}">${fmtW(l.net)}</td>
+      <td style="font-size:12px;color:#666">${escHtml(l.note||'')}</td>
+    </tr>`).join(''):'<tr><td colspan="6" style="text-align:center;color:#999;padding:10px">남은 잔액이 없습니다.</td></tr>';
+    return `<div style="padding:4px 0 12px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;padding:8px 12px 4px">
+        <strong>${escHtml(b.name)}</strong>
+        <span style="font-weight:700;color:${color}">${label} ${fmtW(Math.abs(b.total))}</span>
+      </div>
+      <table class="data-tbl">
+        <thead><tr>
+          <th style="width:90px">거래월</th>
+          <th style="width:110px">예정일</th>
+          <th class="r">계산서금액</th>
+          <th class="r">선수금·선급금</th>
+          <th class="r">잔액</th>
+          <th>내용</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+  }).join('');
+}
+
 async function renderClosing(){
   if(!taxInvoices || !taxInvoices.length) taxInvoices = await loadTaxInvoices();
   if(!_txLoaded){
@@ -3317,6 +3444,8 @@ function renderCashflow(){
     document.getElementById('cf-pay-body').innerHTML='<tr><td colspan="6" style="text-align:center;color:#bbb;padding:1.5rem">내역 없음</td></tr>';
   document.getElementById('cf-recv-total').textContent = '총 ' + fmtW(totalRecv);
   document.getElementById('cf-pay-total').textContent = '총 ' + fmtW(totalPay);
+
+  renderOpenBalances(cm);
 
   // 순현금흐름 요약
   const net = totalRecv - totalPay;
