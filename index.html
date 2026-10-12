@@ -3097,8 +3097,9 @@ function renderCashflow(){
       });
     });
   });
-  // 선급 출금은 세금계산서 월과 같은 매입 거래의 지급월에서만 잔액을 줄인다.
-  splitPayments.filter(s=>!s.settled && s.amount<0 && s.due_date && s.due_date.slice(0,7)!==cm).forEach(s=>{
+  // 선급 출금은 이미 지급(정산)했어도, 세금계산서 월과 같은 매입의 잔금 지급월에서 잔액을 줄인다.
+  // 선급금 자체의 지급월(예정월=조회월)에서는 빼지 않아 그 달 출금 행과 겹치지 않는다.
+  splitPayments.filter(s=>s.amount<0 && s.due_date && s.due_date.slice(0,7)!==cm).forEach(s=>{
     const row=bm[s.company];
     if(!row) return;
     const taxMo=(s.tax_date||'').slice(0,7);
@@ -3106,6 +3107,8 @@ function renderCashflow(){
     const part=taxMo ? parts.find(p=>(p.tradeMos||[p.tradeMo]).includes(taxMo)) : parts[0];
     if(!part) return;
     part.deduct=(part.deduct||0)+Math.abs(s.amount);
+    if(!part.deductNotes) part.deductNotes=[];
+    if(s.note) part.deductNotes.push(s.note);
     if(!splitPayDeduct[s.company]) splitPayDeduct[s.company]=0;
     splitPayDeduct[s.company]+=Math.abs(s.amount);
   });
@@ -3127,7 +3130,7 @@ function renderCashflow(){
       return `<tr style="${cfPayChecked?'background:#f0fdf4;':''}">
         <td style="font-weight:600;${cfPayChecked?'color:#166534;text-decoration:line-through':''}">${name}</td>
         <td class="r" style="${cfPayChecked?'color:#166534':''}">${fmtW(total)}</td>
-        <td class="r" style="color:#dc2626">${deduct > 0 ? '-'+fmtW(deduct) : '-'}</td>
+        <td class="r" style="color:#dc2626" title="${deduct > 0 ? (v.deductNotes||[]).map(escHtml).join(', ') : ''}">${deduct > 0 ? '-'+fmtW(deduct) : '-'}</td>
         <td class="r" style="font-weight:700;color:${cfPayChecked?'#166534':'#dc2626'}">${fmtW(net)}</td>
         <td style="font-size:12px;color:#555;white-space:nowrap">${due||'-'}</td>
         <td style="text-align:center">
@@ -3174,7 +3177,7 @@ function renderCashflow(){
 
   // 다른 달에 분할 입금 예정인 금액을 이번 달 마감현황 금액에서 차감
   // 예: 성화전설 11월 입금예정인데, 10월에 분할 입금 1,340,900원 있으면
-  splitPayments.filter(s=>!s.settled && s.amount<0 && s.due_date && s.due_date.slice(0,7)!==cm).forEach(s=>{
+  splitPayments.filter(s=>s.amount<0 && s.due_date && s.due_date.slice(0,7)!==cm).forEach(s=>{
     if(!splitPayDeduct[s.company]) splitPayDeduct[s.company]=0;
     if(bm[s.company]) splitPayDeduct[s.company] += Math.abs(s.amount);
   });
