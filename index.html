@@ -732,7 +732,7 @@ input[readonly]{background:#f5f5f5;color:#999}
       </div>
       <input type="hidden" id="an-tab" value="all">
       <button class="btn btn-po" style="margin-left:8px" onclick="printAnnualReport()">보고서 PDF</button>
-      <span style="font-size:11px;color:#999;align-self:center;margin-left:6px">※ 분기를 누르면 그 분기의 월이 열립니다. 2026년 1~5월은 저장된 실적이고, 6월부터와 2027년 이후는 납품완료 금액으로 자동 집계됩니다.</span>
+      <span style="font-size:11px;color:#999;align-self:center;margin-left:6px">※ 분기를 누르면 그 분기의 월이 열립니다. 2026년 1~5월은 저장된 실적이고, 6월부터와 2027년 이후는 납품완료 금액으로 자동 집계됩니다. 영업이익은 손익계산서가 있는 달만 표시합니다.</span>
     </div>
     <div class="metrics" id="an-metrics"></div>
 
@@ -759,7 +759,8 @@ input[readonly]{background:#f5f5f5;color:#999}
     </div>
 
     <div class="section-box">
-      <div class="section-title">매출총이익 (매출 - 매입)</div>
+      <div class="section-title">매출총이익 · 영업이익</div>
+      <p id="an-profit-note" style="margin:0 12px 8px;font-size:12px;color:#888"></p>
       <table class="data-tbl">
         <thead id="an-gross-head"></thead>
         <tbody id="an-gross-body"></tbody>
@@ -1512,6 +1513,7 @@ async function loadAll(){
     vatData = pl.vat;
     salesAdjData = pl.salesAdj;
     purchaseAdjData = pl.purchaseAdj;
+    captureAnnualPlMonths();
     annualManual = await loadAnnualManualFromDb();
     txRules = await loadTxRulesFromDb();
     ITEM_PRICES = await loadItemPricesFromDb();
@@ -1545,6 +1547,13 @@ const persistClosing=()=>{ saveClosingStateToDb(); };
 
 // 판관비·영업외손익 저장
 let sgaData={}, otherData={}, inventoryData={}, vatData={}, salesAdjData={}, purchaseAdjData={};
+let annualPlMonths=new Set();
+function captureAnnualPlMonths(){
+  annualPlMonths=new Set([...Object.keys(sgaData), ...Object.keys(inventoryData)].filter(k=>/^\d{4}-\d{2}$/.test(k)));
+}
+function markAnnualPlMonth(key){
+  if(/^\d{4}-\d{2}$/.test(String(key||''))) annualPlMonths.add(key);
+}
 const persistSga=()=>{ savePlItemsToDb('sga', sgaData); };
 const persistOther=()=>{ savePlItemsToDb('other', otherData); };
 const persistInventory=()=>{ savePlItemsToDb('inventory', inventoryData); };
@@ -1573,6 +1582,7 @@ function saveInventory(key,name,value){
   if(item) item.amt=+value||0;
   else inventoryData[key].push({name,amt:+value||0});
   persistInventory();
+  markAnnualPlMonth(key);
   renderPL();
 }
 function saveVat(key,name,value){
@@ -3870,6 +3880,7 @@ function addSgaItem(){
   if(!name)return;
   if(!sgaData[key])sgaData[key]=[];
   sgaData[key].push({name,amt:0});
+  markAnnualPlMonth(key);
   persistSga();renderPL();
 }
 
@@ -3907,6 +3918,41 @@ function toggleAnnualQuarter(q){
 // 2026년 1~5월만 저장된 실적이다. 6월부터와 2027년 이후 모든 달은 납품완료 금액으로 집계한다.
 function annualUsesManual(year, month){
   return String(year)+'-'+String(month).padStart(2,'0')<='2026-05';
+}
+function annualMonthKey(year, month){
+  return String(year)+'-'+String(month).padStart(2,'0');
+}
+// 손익계산서에 판관비나 재고가 저장된 달만 영업이익을 계산한다. 없는 달은 0으로 보지 않는다.
+function annualPlReady(year, month){
+  return annualPlMonths.has(annualMonthKey(year, month));
+}
+function annualSga(year, month){
+  return (sgaData[annualMonthKey(year, month)]||[]).reduce((s,i)=>s+(+i.amt||0),0);
+}
+function annualInvDelta(year, month){
+  const list=inventoryData[annualMonthKey(year, month)]||[];
+  const begin=+((list.find(i=>i.name==='기초재고')||{}).amt)||0;
+  const end=+((list.find(i=>i.name==='기말재고')||{}).amt)||0;
+  return end-begin;
+}
+function annualRollupReady(monthValue){
+  const m={}, qq={};
+  let ttl=null;
+  for(let mo=1;mo<=12;mo++){
+    const v=monthValue(mo);
+    m[mo]=v;
+    if(v==null) continue;
+    ttl=(ttl==null?0:ttl)+v;
+  }
+  for(let q=1;q<=4;q++){
+    let sum=null;
+    for(let mo=(q-1)*3+1;mo<=q*3;mo++){
+      if(m[mo]==null) continue;
+      sum=(sum==null?0:sum)+m[mo];
+    }
+    qq[q]=sum;
+  }
+  return {m, qq, ttl};
 }
 function annualVisibleCols(){
   const cols=[];
@@ -4151,22 +4197,48 @@ function renderAnnual(){
   const sellTtl=sum(sellRows,'ttl'), buyTtl=sum(buyRows,'ttl');
   const gTtl=sellTtl-buyTtl;
   const labelPfx=curY+'년'+(curTab==='all'?'':' · '+curTab);
-  document.getElementById('an-metrics').innerHTML=`
-    <div class="metric"><div class="metric-lbl">${labelPfx} 매출 합계</div><div class="metric-val">${fmtW(sellTtl)}</div></div>
-    <div class="metric"><div class="metric-lbl">${labelPfx} 매입 합계</div><div class="metric-val">${fmtW(buyTtl)}</div></div>
-    <div class="metric"><div class="metric-lbl">${labelPfx} 매출총이익</div><div class="metric-val ${gTtl>=0?'g':'b'}">${fmtW(gTtl)}</div></div>
-    <div class="metric"><div class="metric-lbl">매출총이익률</div><div class="metric-val">${sellTtl?(gTtl/sellTtl*100).toFixed(1):0}%</div></div>`;
-
   const sellSum=sumRows(sellRows), buySum=sumRows(buyRows);
   const gross=sumRows([{...sellSum}]);
   for(let mo=1;mo<=12;mo++) gross.m[mo]=(sellSum.m[mo]||0)-(buySum.m[mo]||0);
   for(let qn=1;qn<=4;qn++) gross.qq[qn]=(sellSum.qq[qn]||0)-(buySum.qq[qn]||0);
   gross.ttl=sellSum.ttl-buySum.ttl;
+  const showOp=curTab==='all';
+  const sga=showOp?annualRollupReady(mo=>annualPlReady(curY, mo)?annualSga(curY, mo):null):null;
+  const invDelta=showOp?annualRollupReady(mo=>annualPlReady(curY, mo)?annualInvDelta(curY, mo):null):null;
+  const op=showOp?annualRollupReady(mo=>{
+    if(!annualPlReady(curY, mo)) return null;
+    return (gross.m[mo]||0)+annualInvDelta(curY, mo)-annualSga(curY, mo);
+  }):null;
+  let opSales=0;
+  if(showOp){
+    for(let mo=1;mo<=12;mo++) if(op.m[mo]!=null) opSales+=(sellSum.m[mo]||0);
+  }
+  document.getElementById('an-metrics').innerHTML=`
+    <div class="metric"><div class="metric-lbl">${labelPfx} 매출 합계</div><div class="metric-val">${fmtW(sellTtl)}</div></div>
+    <div class="metric"><div class="metric-lbl">${labelPfx} 매입 합계</div><div class="metric-val">${fmtW(buyTtl)}</div></div>
+    <div class="metric"><div class="metric-lbl">${labelPfx} 매출총이익</div><div class="metric-val ${gTtl>=0?'g':'b'}">${fmtW(gTtl)}</div></div>
+    <div class="metric"><div class="metric-lbl">매출총이익률</div><div class="metric-val">${sellTtl?(gTtl/sellTtl*100).toFixed(1):0}%</div></div>`
+    +(showOp&&op.ttl!=null?`
+    <div class="metric"><div class="metric-lbl">${curY}년 영업이익</div><div class="metric-val ${op.ttl>=0?'g':'b'}">${fmtW(op.ttl)}</div></div>
+    <div class="metric"><div class="metric-lbl">영업이익률</div><div class="metric-val">${opSales?(op.ttl/opSales*100).toFixed(1):0}%</div></div>`:'');
+  document.getElementById('an-profit-note').textContent=showOp
+    ? '영업이익은 매출총이익에 재고증감(기말−기초)을 더하고 손익계산서의 판관비를 뺀 금액입니다. 손익 자료가 없는 달은 비워 두고, 세전이익은 영업외손익을 넣는 단계에서 추가합니다.'
+    : '영업이익은 회사 전체 손익이라 전체 탭에서 봅니다.';
+
   function grossCells(row){
     return cols.map(c=>{
       if(c.kind==='m') return `<td class="r an-m">${fmtW(row.m[c.mo]||0)}</td>`;
       if(c.kind==='q') return `<td class="r an-q">${fmtW(row.qq[c.q]||0)}</td>`;
       return `<td class="r an-total">${fmtW(row.ttl)}</td>`;
+    }).join('');
+  }
+  function readyCells(row){
+    return cols.map(c=>{
+      const val=c.kind==='m'?row.m[c.mo]:c.kind==='q'?row.qq[c.q]:row.ttl;
+      const cls=c.kind==='m'?'an-m':c.kind==='q'?'an-q':'an-total';
+      const tip=c.kind==='y'||c.kind==='q'?'손익 자료가 있는 달만 합산':'';
+      if(val==null) return `<td class="r ${cls}" title="${tip}"><span class="an-zero">-</span></td>`;
+      return `<td class="r ${cls}" title="${tip}">${fmtW(val)}</td>`;
     }).join('');
   }
   const tips=['','1–3월','4–6월','7–9월','10–12월'];
@@ -4182,9 +4254,13 @@ function renderAnnual(){
   document.getElementById('an-gross-body').innerHTML=`
     <tr><td style="padding:10px 12px">매출</td>${grossCells(sellSum)}</tr>
     <tr><td style="padding:10px 12px">매입</td>${grossCells(buySum)}</tr>
-    <tr class="tot"><td style="padding:10px 12px">매출총이익</td>${grossCells(gross)}</tr>`;
+    <tr class="tot"><td style="padding:10px 12px">매출총이익</td>${grossCells(gross)}</tr>`
+    +(showOp?`
+    <tr><td style="padding:10px 12px" title="기말재고 − 기초재고">재고증감</td>${readyCells(invDelta)}</tr>
+    <tr><td style="padding:10px 12px">판관비</td>${readyCells(sga)}</tr>
+    <tr class="tot"><td style="padding:10px 12px">영업이익</td>${readyCells(op)}</tr>`:'');
 
-  _annualCache={curY,curTab,sellRows,buyRows,showItem,showQty};
+  _annualCache={curY,curTab,sellRows,buyRows,showItem,showQty,sga,invDelta,op};
 }
 
 /* ══════════════ 엑셀 다운로드 (앱 → 엑셀) ══════════════ */
@@ -4812,6 +4888,7 @@ async function applyTxToPL(){
   }
   sgaData[ym]=sgaList;
   otherData[ym]=otherList;
+  markAnnualPlMonth(ym);
   persistSga(); persistOther();
   alert('손익계산서에 반영했어요. 손익계산서 탭에서 확인해보세요.');
 }
@@ -5196,7 +5273,7 @@ function printBalanceReport(){
 function printAnnualReport(){
   renderAnnual();
   if(!_annualCache) return;
-  const {curY,curTab,sellRows,buyRows}=_annualCache;
+  const {curY,curTab,sellRows,buyRows,sga,invDelta,op}=_annualCache;
   const tabLabel=curTab==='all'?'전체':curTab;
   const today=new Date().toISOString().slice(0,10).replace(/-/g,'.');
   const order=['조명','원부자재','수수료','미분류'];
@@ -5209,6 +5286,14 @@ function printAnnualReport(){
       if(c.kind==='m') return `<td>${r.m[c.mo]?fmt(r.m[c.mo]):''}</td>`;
       if(c.kind==='q') return `<td>${r.qq[c.q]?fmt(r.qq[c.q]):''}</td>`;
       return `<td>${fmt(r.ttl)}</td>`;
+    }).join('');
+  }
+  function readyTds(r){
+    const cell=v=>v==null?'':fmt(v);
+    return cols.map(c=>{
+      if(c.kind==='m') return `<td>${cell(r.m[c.mo])}</td>`;
+      if(c.kind==='q') return `<td>${cell(r.qq[c.q])}</td>`;
+      return `<td>${cell(r.ttl)}</td>`;
     }).join('');
   }
   function sumOf(rows){
@@ -5259,13 +5344,16 @@ function printAnnualReport(){
     ${tableHtml(sellRows,'매출 현황','매출처')}
     <div style='page-break-before:always'></div>
     ${tableHtml(buyRows,'매입 현황','매입처')}
-    <div class="report-section-title">매출총이익 요약</div>
+    <div class="report-section-title">매출총이익 · 영업이익</div>
     <table class="report-tbl">
       <thead><tr><th>구분</th>${gHead}</tr></thead>
       <tbody>
         <tr><td class="l">매출</td>${monthTds(sellSum)}</tr>
         <tr><td class="l">매입</td>${monthTds(buySum)}</tr>
         <tr class="grand"><td class="l">매출총이익</td>${monthTds(gross)}</tr>
+        ${curTab==='all'&&op?`<tr><td class="l">재고증감</td>${readyTds(invDelta)}</tr>
+        <tr><td class="l">판관비</td>${readyTds(sga)}</tr>
+        <tr class="grand"><td class="l">영업이익</td>${readyTds(op)}</tr>`:''}
       </tbody>
     </table>
   </div>`;
