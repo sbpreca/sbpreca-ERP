@@ -2878,42 +2878,81 @@ function isCashByToday(dateStr, today, todayMo){
   if(dateStr.length>=10) return dateStr.slice(0,10)<=today;
   return dateStr.slice(0,7)<=todayMo;
 }
+// 같은 업체는 라이네트처럼 헤더 하나·표 하나에 여러 행으로 묶는다.
+// (표기만 다른 업체명·미지급/선급금 행이 카드로 쪼개지지 않게 한다.)
+function balancePartyKey(n){
+  return normParty(String(n||'').split('_')[0]);
+}
+function preferBalanceName(a,b){
+  const a0=String(a||'').split('_')[0], b0=String(b||'').split('_')[0];
+  if(a0.length!==b0.length) return a0.length<=b0.length ? a0 : b0;
+  return a0.localeCompare(b0,'ko')<=0 ? a0 : b0;
+}
+function lineBalanceKey(l){
+  return [l.tradeMo||'', l.due||'', l.gross||0, l.advance||0, l.net||0, l.note||''].join('|');
+}
+function mergeBalanceBlocks(blocks){
+  const out=[];
+  blocks.forEach(b=>{
+    const key=balancePartyKey(b.name)+'|'+b.kind;
+    let hit=out.find(x=>(balancePartyKey(x.name)+'|'+x.kind)===key || (x.kind===b.kind && partyMatch(x.name, b.name)));
+    if(!hit){
+      out.push({name:String(b.name||'').split('_')[0], kind:b.kind, lines:b.lines.slice(), total:0});
+      return;
+    }
+    hit.name=preferBalanceName(hit.name, b.name);
+    const seen=new Set(hit.lines.map(lineBalanceKey));
+    b.lines.forEach(l=>{ const k=lineBalanceKey(l); if(!seen.has(k)){ seen.add(k); hit.lines.push(l); } });
+  });
+  out.forEach(b=>{
+    b.lines.sort((a,c)=>String(a.tradeMo).localeCompare(String(c.tradeMo))||String(a.due).localeCompare(String(c.due)));
+    b.total=b.lines.reduce((s,l)=>s+l.net,0);
+  });
+  return out.sort((a,b)=>a.name.localeCompare(b.name,'ko')||a.kind.localeCompare(b.kind));
+}
 function openAdvanceBalances(){
   const {today, todayMo}=cashflowToday();
   const sales=buildSalesParts();
   const names=[];
-  const addName=n=>{ if(n && !names.some(x=>partyMatch(x, n))) names.push(n); };
+  const addName=n=>{
+    const raw=String(n||'').trim();
+    if(!raw) return;
+    const idx=names.findIndex(x=>partyMatch(x, raw) || balancePartyKey(x)===balancePartyKey(raw));
+    if(idx<0) names.push(raw.split('_')[0]);
+    else names[idx]=preferBalanceName(names[idx], raw);
+  };
   _purchaseParts.forEach(p=>addName(p.name));
   sales.forEach(p=>addName(p.name));
   splitPayments.forEach(s=>addName(s.company||''));
   names.sort((a,b)=>a.localeCompare(b,'ko'));
-  const sortLines=lines=>lines.sort((a,b)=>String(a.tradeMo).localeCompare(String(b.tradeMo))||String(a.due).localeCompare(String(b.due)));
+  const sameParty=(a,b)=>partyMatch(a,b) || (!!balancePartyKey(a) && balancePartyKey(a)===balancePartyKey(b));
   const blocks=[];
   names.forEach(name=>{
     const payLines=[];
-    _purchaseParts.filter(p=>partyMatch(p.name, name) && isOpenBalancePart(p, today, todayMo)).forEach(p=>{
+    _purchaseParts.filter(p=>sameParty(p.name, name) && isOpenBalancePart(p, today, todayMo)).forEach(p=>{
       const gross=Math.round(p.amt*1.1);
       const net=gross-(p.deduct||0);
       if(!net) return;
       payLines.push({tradeMo:p.tradeMo, due:p.dueDate||'', gross, advance:p.deduct||0, net, note:(p.deductNotes||[]).join(', ')});
     });
     _buyAdvanceApplied.forEach((part,id)=>{
-      if(!partyMatch(part.name, name) || !part.tradeMo || part.tradeMo<=todayMo) return;
       const sp=splitPayments.find(s=>s.id===id);
       if(!sp) return;
+      if(!(sameParty(part.name, name) || sameParty(sp.company||'', name))) return;
+      if(!part.tradeMo || part.tradeMo<=todayMo) return;
       if(!isCashByToday(sp.due_date||sp.tax_date||'', today, todayMo)) return;
       payLines.push({tradeMo:part.tradeMo, due:sp.due_date||'', gross:0, advance:Math.abs(+sp.amount||0), net:-Math.abs(+sp.amount||0), note:(sp.note||'선급금')+' · 이후 납품'});
     });
-    if(payLines.length) blocks.push({name, kind:'pay', lines:sortLines(payLines), total:payLines.reduce((s,l)=>s+l.net,0)});
+    if(payLines.length) blocks.push({name, kind:'pay', lines:payLines, total:0});
 
     const recvLines=[];
-    sales.filter(p=>partyMatch(p.name, name) && isOpenBalancePart(p, today, todayMo)).forEach(p=>{
+    sales.filter(p=>sameParty(p.name, name) && isOpenBalancePart(p, today, todayMo)).forEach(p=>{
       const gross=Math.round(p.amt*1.1);
       const net=gross-(p.deduct||0);
       if(!net) return;
       recvLines.push({tradeMo:p.tradeMo, due:p.dueDate||'', gross, advance:p.deduct||0, net, note:(p.deductNotes||[]).join(', ')});
     });
-    sales.filter(p=>partyMatch(p.name, name) && p.tradeMo>todayMo).forEach(p=>{
+    sales.filter(p=>sameParty(p.name, name) && p.tradeMo>todayMo).forEach(p=>{
       (p.appliedIds||[]).forEach(id=>{
         const sp=splitPayments.find(s=>s.id===id);
         if(!sp) return;
@@ -2921,9 +2960,9 @@ function openAdvanceBalances(){
         recvLines.push({tradeMo:p.tradeMo, due:sp.due_date||'', gross:0, advance:Math.abs(+sp.amount||0), net:-Math.abs(+sp.amount||0), note:(sp.note||'선수금')+' · 이후 납품'});
       });
     });
-    if(recvLines.length) blocks.push({name, kind:'recv', lines:sortLines(recvLines), total:recvLines.reduce((s,l)=>s+l.net,0)});
+    if(recvLines.length) blocks.push({name, kind:'recv', lines:recvLines, total:0});
   });
-  return blocks;
+  return mergeBalanceBlocks(blocks);
 }
 function renderOpenBalances(){
   const el=document.getElementById('cf-balance');
@@ -2937,7 +2976,18 @@ function renderOpenBalances(){
     return;
   }
   el.innerHTML=blocks.map(b=>{
-    const label=b.kind==='pay' ? (b.total>=0?'미지급잔액':'선급금 잔액') : (b.total>=0?'미수금 잔액':'선수금 잔액');
+    const hasPos=b.lines.some(l=>l.net>0);
+    const hasNeg=b.lines.some(l=>l.net<0);
+    let label;
+    if(b.kind==='pay'){
+      if(hasPos && hasNeg) label='미지급·선급금 잔액';
+      else if(b.total>=0) label='미지급잔액';
+      else label='선급금 잔액';
+    }else{
+      if(hasPos && hasNeg) label='미수금·선수금 잔액';
+      else if(b.total>=0) label='미수금 잔액';
+      else label='선수금 잔액';
+    }
     const color=b.kind==='pay'?'#dc2626':'#166534';
     const rows=b.lines.length?b.lines.map(l=>`<tr>
       <td>${l.tradeMo}</td>
@@ -2950,7 +3000,7 @@ function renderOpenBalances(){
     return `<div style="padding:4px 0 12px">
       <div style="display:flex;justify-content:space-between;align-items:baseline;padding:8px 12px 4px">
         <strong>${escHtml(b.name)}</strong>
-        <span style="font-weight:700;color:${color}">${label} ${fmtW(Math.abs(b.total))}</span>
+        <span style="font-weight:700;color:${b.total<0?'#166534':color}">${label} ${fmtW(Math.abs(b.total))}</span>
       </div>
       <table class="data-tbl">
         <thead><tr>
