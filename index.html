@@ -503,7 +503,7 @@ input[readonly]{background:#f5f5f5;color:#999}
     <div class="section-box" style="margin-top:16px">
       <div class="section-title" style="justify-content:space-between">
         <span>업체별 미지급·미수금 잔액</span>
-        <span style="font-size:12px;color:#888;font-weight:400">선수금·선급금이 있는 업체 · 조회월까지 납품분 중 확인하지 않은 잔액</span>
+        <span style="font-size:12px;color:#888;font-weight:400">이번 달 정산분 제외 · 정산 후에도 남는 현재 미결제분</span>
       </div>
       <div id="cf-balance"></div>
     </div>
@@ -2857,19 +2857,22 @@ function cashConfirmed(kind, dueMo, name){
   return closingState[`cf_${dueMo}_${kind}_${name}`]==='확인';
 }
 function openAdvanceBalances(cm){
-  const names=[];
-  splitPayments.forEach(s=>{
-    const name=s.company||'';
-    if(name && !names.some(n=>partyMatch(n, name))) names.push(name);
-  });
   const sales=buildSalesParts();
+  // 전 거래처 대상: 분할결제 업체뿐 아니라 매입·매출에 등장한 모든 업체를 포함한다.
+  const names=[];
+  const pushName=(name)=>{
+    if(name && !names.some(n=>partyMatch(n, name))) names.push(name);
+  };
+  splitPayments.forEach(s=>pushName(s.company||''));
+  _purchaseParts.forEach(p=>pushName(p.name));
+  sales.forEach(p=>pushName(p.name));
   const blocks=[];
   names.forEach(name=>{
-    const hasPay=splitPayments.some(s=>s.amount<0 && partyMatch(s.company||'', name));
-    const hasRecv=splitPayments.some(s=>s.amount>0 && partyMatch(s.company||'', name));
-    if(hasPay){
+    {
       const lines=[];
-      _purchaseParts.filter(p=>partyMatch(p.name, name) && p.tradeMo<=cm).forEach(p=>{
+      // 이번 달 정산분(dueMo===cm)은 본문 예정 표에 나오므로 잔액에서 제외하고,
+      // 정산 후에도 남는 현재 미결제분만 표시한다. 확인 완료·금액 0인 항목도 제외한다.
+      _purchaseParts.filter(p=>partyMatch(p.name, name) && p.tradeMo<=cm && p.dueMo!==cm).forEach(p=>{
         const gross=Math.round(p.amt*1.1);
         const net=gross-(p.deduct||0);
         if(cashConfirmed('buy', p.dueMo, p.name)) return;
@@ -2887,9 +2890,9 @@ function openAdvanceBalances(cm){
       lines.sort((a,b)=>String(a.tradeMo).localeCompare(String(b.tradeMo))||String(a.due).localeCompare(String(b.due)));
       if(lines.length) blocks.push({name, kind:'pay', lines, total:lines.reduce((s,l)=>s+l.net,0)});
     }
-    if(hasRecv){
+    {
       const lines=[];
-      sales.filter(p=>partyMatch(p.name, name) && p.tradeMo<=cm).forEach(p=>{
+      sales.filter(p=>partyMatch(p.name, name) && p.tradeMo<=cm && p.dueMo!==cm).forEach(p=>{
         const gross=Math.round(p.amt*1.1);
         const net=gross-(p.deduct||0);
         if(cashConfirmed('sell', p.dueMo, p.name)) return;
@@ -2916,7 +2919,7 @@ function renderOpenBalances(cm){
   if(!el) return;
   const blocks=openAdvanceBalances(cm);
   if(!blocks.length){
-    el.innerHTML='<p style="margin:0;padding:12px;color:#999;font-size:13px">선수금·선급금이 등록된 업체가 없습니다.</p>';
+    el.innerHTML='<p style="margin:0;padding:12px;color:#999;font-size:13px">남은 잔액이 없습니다.</p>';
     return;
   }
   el.innerHTML=blocks.map(b=>{
