@@ -503,7 +503,7 @@ input[readonly]{background:#f5f5f5;color:#999}
     <div class="section-box" style="margin-top:16px">
       <div class="section-title" style="justify-content:space-between">
         <span>업체별 미지급·미수금 잔액</span>
-        <span style="font-size:12px;color:#888;font-weight:400">선수금·선급금이 있는 업체 · 조회월까지 납품분 중 확인하지 않은 잔액</span>
+        <span style="font-size:12px;color:#888;font-weight:400">전 거래처 · 조회월까지 납품분 중 결제일이 조회월 이후인 현재 미결제분 (조회월 결제분 제외)</span>
       </div>
       <div id="cf-balance"></div>
     </div>
@@ -2856,71 +2856,56 @@ function buildSalesParts(){
 function cashConfirmed(kind, dueMo, name){
   return closingState[`cf_${dueMo}_${kind}_${name}`]==='확인';
 }
-function openAdvanceBalances(cm){
-  const names=[];
-  splitPayments.forEach(s=>{
-    const name=s.company||'';
-    if(name && !names.some(n=>partyMatch(n, name))) names.push(name);
-  });
-  const sales=buildSalesParts();
+// 조회월까지 납품했지만 결제일이 조회월 이후라 이번 달 정산 후에도 남는 외상만 잔액으로 본다.
+// 결제일이 조회월 이전인 건은 그 달에 정산됐고, 조회월인 건은 위 지급·수령 예정 표에 있다.
+function splitCashAmt(s){
+  const amt=Math.abs(+s.amount||0);
+  return s.is_vat_included ? amt : amt+Math.round(amt*0.1);
+}
+function openTradeBalances(cm){
+  const dueAfter=s=>(s.due_date||'').slice(0,7)>cm;
   const blocks=[];
-  names.forEach(name=>{
-    const hasPay=splitPayments.some(s=>s.amount<0 && partyMatch(s.company||'', name));
-    const hasRecv=splitPayments.some(s=>s.amount>0 && partyMatch(s.company||'', name));
-    if(hasPay){
-      const lines=[];
-      _purchaseParts.filter(p=>partyMatch(p.name, name) && p.tradeMo<=cm).forEach(p=>{
-        const gross=Math.round(p.amt*1.1);
-        const net=gross-(p.deduct||0);
-        if(cashConfirmed('buy', p.dueMo, p.name)) return;
-        if(!net) return;
-        lines.push({tradeMo:p.tradeMo, due:p.dueDate||'', gross, advance:p.deduct||0, net, note:(p.deductNotes||[]).join(', ')});
-      });
-      _buyAdvanceApplied.forEach((part,id)=>{
-        if(!partyMatch(part.name, name) || part.tradeMo<=cm) return;
-        const sp=splitPayments.find(s=>s.id===id);
-        if(!sp) return;
-        const dueMo=(sp.due_date||'').slice(0,7);
-        if(!dueMo || dueMo>cm) return;
-        lines.push({tradeMo:part.tradeMo, due:sp.due_date||'', gross:0, advance:Math.abs(+sp.amount||0), net:-Math.abs(+sp.amount||0), note:(sp.note||'선급금')+' · 이후 납품'});
-      });
-      lines.sort((a,b)=>String(a.tradeMo).localeCompare(String(b.tradeMo))||String(a.due).localeCompare(String(b.due)));
-      if(lines.length) blocks.push({name, kind:'pay', lines, total:lines.reduce((s,l)=>s+l.net,0)});
-    }
-    if(hasRecv){
-      const lines=[];
-      sales.filter(p=>partyMatch(p.name, name) && p.tradeMo<=cm).forEach(p=>{
-        const gross=Math.round(p.amt*1.1);
-        const net=gross-(p.deduct||0);
-        if(cashConfirmed('sell', p.dueMo, p.name)) return;
-        if(!net) return;
-        lines.push({tradeMo:p.tradeMo, due:p.dueDate||'', gross, advance:p.deduct||0, net, note:(p.deductNotes||[]).join(', ')});
-      });
-      sales.filter(p=>partyMatch(p.name, name) && p.tradeMo>cm).forEach(p=>{
-        (p.appliedIds||[]).forEach(id=>{
-          const sp=splitPayments.find(s=>s.id===id);
-          if(!sp) return;
-          const dueMo=(sp.due_date||'').slice(0,7);
-          if(!dueMo || dueMo>cm) return;
-          lines.push({tradeMo:p.tradeMo, due:sp.due_date||'', gross:0, advance:Math.abs(+sp.amount||0), net:-Math.abs(+sp.amount||0), note:(sp.note||'선수금')+' · 이후 납품'});
-        });
-      });
-      lines.sort((a,b)=>String(a.tradeMo).localeCompare(String(b.tradeMo))||String(a.due).localeCompare(String(b.due)));
-      if(lines.length) blocks.push({name, kind:'recv', lines, total:lines.reduce((s,l)=>s+l.net,0)});
-    }
+  const pushLine=(kind, p, gross, advance)=>{
+    const net=gross-advance;
+    if(net<=0) return;
+    let b=blocks.find(x=>x.kind===kind && x.name===p.name);
+    if(!b){ b={name:p.name, kind, lines:[], total:0}; blocks.push(b); }
+    b.lines.push({tradeMo:p.tradeMo, due:p.dueDate||'', gross, advance, net, note:(p.deductNotes||[]).join(', ')});
+    b.total+=net;
+  };
+  _purchaseParts.filter(p=>p.tradeMo<=cm && p.dueMo>cm).forEach(p=>{
+    if(cashConfirmed('buy', p.dueMo, p.name)) return;
+    let unpaidAdvance=0;
+    _buyAdvanceApplied.forEach((part,id)=>{
+      if(part!==p) return;
+      const sp=splitPayments.find(s=>s.id===id);
+      if(sp && dueAfter(sp)) unpaidAdvance+=Math.abs(+sp.amount||0);
+    });
+    pushLine('pay', p, Math.round(p.amt*1.1), Math.max(0, (p.deduct||0)-unpaidAdvance));
   });
+  buildSalesParts().filter(p=>p.tradeMo<=cm && p.dueMo>cm).forEach(p=>{
+    if(cashConfirmed('sell', p.dueMo, p.name)) return;
+    let unpaidAdvance=0;
+    (p.appliedIds||[]).forEach(id=>{
+      const sp=splitPayments.find(s=>s.id===id);
+      if(sp && dueAfter(sp)) unpaidAdvance+=splitCashAmt(sp);
+    });
+    pushLine('recv', p, Math.round(p.amt*1.1), Math.max(0, (p.deduct||0)-unpaidAdvance));
+  });
+  blocks.forEach(b=>b.lines.sort((x,y)=>String(x.tradeMo).localeCompare(String(y.tradeMo))||String(x.due).localeCompare(String(y.due))));
+  blocks.sort((x,y)=>(x.kind===y.kind?0:(x.kind==='pay'?-1:1))||y.total-x.total);
   return blocks;
 }
 function renderOpenBalances(cm){
   const el=document.getElementById('cf-balance');
   if(!el) return;
-  const blocks=openAdvanceBalances(cm);
+  const blocks=openTradeBalances(cm);
   if(!blocks.length){
-    el.innerHTML='<p style="margin:0;padding:12px;color:#999;font-size:13px">선수금·선급금이 등록된 업체가 없습니다.</p>';
+    el.innerHTML='<p style="margin:0;padding:12px;color:#999;font-size:13px">이번 달 정산 후 남는 미지급·미수금이 없습니다.</p>';
     return;
   }
   el.innerHTML=blocks.map(b=>{
-    const label=b.kind==='pay' ? (b.total>=0?'미지급잔액':'선급금 잔액') : (b.total>=0?'미수금 잔액':'선수금 잔액');
+    const label=b.kind==='pay' ? '미지급 잔액' : '미수금 잔액';
     const color=b.kind==='pay'?'#dc2626':'#166534';
     const rows=b.lines.length?b.lines.map(l=>`<tr>
       <td>${l.tradeMo}</td>
