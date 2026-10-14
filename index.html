@@ -3316,10 +3316,11 @@ async function renderClosing(){
     const rows=vatAdjustments.filter(a=>a.year_month===cm && a.type===type && a.amount && adjInTab(a));
     if(!rows.length) return {html:'', sum:0};
     const sum=rows.reduce((s,a)=>s+(+a.amount||0),0);
-    const html='<tr style="background:#fffbeb"><td colspan="7" style="padding:8px 12px;font-size:11px;font-weight:700;color:#92400e">세금계산서 발급월이 납품월과 다른 금액 · 부가세는 이 달에 반영</td></tr>'
+    const html='<tr style="background:#fffbeb"><td colspan="7" style="padding:8px 12px;font-size:11px;font-weight:700;color:#92400e">세금계산서 발급월이 납품월과 다른 금액 · 부가세는 이 달에 반영 <span style="font-weight:400;color:#b45309">(발주에 이미 반영했으면 ×로 삭제)</span></td></tr>'
       +rows.map(a=>{
         const vat=Math.round((+a.amount||0)*0.1);
-        return '<tr style="background:#fffbeb"><td style="font-weight:600">'+a.company+' <span style="font-size:11px;color:#92400e">'+(a.note||'')+'</span></td><td class="r">'+fmtW(a.amount)+'</td><td class="r">'+fmtW(vat)+'</td><td class="r">'+fmtW((+a.amount||0)+vat)+'</td><td colspan="3" style="font-size:11px;color:#92400e">부가세 '+fmtW(vat)+'</td></tr>';
+        const id=a.id?String(a.id):'';
+        return '<tr style="background:#fffbeb"><td style="font-weight:600">'+escHtml(a.company)+' <span style="font-size:11px;color:#92400e">'+escHtml(a.note||'')+'</span></td><td class="r">'+fmtW(a.amount)+'</td><td class="r">'+fmtW(vat)+'</td><td class="r">'+fmtW((+a.amount||0)+vat)+'</td><td colspan="2" style="font-size:11px;color:#92400e">부가세 '+fmtW(vat)+'</td><td style="text-align:center">'+(id?`<button class="del-btn" title="이 조정 삭제" onclick="delVatAdjustment('${id}')">×</button>`:'')+'</td></tr>';
       }).join('');
     return {html, sum};
   }
@@ -3879,6 +3880,18 @@ async function loadVatAdjustments(){
   const {data,error} = await sb.from('vat_adjustments').select('*').order('year_month');
   if(error){ console.error(error); return []; }
   return data||[];
+}
+
+async function delVatAdjustment(id){
+  const a=vatAdjustments.find(x=>x.id===id);
+  const label=a ? `${a.company||''} ${a.note||''} (${fmtW(a.amount)})`.trim() : '';
+  if(!confirm((label?`"${label}"\n\n`:'')+'이 부가세 조정을 삭제할까요?\n(홈택스 세금계산서는 삭제되지 않습니다)')) return;
+  showSyncStatus('삭제 중...');
+  const {error}=await sb.from('vat_adjustments').delete().eq('id', id);
+  if(error){ console.error(error); showSyncStatus('삭제 실패', true); alert('삭제 실패: '+error.message); return; }
+  vatAdjustments=vatAdjustments.filter(x=>x.id!==id);
+  showSyncStatus('삭제됨');
+  renderClosing();
 }
 
 async function addSplitPayment(){
