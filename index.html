@@ -502,8 +502,8 @@ input[readonly]{background:#f5f5f5;color:#999}
     </div>
     <div class="section-box" style="margin-top:16px">
       <div class="section-title" style="justify-content:space-between">
-        <span>업체별 미지급·미수금 잔액</span>
-        <span style="font-size:12px;color:#888;font-weight:400">선수금·선급금이 있는 업체 · 조회월까지 납품분 중 확인하지 않은 잔액</span>
+        <span>업체별 미지급·미수금 잔액 (현재 미결제분)</span>
+        <span id="cf-balance-asof" style="font-size:12px;color:#888;font-weight:400">전 거래처 · 오늘 기준 납품분 중 결제예정일이 아직 지나지 않은 외상매입금·외상매출금</span>
       </div>
       <div id="cf-balance"></div>
     </div>
@@ -2853,70 +2853,87 @@ function buildSalesParts(){
   });
   return parts;
 }
-function cashConfirmed(kind, dueMo, name){
-  return closingState[`cf_${dueMo}_${kind}_${name}`]==='확인';
+// 잔액 섹션: 조회월이 아니라 "오늘(현재시점)" 기준으로 남는 외상매입금·외상매출금만 보여 준다.
+// - 위의 지급·수금 예정 표는 선택한 조회월(cm)을 쓰고, 잔액만 오늘 날짜를 쓴다.
+// - 납품월이 오늘 달 이하이고, 결제예정일이 오늘 이후(오늘 포함)인 항목만 미결제로 본다.
+//   예정일(일)이 없으면 예정월(dueMo)이 오늘 달보다 뒤인 경우만 포함한다.
+// - 결제예정일이 오늘보다 앞선 항목은 이미 정산된 것으로 본다.
+//   (출금·입금확인 체크는 새로고침 시 사라지므로 잔액 판단 근거로 쓰지 않는다.)
+// - 오늘까지 이미 오간 선급금·선수금 중 아직 납품 전인 것은 마이너스 잔액으로 남겨 둔다.
+function cashflowToday(){
+  const d=new Date();
+  const y=d.getFullYear();
+  const m=String(d.getMonth()+1).padStart(2,'0');
+  const day=String(d.getDate()).padStart(2,'0');
+  return {today:`${y}-${m}-${day}`, todayMo:`${y}-${m}`};
 }
-function openAdvanceBalances(cm){
-  const names=[];
-  splitPayments.forEach(s=>{
-    const name=s.company||'';
-    if(name && !names.some(n=>partyMatch(n, name))) names.push(name);
-  });
+function isOpenBalancePart(p, today, todayMo){
+  if(!p.tradeMo || p.tradeMo>todayMo) return false;
+  if(p.dueDate) return p.dueDate>=today; // 오늘 예정분도 아직 지나지 않은 미결제로 본다
+  // 예정일(일)이 없으면 월 단위로만 비교 — 이번 달 분은 예정 표에 맡기고 잔액에서는 뺀다
+  return !!p.dueMo && p.dueMo>todayMo;
+}
+function isCashByToday(dateStr, today, todayMo){
+  if(!dateStr) return false;
+  if(dateStr.length>=10) return dateStr.slice(0,10)<=today;
+  return dateStr.slice(0,7)<=todayMo;
+}
+function openAdvanceBalances(){
+  const {today, todayMo}=cashflowToday();
   const sales=buildSalesParts();
+  const names=[];
+  const addName=n=>{ if(n && !names.some(x=>partyMatch(x, n))) names.push(n); };
+  _purchaseParts.forEach(p=>addName(p.name));
+  sales.forEach(p=>addName(p.name));
+  splitPayments.forEach(s=>addName(s.company||''));
+  names.sort((a,b)=>a.localeCompare(b,'ko'));
+  const sortLines=lines=>lines.sort((a,b)=>String(a.tradeMo).localeCompare(String(b.tradeMo))||String(a.due).localeCompare(String(b.due)));
   const blocks=[];
   names.forEach(name=>{
-    const hasPay=splitPayments.some(s=>s.amount<0 && partyMatch(s.company||'', name));
-    const hasRecv=splitPayments.some(s=>s.amount>0 && partyMatch(s.company||'', name));
-    if(hasPay){
-      const lines=[];
-      _purchaseParts.filter(p=>partyMatch(p.name, name) && p.tradeMo<=cm).forEach(p=>{
-        const gross=Math.round(p.amt*1.1);
-        const net=gross-(p.deduct||0);
-        if(cashConfirmed('buy', p.dueMo, p.name)) return;
-        if(!net) return;
-        lines.push({tradeMo:p.tradeMo, due:p.dueDate||'', gross, advance:p.deduct||0, net, note:(p.deductNotes||[]).join(', ')});
-      });
-      _buyAdvanceApplied.forEach((part,id)=>{
-        if(!partyMatch(part.name, name) || part.tradeMo<=cm) return;
+    const payLines=[];
+    _purchaseParts.filter(p=>partyMatch(p.name, name) && isOpenBalancePart(p, today, todayMo)).forEach(p=>{
+      const gross=Math.round(p.amt*1.1);
+      const net=gross-(p.deduct||0);
+      if(!net) return;
+      payLines.push({tradeMo:p.tradeMo, due:p.dueDate||'', gross, advance:p.deduct||0, net, note:(p.deductNotes||[]).join(', ')});
+    });
+    _buyAdvanceApplied.forEach((part,id)=>{
+      if(!partyMatch(part.name, name) || !part.tradeMo || part.tradeMo<=todayMo) return;
+      const sp=splitPayments.find(s=>s.id===id);
+      if(!sp) return;
+      if(!isCashByToday(sp.due_date||sp.tax_date||'', today, todayMo)) return;
+      payLines.push({tradeMo:part.tradeMo, due:sp.due_date||'', gross:0, advance:Math.abs(+sp.amount||0), net:-Math.abs(+sp.amount||0), note:(sp.note||'선급금')+' · 이후 납품'});
+    });
+    if(payLines.length) blocks.push({name, kind:'pay', lines:sortLines(payLines), total:payLines.reduce((s,l)=>s+l.net,0)});
+
+    const recvLines=[];
+    sales.filter(p=>partyMatch(p.name, name) && isOpenBalancePart(p, today, todayMo)).forEach(p=>{
+      const gross=Math.round(p.amt*1.1);
+      const net=gross-(p.deduct||0);
+      if(!net) return;
+      recvLines.push({tradeMo:p.tradeMo, due:p.dueDate||'', gross, advance:p.deduct||0, net, note:(p.deductNotes||[]).join(', ')});
+    });
+    sales.filter(p=>partyMatch(p.name, name) && p.tradeMo>todayMo).forEach(p=>{
+      (p.appliedIds||[]).forEach(id=>{
         const sp=splitPayments.find(s=>s.id===id);
         if(!sp) return;
-        const dueMo=(sp.due_date||'').slice(0,7);
-        if(!dueMo || dueMo>cm) return;
-        lines.push({tradeMo:part.tradeMo, due:sp.due_date||'', gross:0, advance:Math.abs(+sp.amount||0), net:-Math.abs(+sp.amount||0), note:(sp.note||'선급금')+' · 이후 납품'});
+        if(!isCashByToday(sp.due_date||sp.tax_date||'', today, todayMo)) return;
+        recvLines.push({tradeMo:p.tradeMo, due:sp.due_date||'', gross:0, advance:Math.abs(+sp.amount||0), net:-Math.abs(+sp.amount||0), note:(sp.note||'선수금')+' · 이후 납품'});
       });
-      lines.sort((a,b)=>String(a.tradeMo).localeCompare(String(b.tradeMo))||String(a.due).localeCompare(String(b.due)));
-      if(lines.length) blocks.push({name, kind:'pay', lines, total:lines.reduce((s,l)=>s+l.net,0)});
-    }
-    if(hasRecv){
-      const lines=[];
-      sales.filter(p=>partyMatch(p.name, name) && p.tradeMo<=cm).forEach(p=>{
-        const gross=Math.round(p.amt*1.1);
-        const net=gross-(p.deduct||0);
-        if(cashConfirmed('sell', p.dueMo, p.name)) return;
-        if(!net) return;
-        lines.push({tradeMo:p.tradeMo, due:p.dueDate||'', gross, advance:p.deduct||0, net, note:(p.deductNotes||[]).join(', ')});
-      });
-      sales.filter(p=>partyMatch(p.name, name) && p.tradeMo>cm).forEach(p=>{
-        (p.appliedIds||[]).forEach(id=>{
-          const sp=splitPayments.find(s=>s.id===id);
-          if(!sp) return;
-          const dueMo=(sp.due_date||'').slice(0,7);
-          if(!dueMo || dueMo>cm) return;
-          lines.push({tradeMo:p.tradeMo, due:sp.due_date||'', gross:0, advance:Math.abs(+sp.amount||0), net:-Math.abs(+sp.amount||0), note:(sp.note||'선수금')+' · 이후 납품'});
-        });
-      });
-      lines.sort((a,b)=>String(a.tradeMo).localeCompare(String(b.tradeMo))||String(a.due).localeCompare(String(b.due)));
-      if(lines.length) blocks.push({name, kind:'recv', lines, total:lines.reduce((s,l)=>s+l.net,0)});
-    }
+    });
+    if(recvLines.length) blocks.push({name, kind:'recv', lines:sortLines(recvLines), total:recvLines.reduce((s,l)=>s+l.net,0)});
   });
   return blocks;
 }
-function renderOpenBalances(cm){
+function renderOpenBalances(){
   const el=document.getElementById('cf-balance');
   if(!el) return;
-  const blocks=openAdvanceBalances(cm);
+  const {today}=cashflowToday();
+  const asof=document.getElementById('cf-balance-asof');
+  if(asof) asof.textContent=`전 거래처 · ${today} 기준 납품분 중 결제예정일이 아직 지나지 않은 외상매입금·외상매출금`;
+  const blocks=openAdvanceBalances();
   if(!blocks.length){
-    el.innerHTML='<p style="margin:0;padding:12px;color:#999;font-size:13px">선수금·선급금이 등록된 업체가 없습니다.</p>';
+    el.innerHTML='<p style="margin:0;padding:12px;color:#999;font-size:13px">현재 시점에서 남는 미결제 잔액이 없습니다.</p>';
     return;
   }
   el.innerHTML=blocks.map(b=>{
@@ -3445,7 +3462,7 @@ function renderCashflow(){
   document.getElementById('cf-recv-total').textContent = '총 ' + fmtW(totalRecv);
   document.getElementById('cf-pay-total').textContent = '총 ' + fmtW(totalPay);
 
-  renderOpenBalances(cm);
+  renderOpenBalances();
 
   // 순현금흐름 요약
   const net = totalRecv - totalPay;
