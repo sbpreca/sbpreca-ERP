@@ -79,7 +79,17 @@ input[readonly]{background:#f5f5f5;color:#999}
 .data-tbl td:last-child{border-right:none}
 .data-tbl tr:last-child td{border-bottom:none}
 .data-tbl tr.tot td{font-weight:700;background:#f5f5f5;border-top:2px solid #ddd}
-/* 잔액 섹션: 라이네트처럼 모든 업체 표의 열 너비·정렬을 동일하게 고정 */
+/* 잔액 섹션: 라이네트처럼 열 너비·정렬 고정 + 매입처/매출처 구역 구분 */
+#cf-balance .cf-bal-group{margin:0 0 14px;padding:0 0 6px;border-left:3px solid transparent}
+#cf-balance .cf-bal-group.pay{border-left-color:#fca5a5;background:linear-gradient(90deg,#fff7f7 0%,#fff 48px)}
+#cf-balance .cf-bal-group.recv{border-left-color:#86efac;background:linear-gradient(90deg,#f7fdf9 0%,#fff 48px)}
+#cf-balance .cf-bal-group-title{display:flex;align-items:center;gap:8px;padding:10px 12px 6px;font-size:12px;font-weight:700;letter-spacing:0.2px}
+#cf-balance .cf-bal-group.pay .cf-bal-group-title{color:#b91c1c}
+#cf-balance .cf-bal-group.recv .cf-bal-group-title{color:#166534}
+#cf-balance .cf-bal-group-title .cf-bal-group-sum{margin-left:auto;font-variant-numeric:tabular-nums}
+#cf-balance .cf-bal-tag{display:inline-block;font-size:10px;font-weight:700;padding:2px 7px;border-radius:3px;vertical-align:middle;margin-right:6px}
+#cf-balance .cf-bal-group.pay .cf-bal-tag{background:#fee2e2;color:#b91c1c}
+#cf-balance .cf-bal-group.recv .cf-bal-tag{background:#dcfce7;color:#166534}
 #cf-balance .cf-bal-block{padding:4px 0 12px}
 #cf-balance .cf-bal-head{display:flex;justify-content:space-between;align-items:baseline;padding:8px 12px 4px}
 #cf-balance .data-tbl{table-layout:fixed}
@@ -2975,65 +2985,80 @@ function openAdvanceBalances(){
   });
   return mergeBalanceBlocks(blocks);
 }
+function renderBalanceBlock(b){
+  const hasPos=b.lines.some(l=>l.net>0);
+  const hasNeg=b.lines.some(l=>l.net<0);
+  let label;
+  if(b.kind==='pay'){
+    if(hasPos && hasNeg) label='미지급·선급금 잔액';
+    else if(b.total>=0) label='미지급잔액';
+    else label='선급금 잔액';
+  }else{
+    if(hasPos && hasNeg) label='미수금·선수금 잔액';
+    else if(b.total>=0) label='미수금 잔액';
+    else label='선수금 잔액';
+  }
+  const color=b.kind==='pay'?'#dc2626':'#166534';
+  const tag=b.kind==='pay'?'매입처':'매출처';
+  const rows=b.lines.length?b.lines.map(l=>`<tr>
+    <td>${l.tradeMo}</td>
+    <td style="white-space:nowrap">${l.due||'-'}</td>
+    <td class="r">${l.gross?fmtW(l.gross):'-'}</td>
+    <td class="r">${l.advance?fmtW(l.advance):'-'}</td>
+    <td class="r" style="font-weight:700;color:${l.net<0?'#166534':color}">${fmtW(l.net)}</td>
+    <td style="font-size:12px;color:#666">${escHtml(l.note||'')}</td>
+  </tr>`).join(''):'<tr><td colspan="6" style="text-align:center;color:#999;padding:10px">남은 잔액이 없습니다.</td></tr>';
+  return `<div class="cf-bal-block">
+    <div class="cf-bal-head">
+      <strong><span class="cf-bal-tag">${tag}</span>${escHtml(b.name)}</strong>
+      <span style="font-weight:700;color:${b.total<0?'#166534':color}">${label} ${fmtW(Math.abs(b.total))}</span>
+    </div>
+    <table class="data-tbl">
+      <colgroup>
+        <col style="width:90px">
+        <col style="width:110px">
+        <col style="width:140px">
+        <col style="width:140px">
+        <col style="width:140px">
+        <col>
+      </colgroup>
+      <thead><tr>
+        <th>거래월</th>
+        <th>예정일</th>
+        <th class="r">계산서금액</th>
+        <th class="r">선수금·선급금</th>
+        <th class="r">잔액</th>
+        <th>내용</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>`;
+}
 function renderOpenBalances(){
   const el=document.getElementById('cf-balance');
   if(!el) return;
   const {today}=cashflowToday();
   const asof=document.getElementById('cf-balance-asof');
-  if(asof) asof.textContent=`전 거래처 · ${today} 기준 납품분 중 결제예정일이 아직 지나지 않은 외상매입금·외상매출금`;
+  if(asof) asof.textContent=`전 거래처 · ${today} 기준 · 매입처(미지급)·매출처(미수금) 구분 · 결제예정일이 아직 지나지 않은 잔액`;
   const blocks=openAdvanceBalances();
   if(!blocks.length){
     el.innerHTML='<p style="margin:0;padding:12px;color:#999;font-size:13px">현재 시점에서 남는 미결제 잔액이 없습니다.</p>';
     return;
   }
-  el.innerHTML=blocks.map(b=>{
-    const hasPos=b.lines.some(l=>l.net>0);
-    const hasNeg=b.lines.some(l=>l.net<0);
-    let label;
-    if(b.kind==='pay'){
-      if(hasPos && hasNeg) label='미지급·선급금 잔액';
-      else if(b.total>=0) label='미지급잔액';
-      else label='선급금 잔액';
-    }else{
-      if(hasPos && hasNeg) label='미수금·선수금 잔액';
-      else if(b.total>=0) label='미수금 잔액';
-      else label='선수금 잔액';
-    }
-    const color=b.kind==='pay'?'#dc2626':'#166534';
-    const rows=b.lines.length?b.lines.map(l=>`<tr>
-      <td>${l.tradeMo}</td>
-      <td style="white-space:nowrap">${l.due||'-'}</td>
-      <td class="r">${l.gross?fmtW(l.gross):'-'}</td>
-      <td class="r">${l.advance?fmtW(l.advance):'-'}</td>
-      <td class="r" style="font-weight:700;color:${l.net<0?'#166534':color}">${fmtW(l.net)}</td>
-      <td style="font-size:12px;color:#666">${escHtml(l.note||'')}</td>
-    </tr>`).join(''):'<tr><td colspan="6" style="text-align:center;color:#999;padding:10px">남은 잔액이 없습니다.</td></tr>';
-    return `<div class="cf-bal-block">
-      <div class="cf-bal-head">
-        <strong>${escHtml(b.name)}</strong>
-        <span style="font-weight:700;color:${b.total<0?'#166534':color}">${label} ${fmtW(Math.abs(b.total))}</span>
-      </div>
-      <table class="data-tbl">
-        <colgroup>
-          <col style="width:90px">
-          <col style="width:110px">
-          <col style="width:140px">
-          <col style="width:140px">
-          <col style="width:140px">
-          <col>
-        </colgroup>
-        <thead><tr>
-          <th>거래월</th>
-          <th>예정일</th>
-          <th class="r">계산서금액</th>
-          <th class="r">선수금·선급금</th>
-          <th class="r">잔액</th>
-          <th>내용</th>
-        </tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
+  const payBlocks=blocks.filter(b=>b.kind==='pay');
+  const recvBlocks=blocks.filter(b=>b.kind==='recv');
+  const groupHtml=(kind, title, list)=>{
+    if(!list.length) return '';
+    const sum=list.reduce((s,b)=>s+b.total,0);
+    const sumLabel=kind==='pay'
+      ? (sum>=0?`미지급 합계 ${fmtW(sum)}`:`선급금 순잔액 ${fmtW(Math.abs(sum))}`)
+      : (sum>=0?`미수금 합계 ${fmtW(sum)}`:`선수금 순잔액 ${fmtW(Math.abs(sum))}`);
+    return `<div class="cf-bal-group ${kind}">
+      <div class="cf-bal-group-title"><span>${title}</span><span class="cf-bal-group-sum">${sumLabel}</span></div>
+      ${list.map(renderBalanceBlock).join('')}
     </div>`;
-  }).join('');
+  };
+  el.innerHTML=groupHtml('pay','매입처 · 미지급·선급금', payBlocks)+groupHtml('recv','매출처 · 미수금·선수금', recvBlocks);
 }
 
 async function renderClosing(){
