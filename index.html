@@ -2492,7 +2492,12 @@ function renderList(){
     if(fb&&!o.items.some(i=>i.buyer===fb))return false;
     if(fs&&!o.no.toLowerCase().includes(fs)&&!o.items.some(i=>(i.item||'').toLowerCase().includes(fs)||(i.buyer||'').toLowerCase().includes(fs)))return false;
     return true;
-  }).sort((a,b)=>b.date.localeCompare(a.date));
+  }).sort((a,b)=>{
+    // 미납품이 있는 발주를 상단, 같은 그룹 안에서는 최근 발주일 순
+    const ap=a.items.some(i=>i.status==='미납품')?0:1;
+    const bp=b.items.some(i=>i.status==='미납품')?0:1;
+    return ap-bp || b.date.localeCompare(a.date) || b.no.localeCompare(a.no);
+  });
   const area=document.getElementById('list-area');
   if(!filtered.length){area.innerHTML='<p style="color:#bbb;text-align:center;padding:2rem">발주 내역이 없어요</p>';return;}
   area.innerHTML=filtered.map(o=>{
