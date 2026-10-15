@@ -2035,8 +2035,10 @@ function showPO(){
     const bi=BUYERS[buyer]||{contact:'담당자'};
     const sub=its.reduce((s,i)=>s+i.bamt,0);
     const poNo=no+'-'+String(idx+1).padStart(2,'0');
-    const deliverKey=sellerKey((its.find(i=>i.seller)||{seller:''}).seller);
-    const di=SELLERS[deliverKey]||{addr:'',contact:''};
+    // 매출처 키(테크피아_SR-40M 등)는 주소·담당자 조회용. 납품처 표기는 회사명만(테크피아).
+    const rawSeller=(its.find(i=>i.seller)||{seller:''}).seller||'';
+    const di=SELLERS[rawSeller]||SELLERS[sellerKey(rawSeller)]||{addr:'',contact:''};
+    const deliverName=rawSeller.split('_')[0]||'';
     const dataRows=its.map((r,i)=>`<tr>
       <td>${i+1}</td>
       <td class="l">${r.item}</td>
@@ -2070,7 +2072,7 @@ function showPO(){
         <tfoot><tr><td colspan="5" style="text-align:right;padding:8px">합　계</td><td class="r">${fmt(sub)}</td><td colspan="2"></td></tr></tfoot>
       </table>
       <div class="po-foot">
-        <div class="po-foot-row"><span class="po-foot-key">납 품 처</span><span class="po-foot-val">${deliverKey||'　'}</span></div>
+        <div class="po-foot-row"><span class="po-foot-key">납 품 처</span><span class="po-foot-val">${deliverName||'　'}</span></div>
         <div class="po-foot-row"><span class="po-foot-key">소 재 지</span><span class="po-foot-val">${di.addr||'　'}</span></div>
         <div class="po-foot-row"><span class="po-foot-key">담 당 자</span><span class="po-foot-val">${di.contact||'　'}</span></div>
         ${note?`<div class="po-foot-row"><span class="po-foot-key">특기사항</span><span class="po-foot-val">${note}</span></div>`:''}
