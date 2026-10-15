@@ -1014,7 +1014,7 @@ const SPECS={'CTO-C3':'20KG/CAN','CTO-B2':'20KG/CAN','SR-40M':'20KG/CAN','다운
 const fmt=n=>Math.round(n||0).toLocaleString('ko-KR');
 const fmtW=n=>fmt(n)+'원';
 const ym=d=>d?d.slice(0,7):'';
-// 매입·매출 인식: 납품완료된 품목만. 매입월=출하월, 매출월=정산월(있으면) 아니면 출하월.
+// 매입(입고)=출하일 기준(미납품 포함). 매출=납품완료만. 매출월=정산월(있으면) 아니면 출하월.
 function isDeliveredItem(i){ return !!(i && i.status==='납품완료'); }
 function sellMonthOf(i){
   const o=String(i&&i.closing_month_override||'').slice(0,7);
@@ -2716,7 +2716,7 @@ function outsidePurchaseInvoices(cm){
   });
   const orderBuyers=new Set();
   orders.flatMap(o=>o.items).forEach(i=>{
-    if(!isDeliveredItem(i) || i.closing_sell_exclude) return;
+    if(i.closing_sell_exclude) return;
     if(!(i.ship && ym(i.ship)===cm) || !i.buyer) return;
     orderBuyers.add(i.buyer);
   });
@@ -2788,7 +2788,8 @@ function splitProject(note){
 function buildPurchaseParts(){
   const map={};
   orders.flatMap(o=>o.items).forEach(i=>{
-    if(!isDeliveredItem(i) || i.closing_sell_exclude) return;
+    // 입고/매입: 출하일이 있으면 상태에 관계없이 집계 (미납품 예정 입고도 마감·지급에 표시)
+    if(i.closing_sell_exclude) return;
     if(!(i.buyer && i.bamt && i.ship)) return;
     const tradeMo=ym(i.ship);
     const dueDate=closingState[`${tradeMo}_buy_${i.buyer}_date`]||'';
@@ -3077,8 +3078,13 @@ async function renderClosing(){
   }
   const cm=document.getElementById('cl-month').value;
   const tab=document.getElementById('cl-tab')?document.getElementById('cl-tab').value:'all';
-  // 매입·매출: 납품완료만. 매입=출하월, 매출=정산월(있으면) 아니면 출하월
-  const months=[...new Set(orders.flatMap(o=>o.items.filter(isDeliveredItem).flatMap(i=>[i.ship?ym(i.ship):'', sellMonthOf(i)])).filter(Boolean))].sort().reverse();
+  // 매입(입고)=출하월(미납품 포함). 매출=납품완료·정산월(있으면) 아니면 출하월
+  const months=[...new Set(orders.flatMap(o=>o.items.flatMap(i=>{
+    const mos=[];
+    if(i.ship) mos.push(ym(i.ship));
+    if(isDeliveredItem(i)){ const sm=sellMonthOf(i); if(sm) mos.push(sm); }
+    return mos;
+  })).filter(Boolean))].sort().reverse();
   document.getElementById('cl-month').innerHTML=`<option value="">전체</option>`+months.map(m=>`<option${m===cm?' selected':''}>${m}</option>`).join('');
   document.getElementById('cl-note').value=monthlyNotes[cm||'all']||'';
 
@@ -3097,9 +3103,9 @@ async function renderClosing(){
   }
 
   const allBuy=allItems.filter(i=>{
-    if(!isDeliveredItem(i) || i.closing_sell_exclude) return false;
-    if(!cm) return true; // 전체 보기
-    if(!(i.ship && ym(i.ship)===cm)) return false; // 이번 달 건만
+    if(i.closing_sell_exclude) return false;
+    if(!cm) return !!i.ship; // 전체 보기: 출하일 있는 입고분
+    if(!(i.ship && ym(i.ship)===cm)) return false; // 이번 달 출하(입고) 건
     // ※ 이전 달 처리완료 여부와 무관 — 해당 월에 거래가 있으면 항상 표시
     return true;
   });
@@ -3110,7 +3116,7 @@ async function renderClosing(){
     return true;
   }); // 매출처 집계용: 납품완료, 정산월 또는 출하월
 
-  // 매입처별 집계 (품목별 상세 포함) — 납품완료·출하월
+  // 매입처별 집계 (품목별 상세 포함) — 출하(입고)월, 미납품 포함
   const bm={};
   allBuy.forEach(i=>{
     if(!i.buyer)return;
@@ -3358,14 +3364,16 @@ function renderCashflow(){
   const sellByTradeMo = {}; // {거래월: {업체: amt}}
 
   allItems.forEach(i=>{
-    if(!isDeliveredItem(i) || i.closing_sell_exclude) return;
+    if(i.closing_sell_exclude) return;
+    // 매입/지급: 출하(입고)월 — 미납품 예정도 포함
     if(i.buyer && i.bamt && i.ship){
       const mo = ym(i.ship);
       if(!buyByTradeMo[mo]) buyByTradeMo[mo]={};
       if(!buyByTradeMo[mo][i.buyer]) buyByTradeMo[mo][i.buyer]=0;
       buyByTradeMo[mo][i.buyer]+=i.bamt;
     }
-    if(i.seller && i.samt && sellMonthOf(i)){
+    // 매출/수령: 납품완료만
+    if(isDeliveredItem(i) && i.seller && i.samt && sellMonthOf(i)){
       const mo = sellMonthOf(i);
       if(!mo) return;
       const co = i.seller.split('_')[0];
@@ -3696,9 +3704,9 @@ async function renderHometax(){
   const orderSupplyOf = (company, side) => {
     let sum=0;
     orders.flatMap(o=>o.items).forEach(i=>{
-      if(!isDeliveredItem(i) || i.closing_sell_exclude) return;
+      if(i.closing_sell_exclude) return;
       if(side==='sell'){
-        if(!i.samt) return;
+        if(!isDeliveredItem(i) || !i.samt) return;
         if(sellMonthOf(i)!==cm) return;
         const co=(i.seller||'').split('_')[0];
         if(co && partyMatch(company, co)) sum+=i.samt;
