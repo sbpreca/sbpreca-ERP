@@ -1014,7 +1014,8 @@ const SPECS={'CTO-C3':'20KG/CAN','CTO-B2':'20KG/CAN','SR-40M':'20KG/CAN','다운
 const fmt=n=>Math.round(n||0).toLocaleString('ko-KR');
 const fmtW=n=>fmt(n)+'원';
 const ym=d=>d?d.slice(0,7):'';
-// 매출이 잡히는 달. 저장된 정산월이 있으면 그 달이고, 없으면 출하월이다. 매입은 항상 출하월.
+// 매입·매출 인식: 납품완료된 품목만. 매입월=출하월, 매출월=정산월(있으면) 아니면 출하월.
+function isDeliveredItem(i){ return !!(i && i.status==='납품완료'); }
 function sellMonthOf(i){
   const o=String(i&&i.closing_month_override||'').slice(0,7);
   return /^\d{4}-\d{2}$/.test(o) ? o : ym(i&&i.ship);
@@ -2710,7 +2711,7 @@ function outsidePurchaseInvoices(cm){
   });
   const orderBuyers=new Set();
   orders.flatMap(o=>o.items).forEach(i=>{
-    if(i.closing_sell_exclude) return;
+    if(!isDeliveredItem(i) || i.closing_sell_exclude) return;
     if(!(i.ship && ym(i.ship)===cm) || !i.buyer) return;
     orderBuyers.add(i.buyer);
   });
@@ -2782,7 +2783,7 @@ function splitProject(note){
 function buildPurchaseParts(){
   const map={};
   orders.flatMap(o=>o.items).forEach(i=>{
-    if(i.closing_sell_exclude) return;
+    if(!isDeliveredItem(i) || i.closing_sell_exclude) return;
     if(!(i.buyer && i.bamt && i.ship)) return;
     const tradeMo=ym(i.ship);
     const dueDate=closingState[`${tradeMo}_buy_${i.buyer}_date`]||'';
@@ -2856,7 +2857,7 @@ let _buyAdvanceApplied=new Map();
 function buildSalesParts(){
   const map={};
   orders.flatMap(o=>o.items).forEach(i=>{
-    if(i.status!=='납품완료' || i.closing_sell_exclude) return;
+    if(!isDeliveredItem(i) || i.closing_sell_exclude) return;
     if(!(i.seller && i.samt && sellMonthOf(i))) return;
     const company=(i.seller||'').split('_')[0];
     const tradeMo=sellMonthOf(i);
@@ -3071,8 +3072,8 @@ async function renderClosing(){
   }
   const cm=document.getElementById('cl-month').value;
   const tab=document.getElementById('cl-tab')?document.getElementById('cl-tab').value:'all';
-  // 매입: 출하월. 매출: 납품완료만, 정산월이 있으면 그 달, 없으면 출하월
-  const months=[...new Set(orders.flatMap(o=>o.items.flatMap(i=>[i.ship?ym(i.ship):'', sellMonthOf(i)])).filter(Boolean))].sort().reverse();
+  // 매입·매출: 납품완료만. 매입=출하월, 매출=정산월(있으면) 아니면 출하월
+  const months=[...new Set(orders.flatMap(o=>o.items.filter(isDeliveredItem).flatMap(i=>[i.ship?ym(i.ship):'', sellMonthOf(i)])).filter(Boolean))].sort().reverse();
   document.getElementById('cl-month').innerHTML=`<option value="">전체</option>`+months.map(m=>`<option${m===cm?' selected':''}>${m}</option>`).join('');
   document.getElementById('cl-note').value=monthlyNotes[cm||'all']||'';
 
@@ -3091,20 +3092,20 @@ async function renderClosing(){
   }
 
   const allBuy=allItems.filter(i=>{
-    if(i.closing_sell_exclude) return false;
+    if(!isDeliveredItem(i) || i.closing_sell_exclude) return false;
     if(!cm) return true; // 전체 보기
     if(!(i.ship && ym(i.ship)===cm)) return false; // 이번 달 건만
     // ※ 이전 달 처리완료 여부와 무관 — 해당 월에 거래가 있으면 항상 표시
     return true;
   });
   const all=allItems.filter(i=>{
-    if(i.status!=='납품완료') return false;
+    if(!isDeliveredItem(i)) return false;
     if(!cm) return true;
     if(sellMonthOf(i)!==cm) return false;
     return true;
   }); // 매출처 집계용: 납품완료, 정산월 또는 출하월
 
-  // 매입처별 집계 (품목별 상세 포함) - 출하일 기준 그대로
+  // 매입처별 집계 (품목별 상세 포함) — 납품완료·출하월
   const bm={};
   allBuy.forEach(i=>{
     if(!i.buyer)return;
@@ -3352,7 +3353,7 @@ function renderCashflow(){
   const sellByTradeMo = {}; // {거래월: {업체: amt}}
 
   allItems.forEach(i=>{
-    if(i.closing_sell_exclude) return;
+    if(!isDeliveredItem(i) || i.closing_sell_exclude) return;
     if(i.buyer && i.bamt && i.ship){
       const mo = ym(i.ship);
       if(!buyByTradeMo[mo]) buyByTradeMo[mo]={};
@@ -3690,9 +3691,9 @@ async function renderHometax(){
   const orderSupplyOf = (company, side) => {
     let sum=0;
     orders.flatMap(o=>o.items).forEach(i=>{
-      if(i.closing_sell_exclude) return;
+      if(!isDeliveredItem(i) || i.closing_sell_exclude) return;
       if(side==='sell'){
-        if(i.status!=='납품완료' || !i.samt) return;
+        if(!i.samt) return;
         if(sellMonthOf(i)!==cm) return;
         const co=(i.seller||'').split('_')[0];
         if(co && partyMatch(company, co)) sum+=i.samt;
@@ -4002,21 +4003,20 @@ function toggleDetail(detailId, rowEl){
 /* ── 손익계산서 ── */
 function renderPL(){
   const pm=document.getElementById('pl-month').value;
-  // 매입은 출하월, 매출은 정산월 또는 출하월
-  const months=[...new Set(orders.flatMap(o=>o.items.flatMap(i=>[i.ship?ym(i.ship):'', sellMonthOf(i)])).filter(Boolean))].sort().reverse();
+  // 납품완료분만. 매입=출하월, 매출=정산월 또는 출하월
+  const months=[...new Set(orders.flatMap(o=>o.items.filter(isDeliveredItem).flatMap(i=>[i.ship?ym(i.ship):'', sellMonthOf(i)])).filter(Boolean))].sort().reverse();
   document.getElementById('pl-month').innerHTML=`<option value="">전체</option>`+months.map(m=>`<option${m===pm?' selected':''}>${m}</option>`).join('');
   document.getElementById('pl-note').value=monthlyNotes[pm||'all']||'';
 
-  // 납품일(출하일) 기준으로 집계 - 실제 "납품완료"된 것만 매출/매입으로 인식
-  // 매입: 항상 납품일(출하일) 그대로 (재고로 남기는 개념이라 재지정/제외 대상 아님)
+  // 납품완료된 것만 매입·매출로 동시 인식. 매입=출하월, 매출=정산월 또는 출하월.
   const allBuy=orders.flatMap(o=>o.items).filter(i=>{
-    if(i.status!=='납품완료') return false;
+    if(!isDeliveredItem(i)) return false;
     if(!pm) return true;
     return i.ship && ym(i.ship)===pm;
   });
-  // 매출: 납품완료만. 정산월이 있으면 그 달, 없으면 출하월. 마감제외는 매출에서 뺀다.
+  // 매출: 마감제외는 매출에서만 뺀다.
   const allSell=orders.flatMap(o=>o.items).filter(i=>{
-    if(i.status!=='납품완료') return false;
+    if(!isDeliveredItem(i)) return false;
     if(i.closing_sell_exclude) return false;
     if(!pm) return true;
     return sellMonthOf(i)===pm;
@@ -4291,7 +4291,7 @@ function renderAnnual(){
     }
     orders.forEach(o=>{
       o.items.forEach(i=>{
-        if(i.status!=='납품완료') return;
+        if(!isDeliveredItem(i)) return;
         if(category==='매출' && i.closing_sell_exclude) return;
         const monthKey=category==='매출' ? sellMonthOf(i) : ym(i.ship);
         if(!monthKey || monthKey.slice(0,4)!==curY) return;
