@@ -2277,12 +2277,7 @@ function showTSfromDeliver(){
   document.getElementById('dynamic-page-style').textContent='';
   document.getElementById('doc-frame').style.width='794px';
   document.getElementById('overlay').style.display='block';
-  // 납품완료 처리
-  checked.forEach(r=>{
-    const o=orders.find(x=>x.no===r.order_no);
-    if(o) o.items[r.item_idx].status='납품완료';
-  });
-  persist([...new Set(checked.map(r=>r.order_no))]);renderDeliver();
+  // 명세표 PDF만 생성. 납품완료(매입·매출 인식)는 상태 칸에서 따로 바꾼다.
 }
 
 function splitItem(idx){
@@ -2377,12 +2372,7 @@ function quickTS(idx){
   document.getElementById('dynamic-page-style').textContent='';
   document.getElementById('doc-frame').style.width='794px';
   document.getElementById('overlay').style.display='block';
-  // 미납품이었던 항목만 납품완료로 전환
-  items.forEach(r2=>{
-    const o=orders.find(x=>x.no===r2.order_no);
-    if(o&&o.items[r2.item_idx].status==='미납품') o.items[r2.item_idx].status='납품완료';
-  });
-  persist([...new Set(items.map(r2=>r2.order_no))]);renderDeliver();
+  // 명세표 PDF만 생성. 납품완료(매입·매출 인식)는 상태 칸에서 따로 바꾼다.
 }
 
 function renderDeliver(){
