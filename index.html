@@ -119,6 +119,9 @@ input[readonly]{background:#f5f5f5;color:#999}
 .deliver-tbl input[type=date]{font-size:12px;padding:4px 7px;border:1px solid #ddd;border-radius:4px;width:auto}
 .setting-section{margin-bottom:28px}
 .setting-section h3{font-size:13px;font-weight:700;color:#333;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #eee}
+.setting-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #eee;flex-wrap:wrap}
+.setting-head h3{margin:0;padding:0;border:0}
+.setting-cat-filter{border:1px solid #ddd;border-radius:4px;padding:5px 10px;font-size:13px;background:#fff;color:#333;min-width:110px}
 .setting-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 
 /* PDF 오버레이 */
@@ -803,14 +806,24 @@ input[readonly]{background:#f5f5f5;color:#999}
   <!-- 설정 -->
   <div id="page-settings" class="page">
     <div class="setting-section">
-      <h3>품목 단가표 (매입단가 / 매출단가)</h3>
+      <div class="setting-head">
+        <h3>품목 단가표 (매입단가 / 매출단가)</h3>
+        <select id="filter-price-cat" class="setting-cat-filter" onchange="renderItemPrices()">
+          <option value="전체">전체</option>
+          <option value="조명">조명</option>
+          <option value="원부자재">원부자재</option>
+          <option value="수수료">수수료</option>
+          <option value="미분류">미분류</option>
+        </select>
+      </div>
       <p style="font-size:13px;color:#666;margin-bottom:12px">업체와 무관하게 품목 하나에 매입단가·매출단가를 등록해두면, 발주 입력 시 품목을 고를 때 자동으로 채워져요 (에누리 등 필요하면 그 자리에서 바로 수정 가능).</p>
       <table class="data-tbl">
-        <thead><tr><th>품목</th><th class="r" style="width:140px">매입단가</th><th class="r" style="width:140px">매출단가</th><th style="width:60px"></th></tr></thead>
+        <thead><tr><th>품목</th><th style="width:90px">분류</th><th class="r" style="width:140px">매입단가</th><th class="r" style="width:140px">매출단가</th><th style="width:60px"></th></tr></thead>
         <tbody id="item-price-body"></tbody>
       </table>
       <div style="padding:10px 12px;display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid #eee">
         <input id="new-price-item" placeholder="품목명" style="width:200px">
+        <select id="new-price-category" style="width:110px"><option value="조명">조명</option><option value="원부자재">원부자재</option><option value="수수료">수수료</option></select>
         <input type="number" id="new-price-buy" placeholder="매입단가" style="width:130px">
         <input type="number" id="new-price-sell" placeholder="매출단가" style="width:130px">
         <button class="btn btn-save" onclick="addItemPrice()">+ 추가</button>
@@ -847,7 +860,16 @@ input[readonly]{background:#f5f5f5;color:#999}
       <div style="margin-top:16px"><button class="btn btn-save" onclick="saveConfig()">설정 저장</button><span class="msg" id="cfg-msg" style="margin-left:10px"></span></div>
     </div>
     <div class="setting-section">
-      <h3>매입처 관리</h3>
+      <div class="setting-head">
+        <h3>매입처 관리</h3>
+        <select id="filter-buyer-cat" class="setting-cat-filter" onchange="renderBuyerContacts()">
+          <option value="전체">전체</option>
+          <option value="조명">조명</option>
+          <option value="원부자재">원부자재</option>
+          <option value="수수료">수수료</option>
+          <option value="미분류">미분류</option>
+        </select>
+      </div>
       <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
         <input id="new-buyer-name" placeholder="매입처명" style="width:160px">
         <input id="new-buyer-contact" placeholder="담당자" style="width:160px">
@@ -860,7 +882,16 @@ input[readonly]{background:#f5f5f5;color:#999}
       </table>
     </div>
     <div class="setting-section">
-      <h3>매출처 관리</h3>
+      <div class="setting-head">
+        <h3>매출처 관리</h3>
+        <select id="filter-seller-cat" class="setting-cat-filter" onchange="renderSellerContacts()">
+          <option value="전체">전체</option>
+          <option value="조명">조명</option>
+          <option value="원부자재">원부자재</option>
+          <option value="수수료">수수료</option>
+          <option value="미분류">미분류</option>
+        </select>
+      </div>
       <p style="font-size:12px;color:#666;margin:0 0 12px">매출처는 회사명만 등록해요. 납품 주소·담당자는 아래 배송지에서 관리합니다.</p>
       <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
         <input id="new-seller-name" placeholder="매출처명(회사)" style="width:160px">
@@ -998,7 +1029,8 @@ const DEFAULT_CFG={
     '이은진':{tel:'010-5501-4883',email:'flyingej@naver.com'},
     '김은희':{tel:'',email:'okehkim@naver.com'}
   },
-  delivery_sites:JSON.parse(JSON.stringify(DEFAULT_DELIVERY_SITES))
+  delivery_sites:JSON.parse(JSON.stringify(DEFAULT_DELIVERY_SITES)),
+  item_categories:{}
 };
 let MY=JSON.parse(JSON.stringify(DEFAULT_CFG));
 
@@ -1611,7 +1643,9 @@ async function loadConfigFromDb(){
     await sb.from('company_config').insert({id:1, data:DEFAULT_CFG});
     return {...DEFAULT_CFG};
   }
-  return data.data;
+  const cfg=data.data||{};
+  if(!cfg.item_categories||typeof cfg.item_categories!=='object') cfg.item_categories={};
+  return cfg;
 }
 
 async function saveConfigToDb(){
@@ -1917,26 +1951,75 @@ async function delDeliverySite(idx){
   renderDeliverySites();
 }
 
+function settingsCatFilter(id){
+  const el=document.getElementById(id);
+  return el?el.value:'전체';
+}
+function partyMatchesCat(info, filter){
+  if(!filter||filter==='전체') return true;
+  const cat=info&&info.category?info.category:'미분류';
+  return cat===filter;
+}
+function itemCategory(item){
+  if(!item) return '미분류';
+  if(MY&&MY.item_categories&&MY.item_categories[item]) return MY.item_categories[item];
+  const counts={};
+  (orders||[]).forEach(o=>{
+    (o.items||[]).forEach(it=>{
+      if(it.item!==item) return;
+      const bc=BUYERS[it.buyer]&&BUYERS[it.buyer].category;
+      const sc=SELLERS[sellerCompany(it.seller||'')]&&SELLERS[sellerCompany(it.seller||'')].category;
+      const c=bc||sc;
+      if(c) counts[c]=(counts[c]||0)+1;
+    });
+  });
+  let best=null, n=0;
+  Object.entries(counts).forEach(([k,v])=>{ if(v>n){best=k;n=v;} });
+  if(best) return best;
+  if(/CTO|SR-40|ITO|Crucible|getter|Sensor Crystal|m bar|네오룩스|AlN|Al Crucible/i.test(item)) return '원부자재';
+  if(/LED|다운라이트|방습|평판|직부|투광|방폭|CR-25|클립|HL-Exd|방폭등/i.test(item)) return '조명';
+  if(/배송|수수료|용역/i.test(item)) return '수수료';
+  return '미분류';
+}
+async function setItemCategory(item, category){
+  if(!MY.item_categories) MY.item_categories={};
+  MY.item_categories[item]=category||'미분류';
+  await saveConfigToDb();
+  renderItemPrices();
+}
+
 function renderItemPrices(){
-  const names=Object.keys(ITEM_PRICES).sort();
+  const filter=settingsCatFilter('filter-price-cat');
+  const names=Object.keys(ITEM_PRICES).sort().filter(item=>!filter||filter==='전체'||itemCategory(item)===filter);
   const body=document.getElementById('item-price-body');
   if(!names.length){
-    body.innerHTML=`<tr><td colspan="4" style="text-align:center;color:#bbb;padding:1.2rem">등록된 단가가 없어요</td></tr>`;
+    body.innerHTML=`<tr><td colspan="5" style="text-align:center;color:#bbb;padding:1.2rem">${filter!=='전체'?'이 분류에 등록된 단가가 없어요':'등록된 단가가 없어요'}</td></tr>`;
     return;
   }
   body.innerHTML=names.map(item=>{
     const p=ITEM_PRICES[item];
+    const cat=itemCategory(item);
+    const esc=item.replace(/'/g,"\\'");
     return `<tr>
       <td style="font-weight:500">${item}</td>
+      <td style="padding:4px 6px">
+        <select style="width:100%;border:1px solid #ddd;border-radius:4px;padding:4px 6px;font-size:12px"
+          onchange="setItemCategory('${esc}',this.value)">
+          <option value="조명"${cat==='조명'?' selected':''}>조명</option>
+          <option value="원부자재"${cat==='원부자재'?' selected':''}>원부자재</option>
+          <option value="수수료"${cat==='수수료'?' selected':''}>수수료</option>
+          <option value="미분류"${cat==='미분류'?' selected':''}>미분류</option>
+        </select>
+      </td>
       <td class="r" style="padding:4px 8px">
         <input type="number" value="${p.buy||0}" style="width:120px;text-align:right;border:1px solid #ddd;border-radius:4px;padding:4px 6px"
-          onchange="saveItemPriceField('${item.replace(/'/g,"\\'")}','buy',this.value)">
+          onchange="saveItemPriceField('${esc}','buy',this.value)">
       </td>
       <td class="r" style="padding:4px 8px">
         <input type="number" value="${p.sell||0}" style="width:120px;text-align:right;border:1px solid #ddd;border-radius:4px;padding:4px 6px"
-          onchange="saveItemPriceField('${item.replace(/'/g,"\\'")}','sell',this.value)">
+          onchange="saveItemPriceField('${esc}','sell',this.value)">
       </td>
-      <td style="text-align:center"><button class="del-btn" onclick="delItemPrice('${item.replace(/'/g,"\\'")}')">×</button></td>
+      <td style="text-align:center"><button class="del-btn" onclick="delItemPrice('${esc}')">×</button></td>
     </tr>`;
   }).join('');
 }
@@ -1951,9 +2034,13 @@ async function addItemPrice(){
   const item=document.getElementById('new-price-item').value.trim();
   const buy=+document.getElementById('new-price-buy').value||0;
   const sell=+document.getElementById('new-price-sell').value||0;
+  const category=document.getElementById('new-price-category').value||'조명';
   if(!item){ alert('품목명을 입력해주세요'); return; }
   ITEM_PRICES[item]={buy,sell};
+  if(!MY.item_categories) MY.item_categories={};
+  MY.item_categories[item]=category;
   await upsertItemPrice(item,buy,sell);
+  await saveConfigToDb();
   document.getElementById('new-price-item').value='';
   document.getElementById('new-price-buy').value='';
   document.getElementById('new-price-sell').value='';
@@ -1962,15 +2049,25 @@ async function addItemPrice(){
 
 async function delItemPrice(item){
   delete ITEM_PRICES[item];
+  if(MY.item_categories) delete MY.item_categories[item];
   await deleteItemPrice(item);
+  await saveConfigToDb();
   renderItemPrices();
 }
 
 function renderBuyerContacts(){
-  document.getElementById('buyer-contact-body').innerHTML=Object.entries(BUYERS).map(([name,info])=>`
+  const filter=settingsCatFilter('filter-buyer-cat');
+  const rows=Object.entries(BUYERS).filter(([,info])=>partyMatchesCat(info,filter));
+  const body=document.getElementById('buyer-contact-body');
+  if(!rows.length){
+    body.innerHTML=`<tr><td colspan="6" style="text-align:center;color:#bbb;padding:1.2rem">${filter!=='전체'?'이 분류에 매입처가 없어요':'등록된 매입처가 없어요'}</td></tr>`;
+    return;
+  }
+  body.innerHTML=rows.map(([name,info])=>`
     <tr id="buyer-row-${name}">
       <td style="font-weight:500">${name}</td>
       <td id="buyer-contact-${name}">${info.contact||'-'}</td>
+      <td id="buyer-email-${name}" style="font-size:12px;color:#666">${info.email||'-'}</td>
       <td id="buyer-manager-${name}" style="color:#1d4ed8;font-weight:500">${info.manager||'이은진'}</td>
       <td id="buyer-category-${name}">${info.category||'미분류'}</td>
       <td style="text-align:center;display:flex;gap:4px;justify-content:center">
@@ -1992,9 +2089,12 @@ async function editBuyer(name){
     const newContact=contactCell.querySelector('input').value;
     const newManager=managerCell.querySelector('select').value;
     const newCategory=categoryCell.querySelector('select').value;
+    const emailCell=document.getElementById('buyer-email-'+name);
+    const newEmail=emailCell&&emailCell.querySelector('input')?emailCell.querySelector('input').value:'';
     BUYERS[name].contact=newContact;
     BUYERS[name].manager=newManager;
     BUYERS[name].category=newCategory;
+    BUYERS[name].email=newEmail;
     await saveBuyerToDb(name, BUYERS[name]);
     row.dataset.editing='';
     renderBuyerContacts();
@@ -2017,10 +2117,18 @@ async function editBuyer(name){
   row.querySelector('button').style.color='#fff';
 }
 function renderSellerContacts(){
-  document.getElementById('seller-contact-body').innerHTML=Object.entries(SELLERS).map(([name,info])=>`
+  const filter=settingsCatFilter('filter-seller-cat');
+  const rows=Object.entries(SELLERS).filter(([,info])=>partyMatchesCat(info,filter));
+  const body=document.getElementById('seller-contact-body');
+  if(!rows.length){
+    body.innerHTML=`<tr><td colspan="7" style="text-align:center;color:#bbb;padding:1.2rem">${filter!=='전체'?'이 분류에 매출처가 없어요':'등록된 매출처가 없어요'}</td></tr>`;
+    return;
+  }
+  body.innerHTML=rows.map(([name,info])=>`
     <tr id="seller-row-${name}">
       <td style="font-weight:500">${name}</td>
       <td id="seller-contact-${name}">${info.contact||'-'}</td>
+      <td id="seller-email-${name}" style="font-size:12px;color:#666">${info.email||'-'}</td>
       <td id="seller-manager-${name}" style="color:#1d4ed8;font-weight:500">${info.manager||'이은진'}</td>
       <td id="seller-category-${name}">${info.category||'미분류'}</td>
       <td style="font-size:12px;color:#666">${info.biz||''}</td>
@@ -2041,9 +2149,12 @@ async function editSeller(name){
     const newContact=contactCell.querySelector('input').value;
     const newManager=managerCell.querySelector('select').value;
     const newCategory=categoryCell.querySelector('select').value;
+    const emailCell=document.getElementById('seller-email-'+name);
+    const newEmail=emailCell&&emailCell.querySelector('input')?emailCell.querySelector('input').value:'';
     SELLERS[name].contact=newContact;
     SELLERS[name].manager=newManager;
     SELLERS[name].category=newCategory;
+    SELLERS[name].email=newEmail;
     await saveSellerToDb(name, SELLERS[name]);
     row.dataset.editing='';
     renderSellerContacts();
