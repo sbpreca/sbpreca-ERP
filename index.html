@@ -656,9 +656,10 @@ input[readonly]{background:#f5f5f5;color:#999}
       <div>
         <div class="section-box" style="margin-bottom:14px">
           <div class="section-title" style="justify-content:space-between">
-            <span>판매비와 관리비</span>
+            <span>판매비와 관리비 <span style="font-weight:400;color:#888;font-size:12px">계정별 합계</span></span>
             <button class="btn btn-save" style="font-size:11px;padding:3px 12px" onclick="addSgaItem()">+ 항목 추가</button>
           </div>
+          <p id="sga-source-note" style="margin:0 12px 8px;font-size:12px;color:#888"></p>
           <table class="data-tbl">
             <thead><tr><th>계정 과목</th><th class="r">금액</th><th style="width:30px"></th></tr></thead>
             <tbody id="sga-body"></tbody>
@@ -3998,10 +3999,49 @@ function toggleDetail(detailId, rowEl){
 }
 
 /* ── 손익계산서 ── */
-function renderPL(){
+// 지출분류(bank_tx)에서 판관비만 계정별로 합산 (건별 내역은 넣지 않음)
+function aggregateSgaFromBank(ym){
+  const map={};
+  (txAll||[]).forEach(t=>{
+    if(ym && t.year_month!==ym) return;
+    if(t.direction!=='out') return;
+    const isSga=t.pl_type==='판관비' || ACCOUNT_PLTYPE[t.account]==='판관비';
+    if(!isSga) return;
+    const acc=String(t.account||'').trim()||'(미분류)';
+    map[acc]=(map[acc]||0)+(+t.amount||0);
+  });
+  return Object.entries(map)
+    .map(([name,amt])=>({name, amt}))
+    .filter(i=>i.amt)
+    .sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+}
+function rollupSgaSaved(){
+  const map={};
+  Object.keys(sgaData||{}).forEach(k=>{
+    if(k==='all') return;
+    (sgaData[k]||[]).forEach(i=>{
+      const n=String(i.name||'').trim();
+      if(!n) return;
+      map[n]=(map[n]||0)+(+i.amt||0);
+    });
+  });
+  return Object.entries(map)
+    .map(([name,amt])=>({name, amt}))
+    .filter(i=>i.amt)
+    .sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+}
+async function renderPL(){
+  if(!_txLoaded){
+    txAll=await loadBankTxFromDb();
+    _txLoaded=true;
+  }
   const pm=document.getElementById('pl-month').value;
-  // 납품완료분만. 매입=출하월, 매출=정산월 또는 출하월
-  const months=[...new Set(orders.flatMap(o=>o.items.filter(isDeliveredItem).flatMap(i=>[i.ship?ym(i.ship):'', sellMonthOf(i)])).filter(Boolean))].sort().reverse();
+  // 납품완료 거래월 + 판관비(손익/지출분류)가 있는 달
+  const months=[...new Set([
+    ...orders.flatMap(o=>o.items.filter(isDeliveredItem).flatMap(i=>[i.ship?ym(i.ship):'', sellMonthOf(i)])),
+    ...Object.keys(sgaData||{}).filter(k=>k!=='all'),
+    ...(txAll||[]).map(t=>t.year_month)
+  ].filter(Boolean))].sort().reverse();
   document.getElementById('pl-month').innerHTML=`<option value="">전체</option>`+months.map(m=>`<option${m===pm?' selected':''}>${m}</option>`).join('');
   document.getElementById('pl-note').value=monthlyNotes[pm||'all']||'';
 
@@ -4032,10 +4072,15 @@ function renderPL(){
   const cogs=beginInv+purchases-endInv; // 매출원가 = 기초재고 + 당기매입 - 기말재고
   const gross=sales-cogs;
 
-  // 판관비
+  // 판관비: 저장된 계정별 합계. 없으면 지출분류(계정별)로 표시 (건별 내역은 안 씀)
   const sgaKey=pm||'all';
-  if(!sgaData[sgaKey]) sgaData[sgaKey]=[];
-  const sgaList=sgaData[sgaKey]||[];
+  if(pm && !sgaData[sgaKey]) sgaData[sgaKey]=[];
+  let sgaSource='saved';
+  let sgaList=pm ? (sgaData[sgaKey]||[]) : rollupSgaSaved();
+  if(!sgaList.length){
+    sgaList=aggregateSgaFromBank(pm||'');
+    sgaSource=sgaList.length?'bank':'empty';
+  }
   const totalSga=sgaList.reduce((s,i)=>s+(+i.amt||0),0);
   const opIncome=gross-totalSga;
 
@@ -4125,14 +4170,76 @@ function renderPL(){
   const curMo = pm ? +pm.slice(5,7) : 0;
   const curYr = pm ? pm.slice(0,4) : '';
 
+  // 판관비·영업외: 계정(항목)별 합계만 표시
+  const sgaNote=document.getElementById('sga-source-note');
+  if(sgaNote){
+    sgaNote.textContent=sgaSource==='bank'
+      ? (pm?`${pm} · 지출분류 계정별 합계 (건별 내역은 표시하지 않아요)`:'전체 · 지출분류 계정별 합계')
+      : (sgaSource==='saved'?(pm?`${pm} · 저장된 계정별 합계`:'전체 · 저장된 계정별 합계'):'');
+  }
+  const sgaBody=document.getElementById('sga-body');
+  const sgaTot=document.getElementById('sga-total');
+  if(sgaBody){
+    if(!sgaList.length){
+      sgaBody.innerHTML='<tr><td colspan="3" style="text-align:center;color:#bbb;padding:1rem">계정별 판관비가 없어요</td></tr>';
+    }else{
+      const editable=sgaSource==='saved' && !!pm;
+      sgaBody.innerHTML=sgaList.map((it,idx)=>{
+        if(!editable){
+          return `<tr>
+            <td style="font-weight:600">${escHtml(it.name)}</td>
+            <td class="r" style="font-variant-numeric:tabular-nums">${fmtW(it.amt)}</td>
+            <td></td>
+          </tr>`;
+        }
+        return `<tr>
+          <td style="font-weight:600">${escHtml(it.name)}</td>
+          <td class="r">
+            <input type="number" value="${+it.amt||0}" style="width:130px;text-align:right;border:1px solid #ddd;border-radius:4px;padding:4px 8px;font-size:13px"
+              onchange="saveSgaAmt('${sgaKey}',${idx},this.value)">
+          </td>
+          <td style="text-align:center"><button class="del-btn" title="삭제" onclick="delSgaItem('${sgaKey}',${idx})">×</button></td>
+        </tr>`;
+      }).join('');
+    }
+  }
+  if(sgaTot) sgaTot.textContent=fmtW(totalSga);
+
+  const otherBody=document.getElementById('other-body');
+  if(otherBody){
+    if(!otherList.length){
+      otherBody.innerHTML='<tr><td colspan="2" style="text-align:center;color:#bbb;padding:1rem">항목 없음</td></tr>';
+    }else{
+      otherBody.innerHTML=otherList.map(it=>`<tr>
+        <td>${escHtml(it.name)} <span style="font-size:11px;color:#888">${it.type==='inc'?'수익':'비용'}</span></td>
+        <td class="r" style="color:${it.type==='inc'?'#166534':'#dc2626'};font-variant-numeric:tabular-nums">${fmtW(it.amt)}</td>
+      </tr>`).join('');
+    }
+  }
+
   _plCache={pm,sales,salesRaw,salesAdj,purchases,purchasesRaw,purchaseAdj,beginInv,endInv,cogs,gross,
     totalSga,sgaList,opIncome,otherInc,otherExp,otherList,preIncome};
 }
 let _plCache=null;
 
+function saveSgaAmt(key, idx, value){
+  if(!sgaData[key]||!sgaData[key][idx]) return;
+  sgaData[key][idx].amt=+value||0;
+  markAnnualPlMonth(key);
+  persistSga();
+  renderPL();
+}
+function delSgaItem(key, idx){
+  if(!sgaData[key]||!sgaData[key][idx]) return;
+  if(!confirm(`「${sgaData[key][idx].name}」항목을 삭제할까요?`)) return;
+  sgaData[key].splice(idx,1);
+  persistSga();
+  renderPL();
+}
 function addSgaItem(){
   const pm=document.getElementById('pl-month').value;
   const key=pm||'all';
+  if(!pm){ alert('월을 선택한 뒤 항목을 추가해주세요'); return; }
   const name=prompt('계정 과목명을 입력하세요');
   if(!name)return;
   if(!sgaData[key])sgaData[key]=[];
