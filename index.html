@@ -3199,7 +3199,14 @@ function purchaseAdvanceOf(name, tradeMo){
     notes:[...new Set(parts.flatMap(p=>p.deductNotes))]
   };
 }
-// 이미 받은 선수금만 청구 잔액에서 뺀다. 잔금과 같은 날 들어올 재발행 금액은 잔액에 남겨 둔다.
+function splitCashAmt(s){
+  const amt=Math.abs(+s.amount||0);
+  return amt+(s.is_vat_included?0:Math.round(amt*0.1));
+}
+// 이미 받은 선수금만 청구 잔액에서 뺀다.
+// - 음수 매출조정(취소)에 짝이 맞는 분할 입금
+// - 세금계산서월(tax_date)이 이 거래월이고, 입금일이 청구 예정일보다 빠른 분할 입금
+// 잔금과 같은 날(또는 이후) 입금은 이 청구에서 차감하지 않는다.
 function priorReceipts(company, tradeMo, dueDate, used){
   let deduct=0;
   const notes=[];
@@ -3210,17 +3217,28 @@ function priorReceipts(company, tradeMo, dueDate, used){
     const supply=Math.abs(+a.amount||0);
     const split=splitPayments.find(s=>s.amount>0 && !used.has(s.id) && partyMatch(company, s.company||'') && Math.abs(splitSupplyAmt(s)-supply)<=2);
     if(split && dueDate && split.due_date && !(split.due_date<dueDate)){
-      used.add(split.id);
+      // 같은 날·이후 입금은 이 줄에서만 보류. 다른 거래월이 가져갈 수 있게 used는 잡지 않음.
       held.push(split.id);
       return;
     }
     if(split) used.add(split.id);
-    const cash=split
-      ? (Math.abs(+split.amount||0)+(split.is_vat_included?0:Math.round(Math.abs(+split.amount||0)*0.1)))
-      : (supply+Math.round(supply*0.1));
+    const cash=split ? splitCashAmt(split) : (supply+Math.round(supply*0.1));
     deduct+=cash;
     if(split) applied.push(split.id);
     if(split && split.note) notes.push(split.note);
+    else if(a.note) notes.push(a.note);
+  });
+  // 예: 성화전설 9월 매출(11/15 예정) ← 10/15에 받은 1,340,900 (tax_date=9월)
+  splitPayments.filter(s=>
+    s.amount>0 && !used.has(s.id) &&
+    partyMatch(company, s.company||'') &&
+    (s.tax_date||'').slice(0,7)===tradeMo &&
+    dueDate && s.due_date && s.due_date<dueDate
+  ).forEach(s=>{
+    used.add(s.id);
+    deduct+=splitCashAmt(s);
+    applied.push(s.id);
+    if(s.note) notes.push(s.note);
   });
   return {deduct, notes, applied, held};
 }
