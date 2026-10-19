@@ -1022,7 +1022,6 @@ const DEFAULT_SELLERS={
   '신세기전력':{biz:'134-81-45027',ceo:'최병구',addr:'경기도 안산시 단원구 신길중앙로5길 24-8',btype:'제조',bitem:'전자, 전기부품',contact:'담당자',manager:'이은진',category:'조명',email:''},
   '오성전자':{biz:'',ceo:'',addr:'',btype:'',bitem:'',contact:'담당자',manager:'이은진',category:'조명',email:''},
   '대덕전자':{biz:'',ceo:'',addr:'',btype:'',bitem:'',contact:'담당자',manager:'이은진',category:'조명',email:''},
-  '신세기':{biz:'',ceo:'',addr:'',btype:'',bitem:'',contact:'담당자',manager:'이은진',category:'조명',email:''},
   '탑이앤씨':{biz:'',ceo:'',addr:'',btype:'',bitem:'',contact:'담당자',manager:'이은진',category:'조명',email:''},
   'SG E&C':{biz:'',ceo:'',addr:'',btype:'',bitem:'',contact:'담당자',manager:'이은진',category:'조명',email:''},
 };
@@ -1067,13 +1066,19 @@ function computeDueDate(company, monthStr){
   const d=lastDayOfMonth(ny,nm);
   return `${ny}-${String(nm).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
 }
+// 같은 회사의 표기 통일 (신세기→신세기전력, 오타 센시기전력 등)
+const SELLER_COMPANY_ALIASES={
+  '신세기':'신세기전력',
+  '센시기전력':'신세기전력',
+};
 // 매출처 저장: 회사@배송지 (예: 테크피아@음성본사). 레거시 회사_품목도 회사명으로 인식.
 function sellerCompany(s){
   if(!s) return '';
   const str=String(s);
-  if(str.includes('@')) return str.split('@')[0];
-  if(str.includes('_')) return str.split('_')[0];
-  return str;
+  let co=str;
+  if(str.includes('@')) co=str.split('@')[0];
+  else if(str.includes('_')) co=str.split('_')[0];
+  return SELLER_COMPANY_ALIASES[co]||SELLER_COMPANY_ALIASES[str]||co;
 }
 function sellerSite(s){
   if(!s) return '';
@@ -1128,6 +1133,17 @@ function onSellerCompanyChange(sel){
 }
 function ensureDeliverySites(){
   if(!MY.delivery_sites || typeof MY.delivery_sites!=='object') MY.delivery_sites={};
+  // 별칭 회사의 배송지를 정식 회사명으로 합침
+  Object.entries(SELLER_COMPANY_ALIASES).forEach(([alias,canon])=>{
+    const from=MY.delivery_sites[alias];
+    if(Array.isArray(from) && from.length){
+      if(!Array.isArray(MY.delivery_sites[canon])) MY.delivery_sites[canon]=[];
+      from.forEach(s=>{
+        if(!MY.delivery_sites[canon].some(x=>x.name===s.name)) MY.delivery_sites[canon].push({...s});
+      });
+    }
+    delete MY.delivery_sites[alias];
+  });
   Object.entries(DEFAULT_DELIVERY_SITES).forEach(([co,sites])=>{
     if(!Array.isArray(MY.delivery_sites[co]) || !MY.delivery_sites[co].length){
       MY.delivery_sites[co]=sites.map(s=>({...s}));
@@ -1145,7 +1161,7 @@ function normalizeSellersMap(raw){
   Object.entries(raw||{}).forEach(([name,info])=>{
     const company=sellerCompany(name);
     if(!company) return;
-    const prefer=name===company;
+    const prefer=name===company || SELLER_COMPANY_ALIASES[name]===company;
     if(!out[company]){
       out[company]={...info};
       return;
@@ -1154,6 +1170,12 @@ function normalizeSellersMap(raw){
       if(prefer && info[f]!=null && info[f]!=='') out[company][f]=info[f];
       else if((out[company][f]==null || out[company][f]==='') && info[f]) out[company][f]=info[f];
     });
+  });
+  // 별칭 키는 드롭 (신세기 등 → 신세기전력만 유지)
+  Object.keys(SELLER_COMPANY_ALIASES).forEach(alias=>{ delete out[alias]; });
+  // 덕산네오룩스 등 기본 분류가 비어 있으면 DEFAULT로 보정
+  Object.entries(DEFAULT_SELLERS).forEach(([k,v])=>{
+    if(out[k] && !out[k].category && v.category) out[k].category=v.category;
   });
   return out;
 }
@@ -4549,7 +4571,12 @@ function setAnnualTab(tab){
 // 매출처/매입처명으로 분류(조명/원부자재/수수료) 조회. 등록 안 된 업체는 '미분류'
 function partyCategory(sectionCategory, party){
   if(sectionCategory==='매출'){
-    return sellerInfo(party).category || '미분류';
+    const co=sellerCompany(party);
+    const info=sellerInfo(co);
+    if(info.category) return info.category;
+    // 덕산네오룩스_* 레거시 키 등: 회사 DEFAULT 분류
+    if(DEFAULT_SELLERS[co]&&DEFAULT_SELLERS[co].category) return DEFAULT_SELLERS[co].category;
+    return '미분류';
   }
   return (BUYERS[party] && BUYERS[party].category) || '미분류';
 }
@@ -4605,8 +4632,10 @@ function renderAnnual(){
         if(!monthKey || monthKey.slice(0,4)!==curY) return;
         const mo=+monthKey.slice(5,7);
         if(mo<1||mo>12||annualUsesManual(curY, mo)) return;
-        const party=i[buyerOrSellerKey];
-        if(!party) return;
+        const rawParty=i[buyerOrSellerKey];
+        if(!rawParty) return;
+        // 매출: 회사 단위로 통합 (덕산네오룩스_PBN Crucible→덕산네오룩스, 신세기→신세기전력)
+        const party=category==='매출'?sellerCompany(rawParty):rawParty;
         const cat=partyCategory(category, party);
         const item=cat==='원부자재'?(i.item||''):'';
         const qty=cat==='원부자재'?(i[category==='매입'?'bqty':'sqty']||0):0;
@@ -4616,7 +4645,8 @@ function renderAnnual(){
     annualManual.filter(r=>String(r.year)===curY && r.category===category).forEach(r=>{
       const parsed=parseManualItem(r.item);
       if(!annualUsesManual(curY, parsed.month)) return;
-      add(ensure(r.party, parsed.base), parsed.month, +r.amount||0, 0);
+      const party=category==='매출'?sellerCompany(r.party):r.party;
+      add(ensure(party, parsed.base), parsed.month, +r.amount||0, 0);
     });
     Object.values(acc).forEach(row=>{
       for(let mo=1;mo<=12;mo++){
