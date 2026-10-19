@@ -527,7 +527,7 @@ input[readonly]{background:#f5f5f5;color:#999}
     <div class="section-box" style="margin-top:16px">
       <div class="section-title" style="justify-content:space-between">
         <span>업체별 미지급·미수금 잔액 (현재 미결제분)</span>
-        <span id="cf-balance-asof" style="font-size:12px;color:#888;font-weight:400">전 거래처 · 오늘 기준 납품분 중 결제예정일이 아직 지나지 않은 외상매입금·외상매출금</span>
+        <span id="cf-balance-asof" style="font-size:12px;color:#888;font-weight:400">전 거래처 · 오늘 기준 · 입금·출금확인한 항목은 제외</span>
       </div>
       <div id="cf-balance"></div>
     </div>
@@ -1238,10 +1238,48 @@ function toggleAnnualGroup(groupId){
   if(arrow) arrow.textContent = isOpen ? '▸' : '▾';
 }
 
-function saveCfCheck(key, checked){
-  // 확인용이므로 로컬 메모리에만 저장 (새로고침 시 초기화)
-  if(checked) closingState[key] = '확인';
-  else delete closingState[key];
+// 입금·출금확인 키: cf_{조회월}_{buy|sell}_{업체}_{거래월}_{예정일}
+// 잔액용 정규 키: cfok_{buy|sell}_{업체}_{거래월}_{예정일} (조회월과 무관)
+function parseCfCheckKey(key){
+  const detailed=String(key||'').match(/^cf_(\d{4}-\d{2})_(buy|sell)_(.+)_(\d{4}-\d{2})_(.*)$/);
+  if(detailed) return {cm:detailed[1], kind:detailed[2], name:detailed[3], tradeMo:detailed[4], due:detailed[5]||''};
+  const legacy=String(key||'').match(/^cf_(\d{4}-\d{2})_(buy|sell)_(.+)$/);
+  if(legacy && !/_\d{4}-\d{2}_/.test(legacy[3])) return {cm:legacy[1], kind:legacy[2], name:legacy[3], tradeMo:'', due:''};
+  return null;
+}
+function cfOkKey(kind, name, tradeMo, due){
+  return `cfok_${kind}_${name}_${tradeMo||''}_${due||''}`;
+}
+function isCashConfirmed(kind, name, tradeMo, dueDate){
+  const trade=tradeMo||'';
+  const due=dueDate||'';
+  const dueMo=due?String(due).slice(0,7):'';
+  if(closingState[cfOkKey(kind, name, trade, due)]==='확인') return true;
+  for(const [k,v] of Object.entries(closingState)){
+    if(v!=='확인' || !k.startsWith('cf_') || k.startsWith('cfok_')) continue;
+    const detailed=k.match(/^cf_(\d{4}-\d{2})_(buy|sell)_(.+)_(\d{4}-\d{2})_(.*)$/);
+    if(detailed){
+      if(detailed[2]===kind && detailed[3]===name && detailed[4]===trade && (detailed[5]||'')===due) return true;
+      continue;
+    }
+    // 레거시: cf_{월}_{buy|sell}_{업체} — 예정월이 같으면 해당 업체 정산으로 본다
+    const legacy=k.match(/^cf_(\d{4}-\d{2})_(buy|sell)_(.+)$/);
+    if(legacy && legacy[2]===kind && legacy[3]===name && (!dueMo || legacy[1]===dueMo)) return true;
+  }
+  return false;
+}
+async function saveCfCheck(key, checked){
+  const keys=[key];
+  const parsed=parseCfCheckKey(key);
+  if(parsed) keys.push(cfOkKey(parsed.kind, parsed.name, parsed.tradeMo, parsed.due));
+  if(checked){
+    keys.forEach(k=>{ closingState[k]='확인'; });
+    persistClosing();
+  }else{
+    keys.forEach(k=>{ delete closingState[k]; });
+    await Promise.all(keys.map(k=>sb.from('closing_state').delete().eq('key', k)));
+    persistClosing();
+  }
 }
 
 /* ══════════ 데이터 저장/불러오기 (Supabase) ══════════ */
@@ -3106,7 +3144,7 @@ function buildSalesParts(){
 // - 납품월이 오늘 달 이하이고, 결제예정일이 오늘 이후(오늘 포함)인 항목만 미결제로 본다.
 //   예정일(일)이 없으면 예정월(dueMo)이 오늘 달보다 뒤인 경우만 포함한다.
 // - 결제예정일이 오늘보다 앞선 항목은 이미 정산된 것으로 본다.
-//   (출금·입금확인 체크는 새로고침 시 사라지므로 잔액 판단 근거로 쓰지 않는다.)
+// - 입금·출금확인(저장됨)한 항목은 미수금·미지급 잔액에서 제외한다.
 // - 오늘까지 이미 오간 선급금·선수금 중 아직 납품 전인 것은 마이너스 잔액으로 남겨 둔다.
 function cashflowToday(){
   const d=new Date();
@@ -3178,6 +3216,7 @@ function openAdvanceBalances(){
   names.forEach(name=>{
     const payLines=[];
     _purchaseParts.filter(p=>sameParty(p.name, name) && isOpenBalancePart(p, today, todayMo)).forEach(p=>{
+      if(isCashConfirmed('buy', p.name, p.tradeMo, p.dueDate||'')) return;
       const gross=Math.round(p.amt*1.1);
       const net=gross-(p.deduct||0);
       if(!net) return;
@@ -3189,12 +3228,14 @@ function openAdvanceBalances(){
       if(!(sameParty(part.name, name) || sameParty(sp.company||'', name))) return;
       if(!part.tradeMo || part.tradeMo<=todayMo) return;
       if(!isCashByToday(sp.due_date||sp.tax_date||'', today, todayMo)) return;
+      if(sp.settled || isCashConfirmed('buy', part.name, part.tradeMo, sp.due_date||'')) return;
       payLines.push({tradeMo:part.tradeMo, due:sp.due_date||'', gross:0, advance:Math.abs(+sp.amount||0), net:-Math.abs(+sp.amount||0), note:(sp.note||'선급금')+' · 이후 납품'});
     });
     if(payLines.length) blocks.push({name, kind:'pay', lines:payLines, total:0});
 
     const recvLines=[];
     sales.filter(p=>sameParty(p.name, name) && isOpenBalancePart(p, today, todayMo)).forEach(p=>{
+      if(isCashConfirmed('sell', p.name, p.tradeMo, p.dueDate||'')) return;
       const gross=Math.round(p.amt*1.1);
       const net=gross-(p.deduct||0);
       if(!net) return;
