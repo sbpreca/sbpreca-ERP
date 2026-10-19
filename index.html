@@ -657,12 +657,12 @@ input[readonly]{background:#f5f5f5;color:#999}
       <div>
         <div class="section-box" style="margin-bottom:14px">
           <div class="section-title" style="justify-content:space-between">
-            <span>판매비와 관리비 <span style="font-weight:400;color:#888;font-size:12px">계정별 합계</span></span>
+            <span>판매비와 관리비 <span style="font-weight:400;color:#888;font-size:12px">계정별 합계 · 공급가액</span></span>
             <button class="btn btn-save" style="font-size:11px;padding:3px 12px" onclick="addSgaItem()">+ 항목 추가</button>
           </div>
           <p id="sga-source-note" style="margin:0 12px 8px;font-size:12px;color:#888"></p>
           <table class="data-tbl">
-            <thead><tr><th>계정 과목</th><th class="r">금액</th><th style="width:30px"></th></tr></thead>
+            <thead><tr><th>계정 과목</th><th class="r">금액(공급가액)</th><th style="width:30px"></th></tr></thead>
             <tbody id="sga-body"></tbody>
             <tfoot><tr>
               <td style="font-weight:700;padding:10px 12px">합계</td>
@@ -4265,6 +4265,7 @@ function toggleDetail(detailId, rowEl){
 
 /* ── 손익계산서 ── */
 // 지출분류(bank_tx)에서 판관비만 계정별로 합산 (건별 내역은 넣지 않음)
+// 공제(과세)는 공급가액(÷1.1), 면세·불공제는 출금액 그대로
 function aggregateSgaFromBank(ym){
   const map={};
   (txAll||[]).forEach(t=>{
@@ -4273,7 +4274,7 @@ function aggregateSgaFromBank(ym){
     const isSga=t.pl_type==='판관비' || ACCOUNT_PLTYPE[t.account]==='판관비';
     if(!isSga) return;
     const acc=String(t.account||'').trim()||'(미분류)';
-    map[acc]=(map[acc]||0)+(+t.amount||0);
+    map[acc]=(map[acc]||0)+sgaSupplyAmt(t);
   });
   return Object.entries(map)
     .map(([name,amt])=>({name, amt}))
@@ -4439,8 +4440,8 @@ async function renderPL(){
   const sgaNote=document.getElementById('sga-source-note');
   if(sgaNote){
     sgaNote.textContent=sgaSource==='bank'
-      ? (pm?`${pm} · 지출분류 계정별 합계 (건별 내역은 표시하지 않아요)`:'전체 · 지출분류 계정별 합계')
-      : (sgaSource==='saved'?(pm?`${pm} · 저장된 계정별 합계`:'전체 · 저장된 계정별 합계'):'');
+      ? (pm?`${pm} · 지출분류 계정별 합계 · 공제는 ÷1.1 공급가액 (건별 내역은 표시하지 않아요)`:'전체 · 지출분류 계정별 합계 · 공제는 ÷1.1 공급가액')
+      : (sgaSource==='saved'?(pm?`${pm} · 저장된 계정별 합계 (공급가액)`:'전체 · 저장된 계정별 합계 (공급가액)'):'');
   }
   const sgaBody=document.getElementById('sga-body');
   const sgaTot=document.getElementById('sga-total');
@@ -5275,6 +5276,14 @@ function vatTypeFor(description, account){
   if(ACCOUNT_PLTYPE[account]==='판관비') return '공제';
   return '해당없음';
 }
+// 판관비 손익용 금액: 공제(과세) 출금은 VAT포함 → 공급가액(÷1.1), 면세·불공제는 현금 그대로
+function sgaSupplyAmt(t){
+  const amt=+t.amount||0;
+  if(!amt) return 0;
+  const vat=personalPhoneSupport(t.description) ? '불공제' : (t.vat_type || vatTypeFor(t.description, t.account));
+  if(vat==='공제') return Math.round(amt/1.1);
+  return amt;
+}
 
 function excelDateToStr(v){
   if(typeof v==='number'){
@@ -5496,20 +5505,26 @@ async function renderTxSummary(){
 async function applyTxToPL(){
   const ym=document.getElementById('tx-summary-month').value;
   if(!ym) return;
-  if(!confirm(`${ym} 손익계산서의 판관비/영업외손익을 지금 분류된 내역으로 덮어쓸까요? (기존 수동 입력값은 사라져요)`)) return;
+  if(!confirm(`${ym} 손익계산서의 판관비/영업외손익을 지금 분류된 내역으로 덮어쓸까요?\n\n· 공제(과세) 판관비는 부가세 제외(÷1.1)한 공급가액으로 넣어요\n· 면세·불공제는 출금액 그대로예요\n· 기존 수동 입력값은 사라져요`)) return;
   const rows=txAll.filter(t=>t.year_month===ym);
   const byAccount={};
   rows.forEach(t=>{
     if(!byAccount[t.account]) byAccount[t.account]={account:t.account, pl_type:t.pl_type, in:0, out:0, deductible:0};
-    if(t.direction==='in') byAccount[t.account].in+=+t.amount;
-    else {
-      byAccount[t.account].out+=+t.amount;
-      const vat = personalPhoneSupport(t.description) ? '불공제' : (t.vat_type || (ACCOUNT_PLTYPE[t.account]==='판관비' ? (ACCOUNT_VAT_TYPE[t.account]||'공제') : '해당없음'));
-      if(t.pl_type==='판관비' && vat==='공제') byAccount[t.account].deductible += +t.amount||0;
+    if(t.direction==='in'){
+      byAccount[t.account].in+=+t.amount||0;
+      return;
     }
+    if(t.pl_type==='판관비'){
+      const vat=personalPhoneSupport(t.description) ? '불공제' : (t.vat_type || vatTypeFor(t.description, t.account));
+      const supply=sgaSupplyAmt({...t, vat_type:vat});
+      byAccount[t.account].out+=supply;
+      if(vat==='공제') byAccount[t.account].deductible+=supply;
+      return;
+    }
+    byAccount[t.account].out+=+t.amount||0;
   });
   const sgaList=[], otherList=[];
-  let vatDeductible = 0; // 부가세 공제 가능 판관비 합계. 개인 명의 휴대폰 지원은 제외
+  let vatDeductible = 0; // 공제 판관비 공급가액 합계. 개인 명의 휴대폰 지원은 제외
   Object.values(byAccount).forEach(a=>{
     if(a.pl_type==='판관비'){
       sgaList.push({name:a.account, amt:a.out, vat_type:a.deductible>0 && a.deductible<a.out ? '일부공제' : (a.deductible>0?'공제':'불공제')});
@@ -5518,7 +5533,7 @@ async function applyTxToPL(){
     else if(a.pl_type==='영업외수익') otherList.push({name:a.account, type:'inc', amt:a.in});
     else if(a.pl_type==='영업외비용') otherList.push({name:a.account, type:'exp', amt:a.out});
   });
-  // 기타매입세액 자동계산 (공제 가능 판관비 × 10%)
+  // 기타매입세액 자동계산 (공제 판관비 공급가액 × 10%)
   if(vatDeductible > 0){
     const autoVat = Math.round(vatDeductible * 0.1);
     if(!vatData[ym]) vatData[ym]=[{name:'기타매입세액',amt:0}];
@@ -5531,7 +5546,7 @@ async function applyTxToPL(){
   otherData[ym]=otherList;
   markAnnualPlMonth(ym);
   persistSga(); persistOther();
-  alert('손익계산서에 반영했어요. 손익계산서 탭에서 확인해보세요.');
+  alert('손익계산서에 반영했어요.\n공제 항목은 공급가액(부가세 제외) 기준입니다.\n손익계산서 탭에서 확인해보세요.');
 }
 
 /* ══════════════ 대차대조표 ══════════════ */
