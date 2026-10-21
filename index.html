@@ -2398,14 +2398,14 @@ function showPO(){
     const bi=BUYERS[buyer]||{contact:'담당자'};
     const sub=its.reduce((s,i)=>s+i.bamt,0);
     const poNo=no+'-'+String(idx+1).padStart(2,'0');
-    // 매출처=회사, 배송지에서 소재지·담당자. 납품처 표기는 회사명(+배송지).
+    // 매출처=회사, 배송지에서 소재지·담당자. 납품처 표기는 회사명만.
     const rawSeller=(its.find(i=>i.seller)||{seller:''}).seller||'';
     const deliverCompany=sellerCompany(rawSeller);
     const deliverSiteName=sellerSite(rawSeller);
     const site=findDeliverySite(deliverCompany, deliverSiteName);
     const si=sellerInfo(rawSeller);
     const di={addr:(site&&site.addr)||si.addr||'', contact:(site&&site.contact)||si.contact||''};
-    const deliverName=deliverSiteName?`${deliverCompany} (${deliverSiteName})`:deliverCompany;
+    const deliverName=deliverCompany;
     const dataRows=its.map((r,i)=>`<tr>
       <td>${i+1}</td>
       <td class="l">${r.item}</td>
