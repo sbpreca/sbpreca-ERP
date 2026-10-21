@@ -170,6 +170,9 @@ input[readonly]{background:#f5f5f5;color:#999}
 .ts-row:last-child{border-bottom:none}
 .ts-key{background:#f0f0f0;padding:6px 8px;width:68px;min-width:68px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:11px;color:#111;font-weight:700;border-right:1px solid #ccc;flex-shrink:0;line-height:1.4;word-break:keep-all;white-space:pre-line}
 .ts-val{padding:6px 10px;display:flex;align-items:center;flex:1;font-size:12px;color:#111;word-break:break-all;line-height:1.4}
+.ts-contact-input{border:1px solid transparent;background:transparent;width:100%;font:inherit;font-size:12px;color:#111;padding:2px 4px;border-radius:3px;box-sizing:border-box}
+.ts-contact-input:hover{background:#fffde7;border-color:#fde68a}
+.ts-contact-input:focus{background:#fff9c4;border-color:#f59e0b;outline:none}
 .ts-amt-box{border:1.5px solid #222;padding:8px 14px;margin-bottom:12px;display:flex;gap:16px;align-items:center}
 .ts-amt-lbl{font-size:12px;color:#111;font-weight:700;min-width:36px}
 .ts-amt-val{font-size:18px;font-weight:700;color:#111}
@@ -220,6 +223,7 @@ input[readonly]{background:#f5f5f5;color:#999}
   .a4-page{page-break-after:always;width:210mm!important;height:297mm!important;padding:20mm 10mm!important;box-sizing:border-box;overflow:hidden}
   .a4-page:last-child{page-break-after:auto}
   .a4-page+.a4-page{border-top:none!important}
+  .ts-contact-input{border:none!important;background:transparent!important;padding:0!important;box-shadow:none!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
   @page{size:A4 portrait;margin:0}
 }
 </style>
@@ -934,6 +938,8 @@ input[readonly]{background:#f5f5f5;color:#999}
     <div class="doc-btns">
       <button class="doc-print" onclick="window.print()">프린트 / PDF 저장</button>
       <button class="doc-close" onclick="document.getElementById('overlay').style.display='none'">닫기</button>
+      <button id="ts-save-contact-btn" class="doc-close" style="display:none;color:#1d4ed8;border-color:#bfdbfe" onclick="saveTsContactsToSettings()">담당자 설정 저장</button>
+      <span id="ts-edit-hint" style="display:none;font-size:11px;color:#b45309;align-self:center;margin-left:8px">공급받는자 담당자 입력칸에서 바로 수정할 수 있어요</span>
       <span style="font-size:11px;color:#999;align-self:center;margin-left:8px">※ A4 용지로 인쇄해주세요</span>
     </div>
     <div id="doc-content"></div>
@@ -2451,13 +2457,144 @@ function showPO(){
       <div class="po-note">※ COA 메일 송부 요청 드립니다.</div>
     </div>`;
   });
+  openDocOverlay(html);
+}
+
+/* ── 거래명세표: 담당자 해석 / 수정 ── */
+function resolveSellerContact(seller){
+  const co=sellerCompany(seller);
+  const siteName=sellerSite(seller);
+  const site=findDeliverySite(co, siteName);
+  if(site&&site.contact) return site.contact;
+  const sites=getDeliverySites(co);
+  if(!siteName&&sites.length===1&&sites[0].contact) return sites[0].contact;
+  const si=sellerInfo(seller);
+  return (si&&si.contact)||'';
+}
+function promptTsContact(company, seller){
+  const def=resolveSellerContact(seller)||'담당자';
+  const v=prompt(`${company} 담당자를 확인/수정해주세요\n(이번 명세표에만 반영 · 필요하면 미리보기에서 다시 고칠 수 있어요)`, def);
+  if(v===null) return null;
+  return v.trim()||'　';
+}
+function openDocOverlay(html, opts){
   document.getElementById('doc-content').innerHTML=html;
   document.getElementById('dynamic-page-style').textContent='';
   document.getElementById('doc-frame').style.width='794px';
   document.getElementById('overlay').style.display='block';
+  const hasTs=!!document.querySelector('.ts-contact-input');
+  const hint=document.getElementById('ts-edit-hint');
+  const btn=document.getElementById('ts-save-contact-btn');
+  if(hint) hint.style.display=hasTs?'':'none';
+  if(btn) btn.style.display=hasTs?'':'none';
+  if(opts&&opts.hideTsEdit){
+    if(hint) hint.style.display='none';
+    if(btn) btn.style.display='none';
+  }
+}
+async function saveTsContactsToSettings(){
+  const els=[...document.querySelectorAll('.ts-contact-input')];
+  if(!els.length){alert('저장할 담당자가 없어요');return;}
+  let saved=0;
+  for(const el of els){
+    const company=el.dataset.company||'';
+    const siteName=el.dataset.site||'';
+    const contact=(el.value||'').replace(/\u3000/g,' ').trim();
+    if(!company||!contact) continue;
+    const site=findDeliverySite(company, siteName);
+    if(site){
+      site.contact=contact;
+      await saveConfigToDb();
+      saved++;
+      continue;
+    }
+    const sites=getDeliverySites(company);
+    if(!siteName&&sites.length===1){
+      sites[0].contact=contact;
+      await saveConfigToDb();
+      saved++;
+      continue;
+    }
+    if(SELLERS[company]){
+      SELLERS[company].contact=contact;
+      await saveSellerToDb(company, SELLERS[company]);
+      saved++;
+    }
+  }
+  alert(saved?`담당자 ${saved}건을 설정에 저장했어요`:'저장할 매출처/배송지를 찾지 못했어요');
+  if(typeof renderDeliver==='function') renderDeliver();
+  if(typeof renderSellerContacts==='function') renderSellerContacts();
+  if(typeof renderDeliverySites==='function') renderDeliverySites();
 }
 
 /* ── 거래명세표: 선택 품목, A4 고정 ── */
+function tsPageHtml({company, seller, contact, its, dy, dm, dd, tsNo, sepClass}){
+  const FIXED_ROWS=10;
+  const si=sellerInfo(seller||company);
+  const siteName=sellerSite(seller||'')||'';
+  const totS=its.reduce((s,i)=>s+(i.samt||0),0),totV=Math.round(totS*0.1);
+  const dataRows=its.map(r=>`<tr>
+    <td>${r.ship?r.ship.slice(5).replace('-','.'):'　'}</td>
+    <td class="l">${r.item}</td>
+    <td>${r.spec||''}</td>
+    <td class="r">${fmt(r.sqty)}</td>
+    <td class="r">${fmt(r.sprice)}</td>
+    <td class="r">${fmt(r.samt)}</td>
+    <td class="r">${fmt(Math.round((r.samt||0)*0.1))}</td>
+    <td></td>
+  </tr>`).join('');
+  const blank=`<tr class="empty-row"><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>`.repeat(Math.max(0,FIXED_ROWS-its.length));
+  const contactText=contact&&contact!=='　'?contact:'　';
+  const myContact=(MY.managers&&MY.managers['이은진'])
+    ?`이은진 ${(MY.managers['이은진'].tel||'')}`.trim()
+    :(MY.contact||'　');
+  return `<div class="a4-page${sepClass||''}">
+    <div style="font-size:11px;color:#111;margin-bottom:10px">No.&nbsp;&nbsp;${dy}년 ${dm}월 ${dd}일 _ ${tsNo}</div>
+    <div class="ts-title">거 래 명 세 표</div>
+    <div class="ts-meta">
+      <div class="ts-side">
+        <div class="ts-side-hd">공급받는자</div>
+        <div class="ts-row"><span class="ts-key">사업자
+등록번호</span><span class="ts-val">${si.biz||'　'}</span></div>
+        <div class="ts-row"><span class="ts-key">상　호</span><span class="ts-val">${company}</span></div>
+        <div class="ts-row"><span class="ts-key">담 당 자</span><span class="ts-val"><input class="ts-contact-input" data-company="${escHtml(company)}" data-site="${escHtml(siteName)}" value="${escHtml(contactText==='　'?'':contactText)}" placeholder="담당자 입력" title="클릭해서 수정"></span></div>
+        <div class="ts-row"><span class="ts-key">사업장주소</span><span class="ts-val">${si.addr||'　'}</span></div>
+        <div class="ts-row"><span class="ts-key">업　태</span><span class="ts-val">${si.btype||'　'}</span></div>
+      </div>
+      <div class="ts-side">
+        <div class="ts-side-hd">공급자</div>
+        <div class="ts-row"><span class="ts-key">사업자
+등록번호</span><span class="ts-val">${MY.biz}</span></div>
+        <div class="ts-row"><span class="ts-key">상　호</span><span class="ts-val">${MY.name}</span></div>
+        <div class="ts-row"><span class="ts-key">담 당 자</span><span class="ts-val">${escHtml(myContact)}</span></div>
+        <div class="ts-row"><span class="ts-key">사업장주소</span><span class="ts-val">${MY.addr}</span></div>
+        <div class="ts-row"><span class="ts-key">업　태</span><span class="ts-val">${MY.btype}</span></div>
+      </div>
+    </div>
+    <div class="ts-amt-box">
+      <span class="ts-amt-lbl">금　액</span>
+      <span class="ts-amt-val">￦ ${fmt(totS+totV)}</span>
+      <span style="font-size:11px;color:#888">(공급가액 ${fmt(totS)} + 부가세 ${fmt(totV)})</span>
+    </div>
+    <table class="ts-tbl">
+      <thead><tr><th style="width:60px">일자</th><th>품명</th><th style="width:80px">규격</th><th style="width:50px">수량</th><th style="width:90px">단가</th><th style="width:100px">공급가액</th><th style="width:90px">부가세</th><th style="width:70px">비고</th></tr></thead>
+      <tbody>${dataRows}${blank}</tbody>
+      <tfoot><tr>
+        <td>합계</td><td colspan="2"></td>
+        <td class="r">${its.reduce((s,i)=>s+(+i.sqty||0),0)}</td>
+        <td></td>
+        <td class="r">${fmt(totS)}</td>
+        <td class="r">${fmt(totV)}</td>
+        <td></td>
+      </tr></tfoot>
+    </table>
+    <div class="ts-bank">
+      <span>${MY.bank}</span>
+      <span>인수자　　　　　　　　　(인)</span>
+    </div>
+  </div>`;
+}
+
 function buildTS(selectedItems, issueDate){
   const groups={};
   selectedItems.forEach(i=>{
@@ -2467,72 +2604,24 @@ function buildTS(selectedItems, issueDate){
   });
   if(!Object.keys(groups).length){alert('매출처가 있는 항목을 선택해주세요');return;}
   const dy=issueDate.slice(0,4),dm=issueDate.slice(5,7),dd=issueDate.slice(8,10);
-  const FIXED_ROWS=10;
+  const contactMap={};
+  for(const [seller,its] of Object.entries(groups)){
+    const company=sellerCompany(seller);
+    const raw=its[0]&&its[0].seller||seller;
+    const c=promptTsContact(company, raw);
+    if(c===null) return;
+    contactMap[seller]=c;
+  }
   let html='';
   Object.entries(groups).forEach(([seller,its],idx)=>{
     const company=sellerCompany(seller);
-    const si=sellerInfo(seller);
-    const totS=its.reduce((s,i)=>s+(i.samt||0),0),totV=Math.round(totS*0.1);
     const tsNo=`TS-${dy.slice(2)}${dm}${dd}-${String(idx+1).padStart(2,'0')}`;
-    const dataRows=its.map(r=>`<tr>
-      <td>${r.ship?r.ship.slice(5).replace('-','.'):'　'}</td>
-      <td class="l">${r.item}</td>
-      <td>${r.spec||''}</td>
-      <td class="r">${fmt(r.sqty)}</td>
-      <td class="r">${fmt(r.sprice)}</td>
-      <td class="r">${fmt(r.samt)}</td>
-      <td class="r">${fmt(Math.round((r.samt||0)*0.1))}</td>
-      <td></td>
-    </tr>`).join('');
-    const blank=`<tr class="empty-row"><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>`.repeat(Math.max(0,FIXED_ROWS-its.length));
-    html+=`<div class="a4-page">
-      <div style="font-size:11px;color:#111;margin-bottom:10px">No.&nbsp;&nbsp;${dy}년 ${dm}월 ${dd}일 _ ${tsNo.split('-').pop()}</div>
-      <div class="ts-title">거 래 명 세 표</div>
-      <div class="ts-meta">
-        <div class="ts-side">
-          <div class="ts-side-hd">공급받는자</div>
-          <div class="ts-row"><span class="ts-key">사업자
-등록번호</span><span class="ts-val">${si.biz||'　'}</span></div>
-          <div class="ts-row"><span class="ts-key">상　호</span><span class="ts-val">${company}</span></div>
-          <div class="ts-row"><span class="ts-key">사업장주소</span><span class="ts-val">${si.addr||'　'}</span></div>
-          <div class="ts-row"><span class="ts-key">업　태</span><span class="ts-val">${si.btype||'　'}</span></div>
-        </div>
-        <div class="ts-side">
-          <div class="ts-side-hd">공급자</div>
-          <div class="ts-row"><span class="ts-key">사업자
-등록번호</span><span class="ts-val">${MY.biz}</span></div>
-          <div class="ts-row"><span class="ts-key">상　호</span><span class="ts-val">${MY.name}</span></div>
-          <div class="ts-row"><span class="ts-key">사업장주소</span><span class="ts-val">${MY.addr}</span></div>
-          <div class="ts-row"><span class="ts-key">업　태</span><span class="ts-val">${MY.btype}</span></div>
-        </div>
-      </div>
-      <div class="ts-amt-box">
-        <span class="ts-amt-lbl">금　액</span>
-        <span class="ts-amt-val">￦ ${fmt(totS+totV)}</span>
-        <span style="font-size:11px;color:#888">(공급가액 ${fmt(totS)} + 부가세 ${fmt(totV)})</span>
-      </div>
-      <table class="ts-tbl">
-        <thead><tr><th style="width:60px">일자</th><th>품명</th><th style="width:80px">규격</th><th style="width:50px">수량</th><th style="width:90px">단가</th><th style="width:100px">공급가액</th><th style="width:90px">부가세</th><th style="width:70px">비고</th></tr></thead>
-        <tbody>${dataRows}${blank}</tbody>
-        <tfoot><tr>
-          <td>합계</td><td colspan="2"></td>
-          <td class="r">${its.reduce((s,i)=>s+(+i.sqty||0),0)}</td>
-          <td></td>
-          <td class="r">${fmt(totS)}</td>
-          <td class="r">${fmt(totV)}</td>
-          <td></td>
-        </tr></tfoot>
-      </table>
-      <div class="ts-bank">
-        <span>${MY.bank}</span>
-        <span>인수자　　　　　　　　　(인)</span>
-      </div>
-    </div>`;
+    html+=tsPageHtml({
+      company, seller:its[0]&&its[0].seller||seller, contact:contactMap[seller],
+      its, dy, dm, dd, tsNo, sepClass:idx>0?' doc-sep':''
+    });
   });
-  document.getElementById('doc-content').innerHTML=html;
-  document.getElementById('dynamic-page-style').textContent='';
-  document.getElementById('doc-frame').style.width='794px';
-  document.getElementById('overlay').style.display='block';
+  openDocOverlay(html);
 }
 
 /* ── 납품현황 ── */
@@ -2569,24 +2658,32 @@ function updateStatus(idx,val){
 
 
 function showTSfromDeliver(){
-  const manager=MY.contact;
   const checked=[...document.querySelectorAll('.dl-chk:checked')].map(c=>deliverRows[+c.dataset.idx]).filter(Boolean);
   if(!checked.length){alert('항목을 선택해주세요');return;}
   const todayStr=new Date().toISOString().slice(0,10).replace(/-/g,'').slice(2);
   const defaultDocNo=`TS-${todayStr}-01`;
   const userDocNo=prompt('문서번호를 확인/수정해주세요', defaultDocNo);
   if(userDocNo===null)return;
-  // 출하일별로 그룹핑해서 각각 별도 거래명세표
   const byDate={};
   checked.forEach(r=>{
     const key=r.ship||new Date().toISOString().slice(0,10);
     (byDate[key]=byDate[key]||[]).push(r);
   });
-  // 날짜 순으로 정렬해서 buildTS
   const sorted=Object.entries(byDate).sort((a,b)=>a[0].localeCompare(b[0]));
-  // 여러 날짜면 각각 a4-page로 구성
-  const FIXED_ROWS=10;
+  // 회사별 담당자 미리 확인 (덕산네오룩스처럼 자주 바뀌는 경우 수정)
+  const contactMap={};
+  for(const [,items] of sorted){
+    const cos=[...new Set(items.map(i=>sellerCompany(i.seller)).filter(Boolean))];
+    for(const co of cos){
+      if(contactMap[co]!=null) continue;
+      const raw=(items.find(i=>sellerCompany(i.seller)===co)||{}).seller||co;
+      const c=promptTsContact(co, raw);
+      if(c===null) return;
+      contactMap[co]=c;
+    }
+  }
   let html='';
+  let pageN=0;
   sorted.forEach(([shipDate, items], pageIdx)=>{
     const groups={};
     items.forEach(i=>{
@@ -2597,61 +2694,16 @@ function showTSfromDeliver(){
     const dy=shipDate.slice(0,4),dm=shipDate.slice(5,7),dd=shipDate.slice(8,10);
     Object.entries(groups).forEach(([seller,its],idx)=>{
       const company=sellerCompany(seller);
-      const si=sellerInfo(seller);
-      const totS=its.reduce((s,i)=>s+(i.samt||0),0),totV=Math.round(totS*0.1);
       const tsNo=(sorted.length===1&&Object.keys(groups).length===1)?userDocNo:`${userDocNo}-${pageIdx+1}${String(idx+1).padStart(2,'0')}`;
-      const dataRows=its.map(r=>`<tr>
-        <td>${r.ship?r.ship.slice(5).replace('-','.'):'　'}</td>
-        <td class="l">${r.item}</td><td>${r.spec||''}</td>
-        <td class="r">${fmt(r.sqty)}</td><td class="r">${fmt(r.sprice)}</td>
-        <td class="r">${fmt(r.samt)}</td><td class="r">${fmt(Math.round((r.samt||0)*0.1))}</td>
-        <td></td>
-      </tr>`).join('');
-      const blank=`<tr class="empty-row"><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>`.repeat(Math.max(0,FIXED_ROWS-its.length));
-      const isFirst=pageIdx===0&&idx===0;
-      html+=`<div class="a4-page${isFirst?'':' doc-sep'}">
-        <div style="font-size:11px;color:#111;margin-bottom:10px">No.&nbsp;&nbsp;${dy}년 ${dm}월 ${dd}일 _ ${tsNo}</div>
-        <div class="ts-title">거 래 명 세 표</div>
-        <div class="ts-meta">
-          <div class="ts-side">
-            <div class="ts-side-hd">공급받는자</div>
-            <div class="ts-row"><span class="ts-key">사업자
-등록번호</span><span class="ts-val">${si.biz||'　'}</span></div>
-            <div class="ts-row"><span class="ts-key">상　호</span><span class="ts-val">${company}</span></div>
-            <div class="ts-row"><span class="ts-key">사업장주소</span><span class="ts-val">${si.addr||'　'}</span></div>
-            <div class="ts-row"><span class="ts-key">업　태</span><span class="ts-val">${si.btype||'　'}</span></div>
-          </div>
-          <div class="ts-side">
-            <div class="ts-side-hd">공급자</div>
-            <div class="ts-row"><span class="ts-key">사업자
-등록번호</span><span class="ts-val">${MY.biz}</span></div>
-            <div class="ts-row"><span class="ts-key">상　호</span><span class="ts-val">${MY.name}</span></div>
-            <div class="ts-row"><span class="ts-key">사업장주소</span><span class="ts-val">${MY.addr}</span></div>
-            <div class="ts-row"><span class="ts-key">업　태</span><span class="ts-val">${MY.btype}</span></div>
-          </div>
-        </div>
-        <div class="ts-amt-box">
-          <span class="ts-amt-lbl">금　액</span>
-          <span class="ts-amt-val">￦ ${fmt(totS+totV)}</span>
-          <span style="font-size:11px;color:#888">(공급가액 ${fmt(totS)} + 부가세 ${fmt(totV)})</span>
-        </div>
-        <table class="ts-tbl">
-          <thead><tr><th style="width:60px">일자</th><th>품명</th><th style="width:80px">규격</th><th style="width:50px">수량</th><th style="width:90px">단가</th><th style="width:100px">공급가액</th><th style="width:90px">부가세</th><th style="width:70px">비고</th></tr></thead>
-          <tbody>${dataRows}${blank}</tbody>
-          <tfoot><tr>
-            <td>합계</td><td colspan="2"></td>
-            <td class="r">${its.reduce((s,i)=>s+(+i.sqty||0),0)}</td><td></td>
-            <td class="r">${fmt(totS)}</td><td class="r">${fmt(totV)}</td><td></td>
-          </tr></tfoot>
-        </table>
-        <div class="ts-bank"><span>${MY.bank}</span><span>인수자　　　　　　　　　(인)</span></div>
-      </div>`;
+      const isFirst=pageN===0;
+      pageN++;
+      html+=tsPageHtml({
+        company, seller:its[0]&&its[0].seller||seller, contact:contactMap[company],
+        its, dy, dm, dd, tsNo, sepClass:isFirst?'':' doc-sep'
+      });
     });
   });
-  document.getElementById('doc-content').innerHTML=html;
-  document.getElementById('dynamic-page-style').textContent='';
-  document.getElementById('doc-frame').style.width='794px';
-  document.getElementById('overlay').style.display='block';
+  openDocOverlay(html);
   // 명세표 PDF만 생성. 납품완료(매입·매출 인식)는 상태 칸에서 따로 바꾼다.
 }
 
@@ -2683,7 +2735,6 @@ function quickTS(idx){
   const r=deliverRows[idx];if(!r)return;
   if(!r.samt){alert('공급가액이 없는 항목은 거래명세표를 발행할 수 없어요');return;}
   const today=new Date().toISOString().slice(0,10);
-  // 같은 출하일+매출처(회사) 항목 자동으로 묶기
   const sameGroup=deliverRows.filter(x=>sellerCompany(x.seller)===sellerCompany(r.seller)&&x.ship===r.ship&&x.status===r.status&&(x.samt||0)>0);
   const items=sameGroup.length>1&&confirm(`같은 날(${r.ship}) ${sellerCompany(r.seller)} 납품 ${sameGroup.length}건을 함께 발행할까요?`)?sameGroup:[r];
   const issueDate=r.ship||today;
@@ -2691,64 +2742,28 @@ function quickTS(idx){
   const defaultDocNo=`TS-${todayStr}-01`;
   const userDocNo=prompt('문서번호를 확인/수정해주세요', defaultDocNo);
   if(userDocNo===null)return;
-  // buildTS 재활용
-  const FIXED_ROWS=10;
   const groups={};
   items.forEach(i=>{const k=sellerCompany(i.seller);if(k)(groups[k]=groups[k]||[]).push(i);});
+  const contactMap={};
+  for(const [seller,its] of Object.entries(groups)){
+    const company=sellerCompany(seller);
+    const raw=its[0]&&its[0].seller||seller;
+    const c=promptTsContact(company, raw);
+    if(c===null) return;
+    contactMap[company]=c;
+  }
   const dy=issueDate.slice(0,4),dm=issueDate.slice(5,7),dd=issueDate.slice(8,10);
   let html='';
   Object.entries(groups).forEach(([seller,its],gIdx)=>{
     const company=sellerCompany(seller);
-    const si=sellerInfo(seller);
-    const totS=its.reduce((s,i)=>s+(i.samt||0),0),totV=Math.round(totS*0.1);
     const tsNo=Object.keys(groups).length===1?userDocNo:`${userDocNo}-${gIdx+1}`;
-    const dataRows=its.map(r2=>`<tr>
-      <td>${r2.ship?r2.ship.slice(5).replace('-','.'):'　'}</td>
-      <td class="l">${r2.item}</td><td>${r2.spec||''}</td>
-      <td class="r">${fmt(r2.sqty)}</td><td class="r">${fmt(r2.sprice)}</td>
-      <td class="r">${fmt(r2.samt)}</td><td class="r">${fmt(Math.round((r2.samt||0)*0.1))}</td>
-      <td></td>
-    </tr>`).join('');
-    const blank=`<tr class="empty-row"><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>`.repeat(Math.max(0,FIXED_ROWS-its.length));
-    html+=`<div class="a4-page${gIdx>0?' doc-sep':''}">
-      <div style="font-size:11px;color:#111;margin-bottom:10px">No.&nbsp;&nbsp;${dy}년 ${dm}월 ${dd}일 _ ${tsNo.split('-').pop()}</div>
-      <div class="ts-title">거 래 명 세 표</div>
-      <div class="ts-meta">
-        <div class="ts-side"><div class="ts-side-hd">공급받는자</div>
-          <div class="ts-row"><span class="ts-key">사업자
-등록번호</span><span class="ts-val">${si.biz||'　'}</span></div>
-          <div class="ts-row"><span class="ts-key">상　호</span><span class="ts-val">${company}</span></div>
-          <div class="ts-row"><span class="ts-key">사업장주소</span><span class="ts-val">${si.addr||'　'}</span></div>
-          <div class="ts-row"><span class="ts-key">업　태</span><span class="ts-val">${si.btype||'　'}</span></div>
-        </div>
-        <div class="ts-side"><div class="ts-side-hd">공급자</div>
-          <div class="ts-row"><span class="ts-key">사업자
-등록번호</span><span class="ts-val">${MY.biz}</span></div>
-          <div class="ts-row"><span class="ts-key">상　호</span><span class="ts-val">${MY.name}</span></div>
-          <div class="ts-row"><span class="ts-key">사업장주소</span><span class="ts-val">${MY.addr}</span></div>
-          <div class="ts-row"><span class="ts-key">업　태</span><span class="ts-val">${MY.btype}</span></div>
-        </div>
-      </div>
-      <div class="ts-amt-box">
-        <span class="ts-amt-lbl">금　액</span><span class="ts-amt-val">￦ ${fmt(totS+totV)}</span>
-        <span style="font-size:11px;color:#888">(공급가액 ${fmt(totS)} + 부가세 ${fmt(totV)})</span>
-      </div>
-      <table class="ts-tbl">
-        <thead><tr><th style="width:60px">일자</th><th>품명</th><th style="width:80px">규격</th><th style="width:50px">수량</th><th style="width:90px">단가</th><th style="width:100px">공급가액</th><th style="width:90px">부가세</th><th style="width:70px">비고</th></tr></thead>
-        <tbody>${dataRows}${blank}</tbody>
-        <tfoot><tr><td>합계</td><td colspan="2"></td>
-          <td class="r">${its.reduce((s,i)=>s+(+i.sqty||0),0)}</td><td></td>
-          <td class="r">${fmt(totS)}</td><td class="r">${fmt(totV)}</td><td></td>
-        </tr></tfoot>
-      </table>
-      <div class="ts-bank"><span>${MY.bank}</span><span>인수자　　　　　　　　　(인)</span></div>
-    </div>`;
+    html+=tsPageHtml({
+      company, seller:its[0]&&its[0].seller||seller, contact:contactMap[company],
+      its, dy, dm, dd, tsNo: tsNo.includes('-')?tsNo.split('-').pop():tsNo,
+      sepClass:gIdx>0?' doc-sep':''
+    });
   });
-  document.getElementById('doc-content').innerHTML=html;
-  document.getElementById('dynamic-page-style').textContent='';
-  document.getElementById('doc-frame').style.width='794px';
-  document.getElementById('overlay').style.display='block';
-  // 명세표 PDF만 생성. 납품완료(매입·매출 인식)는 상태 칸에서 따로 바꾼다.
+  openDocOverlay(html);
 }
 
 function renderDeliver(){
