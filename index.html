@@ -132,33 +132,33 @@ input[readonly]{background:#f5f5f5;color:#999}
 .doc-close{padding:9px 16px;background:#fff;color:#555;border:1px solid #ccc;border-radius:5px;cursor:pointer;font-size:13px}
 #doc-content{padding:0}
 
-/* A4 고정 페이지 */
-.a4-page{width:794px;padding:20mm 10mm;font-family:'맑은 고딕','Malgun Gothic','Apple SD Gothic Neo',sans-serif;color:#111;position:relative;display:flex;flex-direction:column;box-sizing:border-box}
+/* A4 고정 페이지 (화면에서도 한 장 크기로 보이게) */
+.a4-page{width:794px;height:1123px;min-height:1123px;padding:20mm 10mm;font-family:'맑은 고딕','Malgun Gothic','Apple SD Gothic Neo',sans-serif;color:#111;position:relative;display:flex;flex-direction:column;box-sizing:border-box;overflow:hidden}
 .a4-page+.a4-page{border-top:3px dashed #ccc}
 
 /* 발주서 서식 */
 .po-title-band{background:#1f3864;color:#fff;text-align:center;font-size:26px;font-weight:700;letter-spacing:14px;padding:20px 0;margin-bottom:2px}
 .po-no{text-align:right;font-size:12px;color:#333;margin-bottom:18px;padding:4px 2px}
-.po-meta{display:grid;grid-template-columns:1fr 1fr;border:1.5px solid #000;margin-bottom:14px;align-items:stretch}
+.po-meta{display:grid;grid-template-columns:1fr 1fr;border:1px solid #000;margin-bottom:14px;align-items:stretch}
 .po-meta .po-key{background:#dbe4f0}
-.po-side+.po-side{border-left:1.5px solid #000}
+.po-side+.po-side{border-left:1px solid #000}
 .po-row{display:flex;min-height:42px;border-bottom:1px solid #000}
 .po-row:last-child{border-bottom:none}
 .po-key{background:#f0f0f0;padding:6px 10px;width:82px;min-width:82px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:11px;color:#333;font-weight:700;border-right:1px solid #000}
 .po-val{padding:6px 10px;display:flex;align-items:center;flex:1;font-size:12px}
-.po-tbl{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:12px;flex:1}
-.po-tbl th{background:#1f3864;color:#fff;padding:8px 8px;border:1px solid #000;text-align:center;font-size:11px;font-weight:600}
-.po-tbl td{padding:0 8px;border:1px solid #000;text-align:center;vertical-align:middle;height:42px;box-sizing:border-box}
+.po-tbl{width:100%;border-collapse:collapse;border-spacing:0;font-size:12px;margin-bottom:12px;flex:0 0 auto;border:1px solid #000}
+.po-tbl th,.po-tbl td{padding:0 8px;border:1px solid #000;text-align:center;vertical-align:middle;height:42px;box-sizing:border-box}
+.po-tbl th{background:#1f3864;color:#fff;padding:8px 8px;font-size:11px;font-weight:600}
 .po-tbl td.l{text-align:left}
 .po-tbl td.r{text-align:right}
-.po-tbl tr.empty-row td{height:42px;color:#ddd;border:1px solid #000;background:#fff}
-.po-tbl tfoot td{background:#1f3864;color:#fff;font-weight:700;padding:8px 8px;border:1px solid #000}
-.po-foot{border:1.5px solid #000;margin-bottom:12px}
+.po-tbl tr.empty-row td{height:42px;color:#ddd;background:#fff}
+.po-tbl tfoot td{background:#1f3864;color:#fff;font-weight:700;padding:8px 8px}
+.po-foot{border:1px solid #000;margin-top:auto;margin-bottom:12px}
 .po-foot-row{display:flex;min-height:42px;border-bottom:1px solid #000}
 .po-foot-row:last-child{border-bottom:none}
-.po-foot-key{background:#dbe4f0;padding:5px 10px;width:70px;min-width:70px;display:flex;align-items:center;font-size:11px;color:#333;font-weight:700;border-right:1px solid #000}
+.po-foot-key{background:#dbe4f0;padding:5px 10px;width:70px;min-width:70px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:11px;color:#333;font-weight:700;border-right:1px solid #000}
 .po-foot-val{padding:5px 10px;display:flex;align-items:center;flex:1;font-size:12px}
-.po-note{font-size:11px;color:#666;line-height:1.9;margin-top:auto;padding-top:12px;border-top:1px solid #eee}
+.po-note{font-size:11px;color:#666;line-height:1.9;padding-top:12px;border-top:1px solid #eee}
 
 /* 거래명세표 서식 */
 .ts-title{text-align:center;font-size:24px;font-weight:700;letter-spacing:12px;margin-bottom:24px;color:#111}
@@ -2371,11 +2371,13 @@ function loadOrder(no){
   o.items.forEach(it=>addRow(it));calcS();
 }
 
-/* ── A4 고정 서식: 빈 행 채우기 ── */
+/* ── A4 고정 서식: 빈 행 채우기 (기본 total줄 보장) ── */
 function emptyRows(current, total, cols, cls){
+  const n=Math.max(0,(total||0)-(current||0));
   let rows='';
-  for(let i=current;i<total;i++){
-    rows+=`<tr class="${cls}"><td>${i+1}</td>`+`<td></td>`.repeat(cols-1)+`</tr>`;
+  for(let i=0;i<n;i++){
+    const no=(current||0)+i+1;
+    rows+=`<tr class="${cls}"><td>${no}</td>`+`<td></td>`.repeat(Math.max(0,cols-1))+`</tr>`;
   }
   return rows;
 }
@@ -2392,7 +2394,7 @@ function showPO(){
   const manager=document.getElementById('f-manager').value||'이은진';
   const groups={};
   items.forEach(i=>{if(i.buyer)(groups[i.buyer]=groups[i.buyer]||[]).push(i);});
-  const FIXED_ROWS=10;
+  const FIXED_ROWS=10; // 품목이 적어도 표는 항상 10줄
   let html='';
   Object.entries(groups).forEach(([buyer,its],idx)=>{
     const bi=BUYERS[buyer]||{contact:'담당자'};
@@ -2416,15 +2418,17 @@ function showPO(){
       <td>${r.ship?r.ship.replace(/-/g,'.'):'　'}</td>
       <td class="l"></td>
     </tr>`).join('');
-    const blank=emptyRows(its.length,FIXED_ROWS,8,'empty-row');
+    // 데이터 행 + 빈 행 = 최소 FIXED_ROWS줄 (초과분은 그대로 표시)
+    const blank=emptyRows(its.length, Math.max(FIXED_ROWS, its.length), 8, 'empty-row');
     html+=`<div class="a4-page">
       <div class="po-title-band">발 주 서</div>
       <div class="po-no">No. ${poNo}</div>
       <div class="po-meta">
-        <div class="po-side" style="display:flex;flex-direction:column">
+        <div class="po-side">
           <div class="po-row"><span class="po-key">수 신 처</span><span class="po-val">${buyer}</span></div>
-          <div class="po-row" style="flex:1"><span class="po-key">담 당 자</span><span class="po-val">${bi.contact}</span></div>
-          <div class="po-row" style="flex:1;border-bottom:none"><span class="po-key">발 주 일</span><span class="po-val">${date.replace(/-/g,'.')}</span></div>
+          <div class="po-row"><span class="po-key">담 당 자</span><span class="po-val">${bi.contact}</span></div>
+          <div class="po-row"><span class="po-key">발 주 일</span><span class="po-val">${date.replace(/-/g,'.')}</span></div>
+          <div class="po-row"><span class="po-key">　</span><span class="po-val">　</span></div>
         </div>
         <div class="po-side">
           <div class="po-row"><span class="po-key">상 호</span><span class="po-val">${MY.name}</span></div>
