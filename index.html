@@ -2616,19 +2616,10 @@ function docMailContext(){
     : [...document.querySelectorAll(isPo?'.po-no':'.ts-no')].map(el=>(el.textContent||'').replace(/^No\.\s*/,'').trim()).filter(Boolean);
   const noText=nos.length?nos.join(', '):'';
   const subject=`[상보프레카] ${docLabel}${noText?' '+noText:''}`;
-  const lines=[
-    `${toName||'담당자'} 님 안녕하세요.`,
-    `${MY.name||'상보프레카'} ${fromName}입니다.`,
-    '',
-    `${docLabel}${noText?' (No. '+noText+')':''}를 첨부하여 보내 드립니다.`,
-    '회신은 이 메일로 해 주시면 됩니다.',
-    '',
-    '감사합니다.',
-    '',
-    fromName,
-    '(주) 상보프레카',
-    fromEmail
-  ];
+  const mgr=(MY.managers&&MY.managers[fromName])||{};
+  const lines=[fromName];
+  if(mgr.tel) lines.push(mgr.tel);
+  lines.push('(주) 상보프레카', fromEmail);
   const safeNo=(nos[0]||docLabel).replace(/[^\w.\-가-힣]+/g,'_');
   const filename=`${isPo?'PO':'TS'}_${safeNo}.pdf`;
   return {fromEmail, fromName, toEmail, toName, subject, body:lines.join('\r\n'), filename, docLabel};
@@ -2693,11 +2684,16 @@ async function sendDocMail(){
       }
     });
     if(error){
-      let detail=error.message||'발송 실패';
+      let detail=(data&&data.error)||error.message||'발송 실패';
       try{
-        const body=await error.context?.json?.();
-        if(body&&body.error) detail=body.error;
+        if(!data&&error.context&&typeof error.context.json==='function'){
+          const body=await error.context.json();
+          if(body&&body.error) detail=body.error;
+        }
       }catch(_){}
+      if(/Failed to send a request|Function not found|404/i.test(detail)){
+        detail='메일 발송 서버(함수)가 아직 배포되지 않았습니다. Supabase에 send-doc-mail 함수와 네이버 SMTP 비밀번호를 등록해 주세요.';
+      }
       throw new Error(detail);
     }
     if(data&&data.error) throw new Error(data.error);
