@@ -2620,46 +2620,59 @@ function docMailContext(){
   const lines=[fromName];
   if(mgr.tel) lines.push(mgr.tel);
   lines.push('(주) 상보프레카', fromEmail);
-  const safeNo=(nos[0]||docLabel).replace(/[^\w.\-가-힣]+/g,'_');
+  const safeNo=(nos[0]||'doc').replace(/[^\w.\-]+/g,'_').replace(/_+/g,'_')||'doc';
   const filename=`${isPo?'PO':'TS'}_${safeNo}.pdf`;
   return {fromEmail, fromName, toEmail, toName, subject, body:lines.join('\r\n'), filename, docLabel};
+}
+function bytesToBase64(bytes){
+  let binary='';
+  const chunk=0x8000;
+  for(let i=0;i<bytes.length;i+=chunk){
+    binary+=String.fromCharCode.apply(null, bytes.subarray(i, i+chunk));
+  }
+  return btoa(binary);
 }
 async function buildDocPdfBase64(){
   if(typeof html2pdf==='undefined') throw new Error('PDF 라이브러리를 불러오지 못했습니다');
   const root=document.getElementById('doc-content');
   const pages=[...root.querySelectorAll('.a4-page')];
   if(!pages.length) throw new Error('발송할 문서가 없습니다');
-  const inputs=[...root.querySelectorAll('input.ts-contact-input')];
-  const restore=[];
-  inputs.forEach(inp=>{
-    const span=document.createElement('span');
-    span.textContent=inp.value||'　';
-    span.style.cssText='display:inline-block;min-width:4em';
-    inp.parentNode.replaceChild(span, inp);
-    restore.push({inp, span});
+
+  const host=document.createElement('div');
+  host.setAttribute('data-mail-pdf-host','1');
+  host.style.cssText='position:fixed;left:-10000px;top:0;width:794px;background:#fff;z-index:-1;';
+  pages.forEach((p,i)=>{
+    const clone=p.cloneNode(true);
+    clone.style.borderTop='none';
+    clone.style.pageBreakAfter=(i<pages.length-1)?'always':'auto';
+    clone.style.breakAfter=(i<pages.length-1)?'page':'auto';
+    clone.querySelectorAll('input.ts-contact-input').forEach(inp=>{
+      const span=document.createElement('span');
+      span.textContent=inp.value||'　';
+      span.style.cssText='display:inline-block;min-width:4em';
+      inp.replaceWith(span);
+    });
+    host.appendChild(clone);
   });
-  const prevBorders=pages.map(p=>{
-    const b=p.style.borderTop;
-    p.style.borderTop='none';
-    return {p, b};
-  });
-  const opt={
-    margin:0,
-    image:{type:'jpeg', quality:0.95},
-    html2canvas:{scale:2, useCORS:true, letterRendering:true, windowWidth:794},
-    jsPDF:{unit:'px', format:[794,1123], orientation:'portrait', hotfixes:['px_scaling']}
-  };
+  document.body.appendChild(host);
+
   try{
-    let worker=html2pdf().set(opt).from(pages[0]).toPdf();
-    for(let i=1;i<pages.length;i++){
-      worker=worker.get('pdf').then(pdf=>{ pdf.addPage([794,1123]); })
-        .from(pages[i]).toContainer().toCanvas().toPdf();
+    const opt={
+      margin:0,
+      image:{type:'jpeg', quality:0.92},
+      html2canvas:{scale:2, useCORS:true, letterRendering:true, logging:false, windowWidth:794},
+      jsPDF:{unit:'mm', format:'a4', orientation:'portrait'},
+      pagebreak:{mode:['css','legacy'], after:'.a4-page'}
+    };
+    const blob=await html2pdf().set(opt).from(host).outputPdf('blob');
+    const buf=await blob.arrayBuffer();
+    const bytes=new Uint8Array(buf);
+    if(bytes.length<100 || bytes[0]!==0x25 || bytes[1]!==0x50 || bytes[2]!==0x44 || bytes[3]!==0x46){
+      throw new Error('PDF 생성에 실패했습니다. 다시 시도해 주세요.');
     }
-    const dataUri=await worker.outputPdf('datauristring');
-    return String(dataUri).replace(/^data:application\/pdf;base64,/, '');
+    return bytesToBase64(bytes);
   }finally{
-    prevBorders.forEach(({p,b})=>{ p.style.borderTop=b; });
-    restore.forEach(({inp, span})=>{ if(span.parentNode) span.parentNode.replaceChild(inp, span); });
+    host.remove();
   }
 }
 async function sendDocMail(){
@@ -2670,6 +2683,7 @@ async function sendDocMail(){
   try{
     if(btn){ btn.disabled=true; btn.textContent='PDF 생성 중...'; }
     const pdfBase64=await buildDocPdfBase64();
+    if(!pdfBase64||pdfBase64.length<200) throw new Error('PDF가 비어 있습니다. 문서 미리보기를 다시 열어 주세요.');
     if(btn) btn.textContent='발송 중...';
     const {data, error}=await sb.functions.invoke('send-doc-mail', {
       body:{
@@ -2697,7 +2711,8 @@ async function sendDocMail(){
       throw new Error(detail);
     }
     if(data&&data.error) throw new Error(data.error);
-    alert(`${ctx.docLabel} 메일을 발송했습니다.\n발신: ${ctx.fromName} <${ctx.fromEmail}>\n수신: ${ctx.toName||''} <${ctx.toEmail}>`);
+    const size=data&&data.bytes?`\n첨부: ${data.filename||ctx.filename} (${Math.round(data.bytes/1024)}KB)`:'';
+    alert(`${ctx.docLabel} 메일을 발송했습니다.\n발신: ${ctx.fromName} <${ctx.fromEmail}>\n수신: ${ctx.toName||''} <${ctx.toEmail}>${size}`);
   }catch(e){
     alert((e&&e.message)||'메일 발송에 실패했습니다');
   }finally{

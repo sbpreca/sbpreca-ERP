@@ -1,4 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { Buffer } from "node:buffer";
 import nodemailer from "npm:nodemailer@6.9.16";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
@@ -62,8 +63,17 @@ Deno.serve(async (req) => {
     const toName = String(payload.toName || "").trim();
     const subject = String(payload.subject || "").trim();
     const body = String(payload.body || "");
-    const pdfBase64 = String(payload.pdfBase64 || "").replace(/^data:application\/pdf;base64,/, "");
-    const filename = String(payload.filename || "document.pdf").replace(/[^\w.\-가-힣() ]+/g, "_");
+    const pdfBase64 = String(payload.pdfBase64 || "")
+      .replace(/^data:application\/pdf;base64,/i, "")
+      .replace(/\s+/g, "");
+    // 네이버 SMTP는 한글 파일명을 자주 깨뜨리므로 ASCII만 사용
+    const rawName = String(payload.filename || "document.pdf");
+    const asciiBase = rawName
+      .replace(/\.pdf$/i, "")
+      .replace(/[^\w.\-]+/g, "_")
+      .replace(/_+/g, "_")
+      .replace(/^_|_$/g, "") || "document";
+    const filename = `${asciiBase}.pdf`;
 
     if (!ALLOWED_FROM.has(fromEmail)) {
       return json(400, { error: "허용되지 않은 발신 주소입니다" });
@@ -73,6 +83,18 @@ Deno.serve(async (req) => {
     }
     if (pdfBase64.length > 7_000_000) {
       return json(413, { error: "PDF가 너무 큽니다. 페이지 수를 줄이거나 다시 시도해 주세요" });
+    }
+
+    let pdfBuf: Buffer;
+    try {
+      pdfBuf = Buffer.from(pdfBase64, "base64");
+    } catch {
+      return json(400, { error: "PDF 데이터가 올바르지 않습니다" });
+    }
+    if (pdfBuf.length < 100 || pdfBuf.subarray(0, 4).toString("utf8") !== "%PDF") {
+      return json(400, {
+        error: `유효한 PDF 첨부가 아닙니다 (받은 크기: ${pdfBuf.length} bytes)`,
+      });
     }
 
     const pass = smtpPassFor(fromEmail);
@@ -94,22 +116,30 @@ Deno.serve(async (req) => {
       ? `"${fromName.replace(/"/g, "")} (상보프레카)" <${fromEmail}>`
       : `"상보프레카" <${fromEmail}>`;
 
-    await transporter.sendMail({
+    const info = await transporter.sendMail({
       from: displayFrom,
       replyTo: fromEmail,
       to: toName ? `"${toName.replace(/"/g, "")}" <${toEmail}>` : toEmail,
       subject,
-      text: body,
+      text: body || " ",
       attachments: [
         {
-          filename: filename.endsWith(".pdf") ? filename : `${filename}.pdf`,
-          content: Uint8Array.from(atob(pdfBase64), (c) => c.charCodeAt(0)),
+          filename,
+          content: pdfBuf,
           contentType: "application/pdf",
+          contentDisposition: "attachment",
         },
       ],
     });
 
-    return json(200, { ok: true, from: fromEmail, to: toEmail });
+    return json(200, {
+      ok: true,
+      from: fromEmail,
+      to: toEmail,
+      filename,
+      bytes: pdfBuf.length,
+      messageId: info.messageId || "",
+    });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("send-doc-mail error", msg);
