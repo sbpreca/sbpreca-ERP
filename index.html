@@ -2562,7 +2562,7 @@ function tsPageHtml({company, seller, contact, its, dy, dm, dd, tsNo, sepClass, 
     ?`이은진 ${(MY.managers['이은진'].tel||'')}`.trim()
     :(MY.contact||'　');
   return `<div class="a4-page${sepClass||''}">
-    <div style="font-size:11px;color:#111;margin-bottom:10px">No.&nbsp;&nbsp;${dy}년 ${dm}월 ${dd}일 _ ${tsNo}</div>
+    <div style="font-size:11px;color:#111;margin-bottom:10px">No.&nbsp;&nbsp;${tsNo}</div>
     <div class="ts-title">거 래 명 세 표</div>
     <div class="ts-meta">
       <div class="ts-side">
