@@ -1,0 +1,2 @@
+[functions.send-doc-mail]
+verify_jwt = true
