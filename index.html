@@ -2477,6 +2477,15 @@ function promptTsContact(company, seller){
   if(v===null) return null;
   return v.trim()||'　';
 }
+function promptTsTradeDate(defaultDate){
+  const def=(defaultDate||new Date().toISOString().slice(0,10)).slice(0,10);
+  const v=prompt('거래명세표 거래일자를 입력해주세요 (YYYY-MM-DD)\n※ 발주서·납품현황의 출하일은 바뀌지 않아요', def);
+  if(v===null) return null;
+  let s=String(v).trim().replace(/[./]/g,'-');
+  if(/^\d{8}$/.test(s)) s=s.slice(0,4)+'-'+s.slice(4,6)+'-'+s.slice(6,8);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(s)){ alert('날짜 형식은 YYYY-MM-DD 로 입력해주세요'); return null; }
+  return s;
+}
 function openDocOverlay(html, opts){
   document.getElementById('doc-content').innerHTML=html;
   document.getElementById('dynamic-page-style').textContent='';
@@ -2528,13 +2537,16 @@ async function saveTsContactsToSettings(){
 }
 
 /* ── 거래명세표: 선택 품목, A4 고정 ── */
-function tsPageHtml({company, seller, contact, its, dy, dm, dd, tsNo, sepClass}){
+function tsPageHtml({company, seller, contact, its, dy, dm, dd, tsNo, sepClass, tradeDate}){
   const FIXED_ROWS=10;
   const si=sellerInfo(seller||company);
   const siteName=sellerSite(seller||'')||'';
   const totS=its.reduce((s,i)=>s+(i.samt||0),0),totV=Math.round(totS*0.1);
-  const dataRows=its.map(r=>`<tr>
-    <td>${r.ship?r.ship.slice(5).replace('-','.'):'　'}</td>
+  // 명세표 일자 칸: 지정한 거래일자 우선 (출하일 ship은 발주에 그대로 둠)
+  const dataRows=its.map(r=>{
+    const d=tradeDate||r.ship||'';
+    return `<tr>
+    <td>${d?d.slice(5).replace('-','.'):'　'}</td>
     <td class="l">${r.item}</td>
     <td>${r.spec||''}</td>
     <td class="r">${fmt(r.sqty)}</td>
@@ -2542,7 +2554,8 @@ function tsPageHtml({company, seller, contact, its, dy, dm, dd, tsNo, sepClass})
     <td class="r">${fmt(r.samt)}</td>
     <td class="r">${fmt(Math.round((r.samt||0)*0.1))}</td>
     <td></td>
-  </tr>`).join('');
+  </tr>`;
+  }).join('');
   const blank=`<tr class="empty-row"><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>`.repeat(Math.max(0,FIXED_ROWS-its.length));
   const contactText=contact&&contact!=='　'?contact:'　';
   const myContact=(MY.managers&&MY.managers['이은진'])
@@ -2603,7 +2616,10 @@ function buildTS(selectedItems, issueDate){
     (groups[k]=groups[k]||[]).push(i);
   });
   if(!Object.keys(groups).length){alert('매출처가 있는 항목을 선택해주세요');return;}
-  const dy=issueDate.slice(0,4),dm=issueDate.slice(5,7),dd=issueDate.slice(8,10);
+  const ships=[...new Set(selectedItems.map(i=>i.ship).filter(Boolean))];
+  const tradeDate=promptTsTradeDate(issueDate||(ships.length===1?ships[0]:new Date().toISOString().slice(0,10)));
+  if(tradeDate===null) return;
+  const dy=tradeDate.slice(0,4),dm=tradeDate.slice(5,7),dd=tradeDate.slice(8,10);
   const contactMap={};
   for(const [seller,its] of Object.entries(groups)){
     const company=sellerCompany(seller);
@@ -2618,7 +2634,7 @@ function buildTS(selectedItems, issueDate){
     const tsNo=`TS-${dy.slice(2)}${dm}${dd}-${String(idx+1).padStart(2,'0')}`;
     html+=tsPageHtml({
       company, seller:its[0]&&its[0].seller||seller, contact:contactMap[seller],
-      its, dy, dm, dd, tsNo, sepClass:idx>0?' doc-sep':''
+      its, dy, dm, dd, tsNo, tradeDate, sepClass:idx>0?' doc-sep':''
     });
   });
   openDocOverlay(html);
@@ -2660,47 +2676,36 @@ function updateStatus(idx,val){
 function showTSfromDeliver(){
   const checked=[...document.querySelectorAll('.dl-chk:checked')].map(c=>deliverRows[+c.dataset.idx]).filter(Boolean);
   if(!checked.length){alert('항목을 선택해주세요');return;}
-  const todayStr=new Date().toISOString().slice(0,10).replace(/-/g,'').slice(2);
+  const ships=[...new Set(checked.map(r=>r.ship).filter(Boolean))];
+  const defaultTrade=ships.length===1?ships[0]:new Date().toISOString().slice(0,10);
+  const tradeDate=promptTsTradeDate(defaultTrade);
+  if(tradeDate===null)return;
+  const todayStr=tradeDate.replace(/-/g,'').slice(2);
   const defaultDocNo=`TS-${todayStr}-01`;
   const userDocNo=prompt('문서번호를 확인/수정해주세요', defaultDocNo);
   if(userDocNo===null)return;
-  const byDate={};
-  checked.forEach(r=>{
-    const key=r.ship||new Date().toISOString().slice(0,10);
-    (byDate[key]=byDate[key]||[]).push(r);
+  // 매출처(회사)별로 묶고, 문서·품목 일자는 지정한 거래일자 사용 (출하일은 변경 없음)
+  const groups={};
+  checked.forEach(i=>{
+    const k=sellerCompany(i.seller);
+    if(!k)return;
+    (groups[k]=groups[k]||[]).push(i);
   });
-  const sorted=Object.entries(byDate).sort((a,b)=>a[0].localeCompare(b[0]));
-  // 회사별 담당자 미리 확인 (덕산네오룩스처럼 자주 바뀌는 경우 수정)
   const contactMap={};
-  for(const [,items] of sorted){
-    const cos=[...new Set(items.map(i=>sellerCompany(i.seller)).filter(Boolean))];
-    for(const co of cos){
-      if(contactMap[co]!=null) continue;
-      const raw=(items.find(i=>sellerCompany(i.seller)===co)||{}).seller||co;
-      const c=promptTsContact(co, raw);
-      if(c===null) return;
-      contactMap[co]=c;
-    }
+  for(const [co,items] of Object.entries(groups)){
+    const raw=(items[0]&&items[0].seller)||co;
+    const c=promptTsContact(co, raw);
+    if(c===null) return;
+    contactMap[co]=c;
   }
+  const dy=tradeDate.slice(0,4),dm=tradeDate.slice(5,7),dd=tradeDate.slice(8,10);
   let html='';
-  let pageN=0;
-  sorted.forEach(([shipDate, items], pageIdx)=>{
-    const groups={};
-    items.forEach(i=>{
-      const k=sellerCompany(i.seller);
-      if(!k)return;
-      (groups[k]=groups[k]||[]).push(i);
-    });
-    const dy=shipDate.slice(0,4),dm=shipDate.slice(5,7),dd=shipDate.slice(8,10);
-    Object.entries(groups).forEach(([seller,its],idx)=>{
-      const company=sellerCompany(seller);
-      const tsNo=(sorted.length===1&&Object.keys(groups).length===1)?userDocNo:`${userDocNo}-${pageIdx+1}${String(idx+1).padStart(2,'0')}`;
-      const isFirst=pageN===0;
-      pageN++;
-      html+=tsPageHtml({
-        company, seller:its[0]&&its[0].seller||seller, contact:contactMap[company],
-        its, dy, dm, dd, tsNo, sepClass:isFirst?'':' doc-sep'
-      });
+  Object.entries(groups).forEach(([seller,its],idx)=>{
+    const company=sellerCompany(seller);
+    const tsNo=Object.keys(groups).length===1?userDocNo:`${userDocNo}-${String(idx+1).padStart(2,'0')}`;
+    html+=tsPageHtml({
+      company, seller:its[0]&&its[0].seller||seller, contact:contactMap[company],
+      its, dy, dm, dd, tsNo, tradeDate, sepClass:idx>0?' doc-sep':''
     });
   });
   openDocOverlay(html);
@@ -2736,9 +2741,10 @@ function quickTS(idx){
   if(!r.samt){alert('공급가액이 없는 항목은 거래명세표를 발행할 수 없어요');return;}
   const today=new Date().toISOString().slice(0,10);
   const sameGroup=deliverRows.filter(x=>sellerCompany(x.seller)===sellerCompany(r.seller)&&x.ship===r.ship&&x.status===r.status&&(x.samt||0)>0);
-  const items=sameGroup.length>1&&confirm(`같은 날(${r.ship}) ${sellerCompany(r.seller)} 납품 ${sameGroup.length}건을 함께 발행할까요?`)?sameGroup:[r];
-  const issueDate=r.ship||today;
-  const todayStr=issueDate.replace(/-/g,'').slice(2);
+  const items=sameGroup.length>1&&confirm(`같은 출하일(${r.ship||'-'}) ${sellerCompany(r.seller)} 납품 ${sameGroup.length}건을 함께 발행할까요?`)?sameGroup:[r];
+  const tradeDate=promptTsTradeDate(r.ship||today);
+  if(tradeDate===null)return;
+  const todayStr=tradeDate.replace(/-/g,'').slice(2);
   const defaultDocNo=`TS-${todayStr}-01`;
   const userDocNo=prompt('문서번호를 확인/수정해주세요', defaultDocNo);
   if(userDocNo===null)return;
@@ -2752,7 +2758,7 @@ function quickTS(idx){
     if(c===null) return;
     contactMap[company]=c;
   }
-  const dy=issueDate.slice(0,4),dm=issueDate.slice(5,7),dd=issueDate.slice(8,10);
+  const dy=tradeDate.slice(0,4),dm=tradeDate.slice(5,7),dd=tradeDate.slice(8,10);
   let html='';
   Object.entries(groups).forEach(([seller,its],gIdx)=>{
     const company=sellerCompany(seller);
@@ -2760,7 +2766,7 @@ function quickTS(idx){
     html+=tsPageHtml({
       company, seller:its[0]&&its[0].seller||seller, contact:contactMap[company],
       its, dy, dm, dd, tsNo: tsNo.includes('-')?tsNo.split('-').pop():tsNo,
-      sepClass:gIdx>0?' doc-sep':''
+      tradeDate, sepClass:gIdx>0?' doc-sep':''
     });
   });
   openDocOverlay(html);
