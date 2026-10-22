@@ -1054,7 +1054,8 @@ const DEFAULT_CFG={
     '김은희':{tel:'',email:'okehkim@naver.com'}
   },
   delivery_sites:JSON.parse(JSON.stringify(DEFAULT_DELIVERY_SITES)),
-  item_categories:{}
+  item_categories:{},
+  doc_seq:{ts:{}}
 };
 let MY=JSON.parse(JSON.stringify(DEFAULT_CFG));
 
@@ -1669,6 +1670,8 @@ async function loadConfigFromDb(){
   }
   const cfg=data.data||{};
   if(!cfg.item_categories||typeof cfg.item_categories!=='object') cfg.item_categories={};
+  if(!cfg.doc_seq||typeof cfg.doc_seq!=='object') cfg.doc_seq={ts:{}};
+  if(!cfg.doc_seq.ts||typeof cfg.doc_seq.ts!=='object') cfg.doc_seq.ts={};
   return cfg;
 }
 
@@ -2505,6 +2508,49 @@ function promptTsTradeDate(defaultDate){
   if(!/^\d{4}-\d{2}-\d{2}$/.test(s)){ alert('날짜 형식은 YYYY-MM-DD 로 입력해주세요'); return null; }
   return s;
 }
+function tsDateKey(tradeDate){
+  return String(tradeDate||'').replace(/-/g,'').slice(2,8); // YYMMDD
+}
+function parseTsDocSeq(docNo, ymd){
+  const m=String(docNo||'').trim().match(new RegExp(`^TS-${ymd}-(\\d+)`, 'i'));
+  return m?parseInt(m[1],10):null;
+}
+async function refreshTsDocSeqFromDb(){
+  const cfg=await loadConfigFromDb();
+  if(!MY.doc_seq||typeof MY.doc_seq!=='object') MY.doc_seq={ts:{}};
+  if(!MY.doc_seq.ts||typeof MY.doc_seq.ts!=='object') MY.doc_seq.ts={};
+  const remote=(cfg&&cfg.doc_seq&&cfg.doc_seq.ts)||{};
+  Object.keys(remote).forEach(d=>{
+    MY.doc_seq.ts[d]=Math.max(+MY.doc_seq.ts[d]||0, +remote[d]||0);
+  });
+}
+async function suggestTsDocNo(tradeDate){
+  await refreshTsDocSeqFromDb();
+  const ymd=tsDateKey(tradeDate);
+  const next=(+MY.doc_seq.ts[ymd]||0)+1;
+  return `TS-${ymd}-${String(next).padStart(2,'0')}`;
+}
+/** 공유 채번: DB에 마지막 번호를 저장해 이은진/김은희가 이어서 쓰도록 함 */
+async function confirmTsDocNo(tradeDate){
+  const ymd=tsDateKey(tradeDate);
+  const suggested=await suggestTsDocNo(tradeDate);
+  const userDocNo=prompt('문서번호를 확인/수정해주세요', suggested);
+  if(userDocNo===null) return null;
+  await refreshTsDocSeqFromDb();
+  const last=+MY.doc_seq.ts[ymd]||0;
+  let seq=parseTsDocSeq(userDocNo, ymd);
+  let finalNo=String(userDocNo).trim();
+  if(seq==null){
+    seq=last+1;
+  }else if(seq<=last){
+    seq=last+1;
+    finalNo=`TS-${ymd}-${String(seq).padStart(2,'0')}`;
+    alert(`이미 사용된 번호라서 ${finalNo} 로 발급합니다.`);
+  }
+  MY.doc_seq.ts[ymd]=Math.max(last, seq);
+  await saveConfigToDb();
+  return finalNo;
+}
 let _docMailMeta={type:'', parties:[], items:[], nos:[]};
 
 function managerMailList(){
@@ -2774,7 +2820,7 @@ function tsPageHtml({company, seller, contact, its, dy, dm, dd, tsNo, sepClass, 
   </div>`;
 }
 
-function buildTS(selectedItems, issueDate){
+async function buildTS(selectedItems, issueDate){
   const groups={};
   selectedItems.forEach(i=>{
     const k=sellerKey(i.seller);
@@ -2785,6 +2831,8 @@ function buildTS(selectedItems, issueDate){
   const ships=[...new Set(selectedItems.map(i=>i.ship).filter(Boolean))];
   const tradeDate=promptTsTradeDate(issueDate||(ships.length===1?ships[0]:new Date().toISOString().slice(0,10)));
   if(tradeDate===null) return;
+  const userDocNo=await confirmTsDocNo(tradeDate);
+  if(userDocNo===null) return;
   const dy=tradeDate.slice(0,4),dm=tradeDate.slice(5,7),dd=tradeDate.slice(8,10);
   const contactMap={};
   for(const [seller,its] of Object.entries(groups)){
@@ -2797,7 +2845,7 @@ function buildTS(selectedItems, issueDate){
   let html='';
   Object.entries(groups).forEach(([seller,its],idx)=>{
     const company=sellerCompany(seller);
-    const tsNo=`TS-${dy.slice(2)}${dm}${dd}-${String(idx+1).padStart(2,'0')}`;
+    const tsNo=Object.keys(groups).length===1?userDocNo:`${userDocNo}-${String(idx+1).padStart(2,'0')}`;
     html+=tsPageHtml({
       company, seller:its[0]&&its[0].seller||seller, contact:contactMap[seller],
       its, dy, dm, dd, tsNo, tradeDate, sepClass:idx>0?' doc-sep':''
@@ -2840,16 +2888,14 @@ function updateStatus(idx,val){
 }
 
 
-function showTSfromDeliver(){
+async function showTSfromDeliver(){
   const checked=[...document.querySelectorAll('.dl-chk:checked')].map(c=>deliverRows[+c.dataset.idx]).filter(Boolean);
   if(!checked.length){alert('항목을 선택해주세요');return;}
   const ships=[...new Set(checked.map(r=>r.ship).filter(Boolean))];
   const defaultTrade=ships.length===1?ships[0]:new Date().toISOString().slice(0,10);
   const tradeDate=promptTsTradeDate(defaultTrade);
   if(tradeDate===null)return;
-  const todayStr=tradeDate.replace(/-/g,'').slice(2);
-  const defaultDocNo=`TS-${todayStr}-01`;
-  const userDocNo=prompt('문서번호를 확인/수정해주세요', defaultDocNo);
+  const userDocNo=await confirmTsDocNo(tradeDate);
   if(userDocNo===null)return;
   // 매출처(회사)별로 묶고, 문서·품목 일자는 지정한 거래일자 사용 (출하일은 변경 없음)
   const groups={};
@@ -2903,7 +2949,7 @@ function splitItem(idx){
   persist(o.no);renderDeliver();
 }
 
-function quickTS(idx){
+async function quickTS(idx){
   // 해당 항목만 바로 거래명세표 생성
   const r=deliverRows[idx];if(!r)return;
   if(!r.samt){alert('공급가액이 없는 항목은 거래명세표를 발행할 수 없어요');return;}
@@ -2912,9 +2958,7 @@ function quickTS(idx){
   const items=sameGroup.length>1&&confirm(`같은 출하일(${r.ship||'-'}) ${sellerCompany(r.seller)} 납품 ${sameGroup.length}건을 함께 발행할까요?`)?sameGroup:[r];
   const tradeDate=promptTsTradeDate(r.ship||today);
   if(tradeDate===null)return;
-  const todayStr=tradeDate.replace(/-/g,'').slice(2);
-  const defaultDocNo=`TS-${todayStr}-01`;
-  const userDocNo=prompt('문서번호를 확인/수정해주세요', defaultDocNo);
+  const userDocNo=await confirmTsDocNo(tradeDate);
   if(userDocNo===null)return;
   const groups={};
   items.forEach(i=>{const k=sellerCompany(i.seller);if(k)(groups[k]=groups[k]||[]).push(i);});
