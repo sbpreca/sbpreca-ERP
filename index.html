@@ -357,7 +357,7 @@ input[readonly]{background:#f5f5f5;color:#999}
   <!-- 납품 현황 -->
   <div id="page-deliver" class="page">
     <div class="filter-row">
-      <input id="dl-search" type="text" placeholder="🔍 품목명·발주번호 검색" style="width:200px;padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px" oninput="renderDeliver()">
+      <input id="dl-search" type="text" placeholder="🔍 품목·발주번호·매입처·매출처 검색" style="width:240px;padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px" oninput="renderDeliver()">
       <select id="dl-month" onchange="renderDeliver()"><option value="">전체 월</option></select>
       <select id="dl-seller" onchange="renderDeliver()"><option value="">전체 매출처</option></select>
       <select id="dl-status" onchange="renderDeliver()">
@@ -1129,8 +1129,8 @@ function encodeSeller(company, site){
   return site ? company+'@'+site : company;
 }
 function sellerLabel(s){
-  const co=sellerCompany(s), site=sellerSite(s);
-  return site ? co+' · '+site : co;
+  // 화면 표기는 회사명만 (배송지명은 설정·담당자/주소에서 확인)
+  return sellerCompany(s);
 }
 function getDeliverySites(company){
   if(!company) return [];
@@ -2788,7 +2788,8 @@ function renderDeliver(){
       if(ds&&sellerCompany(sk)!==ds)return;
       if(dst&&item.status!==dst)return;
       const label=sellerLabel(sk);
-      if(dq&&!(item.item||'').toLowerCase().includes(dq)&&!o.no.toLowerCase().includes(dq)&&!label.toLowerCase().includes(dq)&&!sk.toLowerCase().includes(dq))return;
+      const buyer=(item.buyer||'').toLowerCase();
+      if(dq&&!(item.item||'').toLowerCase().includes(dq)&&!o.no.toLowerCase().includes(dq)&&!label.toLowerCase().includes(dq)&&!sk.toLowerCase().includes(dq)&&!buyer.includes(dq))return;
       deliverRows.push({...item,seller:sk,order_no:o.no,order_date:o.date,item_idx});
     });
   });
