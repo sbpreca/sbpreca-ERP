@@ -162,7 +162,11 @@ input[readonly]{background:#f5f5f5;color:#999}
 
 /* 거래명세표 서식 */
 .ts-title{text-align:center;font-size:24px;font-weight:700;letter-spacing:12px;margin-bottom:8px;color:#111}
-.ts-no{text-align:right;font-size:12px;color:#333;margin-bottom:18px;padding:4px 2px}
+.ts-no{text-align:right;font-size:12px;color:#333;margin-bottom:18px;padding:4px 2px;display:flex;justify-content:flex-end;align-items:center;gap:4px}
+.ts-no-label{flex:0 0 auto}
+.ts-no-input{border:1px solid transparent;background:transparent;text-align:right;font:inherit;font-size:12px;color:#333;padding:2px 6px;border-radius:3px;min-width:12em;box-sizing:border-box}
+.ts-no-input:hover{background:#fffde7;border-color:#fde68a}
+.ts-no-input:focus{background:#fff9c4;border-color:#f59e0b;outline:none}
 .ts-dateno{font-size:12px;color:#111;margin-bottom:16px}
 .mail-panel{display:none;width:100%;padding:10px 16px;background:#f8fafc;border-bottom:1px solid #e2e8f0;gap:8px;flex-wrap:wrap;align-items:center;box-sizing:border-box}
 .mail-panel.on{display:flex}
@@ -229,7 +233,7 @@ input[readonly]{background:#f5f5f5;color:#999}
   .a4-page{page-break-after:always;width:210mm!important;height:297mm!important;padding:20mm 10mm!important;box-sizing:border-box;overflow:hidden}
   .a4-page:last-child{page-break-after:auto}
   .a4-page+.a4-page{border-top:none!important}
-  .ts-contact-input{border:none!important;background:transparent!important;padding:0!important;box-shadow:none!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .ts-contact-input,.ts-no-input{border:none!important;background:transparent!important;padding:0!important;box-shadow:none!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
   @page{size:A4 portrait;margin:0}
 }
 </style>
@@ -2530,26 +2534,29 @@ async function suggestTsDocNo(tradeDate){
   const next=(+MY.doc_seq.ts[ymd]||0)+1;
   return `TS-${ymd}-${String(next).padStart(2,'0')}`;
 }
-/** 공유 채번: DB에 마지막 번호를 저장해 이은진/김은희가 이어서 쓰도록 함 */
+/** 공유 채번: 사용자가 확인한 번호를 그대로 쓰고, 새 번호(이전보다 큰 값)일 때만 DB 갱신 */
 async function confirmTsDocNo(tradeDate){
   const ymd=tsDateKey(tradeDate);
   const suggested=await suggestTsDocNo(tradeDate);
-  const userDocNo=prompt('문서번호를 확인/수정해주세요', suggested);
+  const userDocNo=prompt('문서번호를 확인/수정해주세요\n※ 같은 번호로 다시 발행해도 됩니다', suggested);
   if(userDocNo===null) return null;
+  const finalNo=String(userDocNo).trim();
+  if(!finalNo){ alert('문서번호를 입력해주세요'); return null; }
   await refreshTsDocSeqFromDb();
   const last=+MY.doc_seq.ts[ymd]||0;
-  let seq=parseTsDocSeq(userDocNo, ymd);
-  let finalNo=String(userDocNo).trim();
-  if(seq==null){
-    seq=last+1;
-  }else if(seq<=last){
-    seq=last+1;
-    finalNo=`TS-${ymd}-${String(seq).padStart(2,'0')}`;
-    alert(`이미 사용된 번호라서 ${finalNo} 로 발급합니다.`);
+  const seq=parseTsDocSeq(finalNo, ymd);
+  // 수정·재발행 허용. 채번은 "이번에 쓴 번호가 마지막보다 클 때만" 올린다.
+  if(seq!=null && seq>last){
+    MY.doc_seq.ts[ymd]=seq;
+    await saveConfigToDb();
   }
-  MY.doc_seq.ts[ymd]=Math.max(last, seq);
-  await saveConfigToDb();
   return finalNo;
+}
+function collectDocNos(isPo){
+  if(isPo){
+    return [...document.querySelectorAll('.po-no')].map(el=>(el.textContent||'').replace(/^No\.\s*/,'').trim()).filter(Boolean);
+  }
+  return [...document.querySelectorAll('.ts-no-input')].map(el=>(el.value||'').trim()).filter(Boolean);
 }
 let _docMailMeta={type:'', parties:[], items:[], nos:[]};
 
@@ -2651,9 +2658,7 @@ function launchMailto(){
   if(!toEmail||!toEmail.includes('@')){ alert('수신 이메일을 확인해 주세요'); return; }
   const isPo=_docMailMeta.type==='po'||!!document.querySelector('.po-title-band');
   const docLabel=isPo?'발주서':'거래명세표';
-  const nos=(_docMailMeta.nos&&_docMailMeta.nos.length)
-    ? _docMailMeta.nos
-    : [...document.querySelectorAll(isPo?'.po-no':'.ts-no')].map(el=>(el.textContent||'').replace(/^No\.\s*/,'').trim()).filter(Boolean);
+  const nos=collectDocNos(isPo);
   const noText=nos.length?nos.join(', '):'';
   const subject=`[상보프레카] ${docLabel}${noText?' '+noText:''}`;
   const lines=[
@@ -2709,7 +2714,7 @@ function openDocOverlay(html, opts){
   if(mailBtn) mailBtn.style.display=(isPo||isTs)?'':'none';
   // nos는 렌더 후 DOM에서 다시 수집
   if(_docMailMeta){
-    _docMailMeta.nos=[...document.querySelectorAll(isPo?'.po-no':'.ts-no')].map(el=>(el.textContent||'').replace(/^No\.\s*/,'').trim()).filter(Boolean);
+    _docMailMeta.nos=collectDocNos(isPo);
     if(!_docMailMeta.type) _docMailMeta.type=isPo?'po':(isTs?'ts':'');
   }
 }
@@ -2775,7 +2780,7 @@ function tsPageHtml({company, seller, contact, its, dy, dm, dd, tsNo, sepClass, 
     :(MY.contact||'　');
   return `<div class="a4-page${sepClass||''}">
     <div class="ts-title">거 래 명 세 표</div>
-    <div class="ts-no">No. ${escHtml(tsNo||'')}</div>
+    <div class="ts-no"><span class="ts-no-label">No.</span><input class="ts-no-input" value="${escHtml(tsNo||'')}" title="클릭해서 문서번호 수정"></div>
     <div class="ts-meta">
       <div class="ts-side">
         <div class="ts-side-hd">공급받는자</div>
@@ -2831,8 +2836,6 @@ async function buildTS(selectedItems, issueDate){
   const ships=[...new Set(selectedItems.map(i=>i.ship).filter(Boolean))];
   const tradeDate=promptTsTradeDate(issueDate||(ships.length===1?ships[0]:new Date().toISOString().slice(0,10)));
   if(tradeDate===null) return;
-  const userDocNo=await confirmTsDocNo(tradeDate);
-  if(userDocNo===null) return;
   const dy=tradeDate.slice(0,4),dm=tradeDate.slice(5,7),dd=tradeDate.slice(8,10);
   const contactMap={};
   for(const [seller,its] of Object.entries(groups)){
@@ -2842,6 +2845,8 @@ async function buildTS(selectedItems, issueDate){
     if(c===null) return;
     contactMap[seller]=c;
   }
+  const userDocNo=await confirmTsDocNo(tradeDate);
+  if(userDocNo===null) return;
   let html='';
   Object.entries(groups).forEach(([seller,its],idx)=>{
     const company=sellerCompany(seller);
@@ -2895,8 +2900,6 @@ async function showTSfromDeliver(){
   const defaultTrade=ships.length===1?ships[0]:new Date().toISOString().slice(0,10);
   const tradeDate=promptTsTradeDate(defaultTrade);
   if(tradeDate===null)return;
-  const userDocNo=await confirmTsDocNo(tradeDate);
-  if(userDocNo===null)return;
   // 매출처(회사)별로 묶고, 문서·품목 일자는 지정한 거래일자 사용 (출하일은 변경 없음)
   const groups={};
   checked.forEach(i=>{
@@ -2911,6 +2914,8 @@ async function showTSfromDeliver(){
     if(c===null) return;
     contactMap[co]=c;
   }
+  const userDocNo=await confirmTsDocNo(tradeDate);
+  if(userDocNo===null)return;
   const dy=tradeDate.slice(0,4),dm=tradeDate.slice(5,7),dd=tradeDate.slice(8,10);
   let html='';
   Object.entries(groups).forEach(([seller,its],idx)=>{
@@ -2958,8 +2963,6 @@ async function quickTS(idx){
   const items=sameGroup.length>1&&confirm(`같은 출하일(${r.ship||'-'}) ${sellerCompany(r.seller)} 납품 ${sameGroup.length}건을 함께 발행할까요?`)?sameGroup:[r];
   const tradeDate=promptTsTradeDate(r.ship||today);
   if(tradeDate===null)return;
-  const userDocNo=await confirmTsDocNo(tradeDate);
-  if(userDocNo===null)return;
   const groups={};
   items.forEach(i=>{const k=sellerCompany(i.seller);if(k)(groups[k]=groups[k]||[]).push(i);});
   const contactMap={};
@@ -2970,6 +2973,8 @@ async function quickTS(idx){
     if(c===null) return;
     contactMap[company]=c;
   }
+  const userDocNo=await confirmTsDocNo(tradeDate);
+  if(userDocNo===null)return;
   const dy=tradeDate.slice(0,4),dm=tradeDate.slice(5,7),dd=tradeDate.slice(8,10);
   let html='';
   Object.entries(groups).forEach(([seller,its],gIdx)=>{
