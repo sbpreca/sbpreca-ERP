@@ -163,11 +163,15 @@ input[readonly]{background:#f5f5f5;color:#999}
 
 /* 거래명세표 서식 — 표·칸 테두리 모두 1px #111 (1.5px/2px/#ccc/#888 혼용 제거) */
 .ts-title{text-align:center;font-size:24px;font-weight:700;letter-spacing:12px;margin-bottom:8px;color:#111}
-.ts-no{display:flex;justify-content:flex-end;align-items:center;gap:6px;width:100%;font-size:12px;color:#333;margin-bottom:18px;padding:4px 2px;box-sizing:border-box}
-.ts-no-label{flex:0 0 auto;white-space:nowrap}
-.ts-no-input{border:1px solid transparent;background:transparent;width:auto!important;min-width:10ch;max-width:28ch;flex:0 1 auto;text-align:left;font:inherit;font-size:12px;color:#333;padding:2px 4px;border-radius:3px;box-sizing:border-box}
-.ts-no-input:hover{background:#fffde7;border-color:#fde68a}
-.ts-no-input:focus{background:#fff9c4;border-color:#f59e0b;outline:none}
+.ts-no{display:flex;justify-content:flex-end;align-items:baseline;gap:3px;width:100%;font-size:12px;color:#333;margin:0 0 14px;padding:0;box-sizing:border-box}
+.ts-no-label{flex:0 0 auto;white-space:nowrap;line-height:1.4}
+.ts-no-input{border:1px solid transparent;background:transparent;width:auto!important;min-width:0!important;max-width:100%;flex:0 0 auto;text-align:left;font:inherit;font-size:12px;color:#333;padding:0;margin:0;border-radius:3px;box-sizing:content-box;line-height:1.4}
+.ts-no-input:hover{background:#fffde7;border-color:#fde68a;padding:1px 3px;margin:-1px -3px}
+.ts-no-input:focus{background:#fff9c4;border-color:#f59e0b;outline:none;padding:1px 3px;margin:-1px -3px}
+.mail-sent-wrap{display:none;align-items:center;gap:5px;align-self:center;margin-left:6px;font-size:12px;color:#0f766e;white-space:nowrap}
+.mail-sent-wrap.on{display:inline-flex}
+.mail-sent-wrap input{width:auto!important;margin:0}
+.mail-sent-info{font-size:11px;color:#64748b}
 .ts-dateno{font-size:12px;color:#111;margin-bottom:16px}
 .mail-panel{display:none;width:100%;padding:10px 16px;background:#f8fafc;border-bottom:1px solid #e2e8f0;gap:8px;flex-wrap:wrap;align-items:center;box-sizing:border-box}
 .mail-panel.on{display:flex}
@@ -949,6 +953,11 @@ input[readonly]{background:#f5f5f5;color:#999}
     <div class="doc-btns">
       <button class="doc-print" onclick="window.print()">프린트 / PDF 저장</button>
       <button id="mail-open-btn" class="doc-close" style="display:none;color:#0f766e;border-color:#99f6e4" onclick="toggleMailPanel()">메일 보내기</button>
+      <label id="mail-sent-wrap" class="mail-sent-wrap" title="발송하면 자동으로 체크됩니다. 직접 고쳐도 됩니다.">
+        <input type="checkbox" id="mail-sent-chk" onchange="toggleDocMailSent(this.checked)">
+        메일 발송됨
+        <span id="mail-sent-info" class="mail-sent-info"></span>
+      </label>
       <button class="doc-close" onclick="document.getElementById('overlay').style.display='none'">닫기</button>
       <button id="ts-save-contact-btn" class="doc-close" style="display:none;color:#1d4ed8;border-color:#bfdbfe" onclick="saveTsContactsToSettings()">담당자 설정 저장</button>
       <span id="ts-edit-hint" style="display:none;font-size:11px;color:#b45309;align-self:center;margin-left:8px">공급받는자 담당자 입력칸에서 바로 수정할 수 있어요</span>
@@ -1060,7 +1069,8 @@ const DEFAULT_CFG={
   },
   delivery_sites:JSON.parse(JSON.stringify(DEFAULT_DELIVERY_SITES)),
   item_categories:{},
-  doc_seq:{ts:{}}
+  doc_seq:{ts:{}},
+  doc_mail:{}
 };
 let MY=JSON.parse(JSON.stringify(DEFAULT_CFG));
 
@@ -1677,6 +1687,7 @@ async function loadConfigFromDb(){
   if(!cfg.item_categories||typeof cfg.item_categories!=='object') cfg.item_categories={};
   if(!cfg.doc_seq||typeof cfg.doc_seq!=='object') cfg.doc_seq={ts:{}};
   if(!cfg.doc_seq.ts||typeof cfg.doc_seq.ts!=='object') cfg.doc_seq.ts={};
+  if(!cfg.doc_mail||typeof cfg.doc_mail!=='object') cfg.doc_mail={};
   return cfg;
 }
 
@@ -2559,6 +2570,87 @@ function collectDocNos(isPo){
   }
   return [...document.querySelectorAll('.ts-no-input')].map(el=>(el.value||'').trim()).filter(Boolean);
 }
+function ensureDocMailLog(){
+  if(!MY.doc_mail||typeof MY.doc_mail!=='object') MY.doc_mail={};
+}
+function pruneDocMailLog(){
+  ensureDocMailLog();
+  const keys=Object.keys(MY.doc_mail);
+  if(keys.length<=300) return;
+  keys.sort((a,b)=>String((MY.doc_mail[b]&&MY.doc_mail[b].at)||'').localeCompare(String((MY.doc_mail[a]&&MY.doc_mail[a].at)||'')));
+  keys.slice(300).forEach(k=>delete MY.doc_mail[k]);
+}
+function currentOverlayDocNos(){
+  const isPo=!!document.querySelector('.po-title-band');
+  return collectDocNos(isPo);
+}
+function isDocMailSent(no){
+  ensureDocMailLog();
+  return !!(no && MY.doc_mail[no] && MY.doc_mail[no].sent);
+}
+function docsMailSentState(){
+  const nos=currentOverlayDocNos();
+  if(!nos.length) return {sent:false, partial:false, nos:[]};
+  const sentCount=nos.filter(isDocMailSent).length;
+  return {sent:sentCount===nos.length, partial:sentCount>0&&sentCount<nos.length, nos};
+}
+function formatMailSentAt(iso){
+  if(!iso) return '';
+  const d=new Date(iso);
+  if(isNaN(d.getTime())) return String(iso).slice(0,16).replace('T',' ');
+  const p=n=>String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function refreshMailSentUi(){
+  const wrap=document.getElementById('mail-sent-wrap');
+  const chk=document.getElementById('mail-sent-chk');
+  const info=document.getElementById('mail-sent-info');
+  if(!wrap||!chk) return;
+  const isDoc=!!document.querySelector('.po-title-band, .ts-title');
+  wrap.classList.toggle('on', isDoc);
+  if(!isDoc){ chk.checked=false; if(info) info.textContent=''; return; }
+  const st=docsMailSentState();
+  chk.checked=st.sent;
+  chk.indeterminate=st.partial;
+  if(info){
+    if(st.sent||st.partial){
+      const hit=st.nos.map(n=>MY.doc_mail[n]).find(x=>x&&x.at);
+      const when=hit?formatMailSentAt(hit.at):'';
+      const who=hit&&hit.to?` → ${hit.to}`:'';
+      info.textContent=(st.partial?'일부 발송':'')+(when?(st.partial?' · ':'')+when:'')+who;
+    }else{
+      info.textContent='미발송';
+    }
+  }
+}
+async function markDocsMailSent({fromEmail, toEmail}={}){
+  ensureDocMailLog();
+  const nos=currentOverlayDocNos();
+  if(!nos.length) return;
+  const at=new Date().toISOString();
+  nos.forEach(no=>{
+    MY.doc_mail[no]={sent:true, at, from:fromEmail||'', to:toEmail||'', type:_docMailMeta.type||''};
+  });
+  pruneDocMailLog();
+  await saveConfigToDb();
+  refreshMailSentUi();
+}
+async function toggleDocMailSent(checked){
+  ensureDocMailLog();
+  const nos=currentOverlayDocNos();
+  if(!nos.length){
+    alert('문서번호가 없습니다');
+    refreshMailSentUi();
+    return;
+  }
+  if(checked){
+    await markDocsMailSent({});
+  }else{
+    nos.forEach(no=>{ delete MY.doc_mail[no]; });
+    await saveConfigToDb();
+    refreshMailSentUi();
+  }
+}
 let _docMailMeta={type:'', parties:[], items:[], nos:[]};
 
 function managerMailList(){
@@ -2762,6 +2854,7 @@ async function sendDocMail(){
       throw new Error(detail);
     }
     if(data&&data.error) throw new Error(data.error);
+    await markDocsMailSent({fromEmail:ctx.fromEmail, toEmail:ctx.toEmail});
     const size=data&&data.bytes?`\n첨부: ${data.filename||ctx.filename} (${Math.round(data.bytes/1024)}KB)`:'';
     alert(`${ctx.docLabel} 메일을 발송했습니다.\n발신: ${ctx.fromName} <${ctx.fromEmail}>\n수신: ${ctx.toName||''} <${ctx.toEmail}>${size}`);
   }catch(e){
@@ -2795,6 +2888,7 @@ function openDocOverlay(html, opts){
     _docMailMeta.nos=collectDocNos(isPo);
     if(!_docMailMeta.type) _docMailMeta.type=isPo?'po':(isTs?'ts':'');
   }
+  refreshMailSentUi();
 }
 async function saveTsContactsToSettings(){
   const els=[...document.querySelectorAll('.ts-contact-input')];
@@ -2858,7 +2952,7 @@ function tsPageHtml({company, seller, contact, its, dy, dm, dd, tsNo, sepClass, 
     :(MY.contact||'　');
   return `<div class="a4-page${sepClass||''}">
     <div class="ts-title">거 래 명 세 표</div>
-    <div class="ts-no"><span class="ts-no-label">No.</span><input class="ts-no-input" value="${escHtml(tsNo||'')}" title="클릭해서 문서번호 수정"></div>
+    <div class="ts-no"><span class="ts-no-label">No.</span><input class="ts-no-input" size="${Math.max((tsNo||'').length, 8)}" value="${escHtml(tsNo||'')}" title="클릭해서 문서번호 수정" oninput="this.size=Math.max((this.value||'').length,8);refreshMailSentUi()"></div>
     <div class="ts-meta">
       <div class="ts-side">
         <div class="ts-side-hd">공급받는자</div>
