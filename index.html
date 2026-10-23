@@ -163,9 +163,9 @@ input[readonly]{background:#f5f5f5;color:#999}
 
 /* 거래명세표 서식 — 표·칸 테두리 모두 1px #111 (1.5px/2px/#ccc/#888 혼용 제거) */
 .ts-title{text-align:center;font-size:24px;font-weight:700;letter-spacing:12px;margin-bottom:8px;color:#111}
-.ts-no{text-align:right;font-size:12px;color:#333;margin-bottom:18px;padding:4px 2px;display:flex;justify-content:flex-end;align-items:center;gap:4px}
-.ts-no-label{flex:0 0 auto}
-.ts-no-input{border:1px solid transparent;background:transparent;text-align:right;font:inherit;font-size:12px;color:#333;padding:2px 6px;border-radius:3px;min-width:12em;box-sizing:border-box}
+.ts-no{display:flex;justify-content:flex-end;align-items:center;gap:6px;width:100%;font-size:12px;color:#333;margin-bottom:18px;padding:4px 2px;box-sizing:border-box}
+.ts-no-label{flex:0 0 auto;white-space:nowrap}
+.ts-no-input{border:1px solid transparent;background:transparent;width:auto!important;min-width:10ch;max-width:28ch;flex:0 1 auto;text-align:left;font:inherit;font-size:12px;color:#333;padding:2px 4px;border-radius:3px;box-sizing:border-box}
 .ts-no-input:hover{background:#fffde7;border-color:#fde68a}
 .ts-no-input:focus{background:#fff9c4;border-color:#f59e0b;outline:none}
 .ts-dateno{font-size:12px;color:#111;margin-bottom:16px}
