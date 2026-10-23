@@ -6,6 +6,7 @@
 <title>상보프레카 발주 관리</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'맑은 고딕','Apple SD Gothic Neo',sans-serif;font-size:14px;color:#1a1a1a;background:#eee}
@@ -954,15 +955,15 @@ input[readonly]{background:#f5f5f5;color:#999}
       <span style="font-size:11px;color:#999;align-self:center;margin-left:8px">※ A4 용지로 인쇄해주세요</span>
     </div>
     <div id="mail-panel" class="mail-panel">
-      <label>보내는 사람
+      <label>발신인
         <select id="mail-from"></select>
       </label>
       <label>수신인
         <select id="mail-to" onchange="onMailToChange()"></select>
       </label>
       <input id="mail-to-custom" type="email" placeholder="수신 이메일 직접 입력" style="display:none;width:220px">
-      <button class="doc-print" style="background:#0f766e" onclick="launchMailto()">네이버 메일 작성 열기</button>
-      <div class="mail-hint">※ 메일 앱/네이버 메일 작성창이 열립니다. PDF 첨부는 작성창에서 직접 붙여 주세요. (브라우저 mailto는 자동 첨부가 안 됩니다)</div>
+      <button id="mail-send-btn" class="doc-print" style="background:#0f766e" onclick="sendDocMail()">PDF 첨부하여 발송</button>
+      <div class="mail-hint">※ 선택한 발신인 주소로 PDF가 첨부되어 발송됩니다. 거래처 회신도 그 주소로 옵니다. (다운로드·별도 첨부 불필요)</div>
     </div>
     <div id="doc-content"></div>
   </div>
@@ -2588,6 +2589,9 @@ function fillMailPanel(){
   if(!fromSel||!toSel) return;
   const senders=managerMailList();
   fromSel.innerHTML=senders.map(s=>`<option value="${escHtml(s.email)}" data-name="${escHtml(s.name)}">${escHtml(s.name)} (${escHtml(s.email)})</option>`).join('');
+  const me=(_currentUserEmail||'').toLowerCase();
+  const meIdx=senders.findIndex(s=>(s.email||'').toLowerCase()===me);
+  if(meIdx>=0) fromSel.selectedIndex=meIdx;
   // 현재 문서 관련 수신 우선, 없으면 전체 거래처 중 이메일 있는 곳
   const opts=[];
   const seen=new Set();
@@ -2638,11 +2642,12 @@ function onMailToChange(){
   custom.style.display=isCustom?'':'none';
   if(isCustom) custom.focus();
 }
-function launchMailto(){
+function docMailContext(){
   const fromSel=document.getElementById('mail-from');
   const toSel=document.getElementById('mail-to');
   const custom=document.getElementById('mail-to-custom');
-  const fromEmail=fromSel.value;
+  if(!fromSel||!toSel) return null;
+  const fromEmail=(fromSel.value||'').trim();
   const fromName=fromSel.options[fromSel.selectedIndex]?.dataset?.name||'';
   let toEmail=toSel.value;
   let toName=toSel.options[toSel.selectedIndex]?.dataset?.name||'';
@@ -2652,44 +2657,117 @@ function launchMailto(){
   }
   if(!toEmail){
     const typed=prompt(`${toName||'수신인'} 이메일 주소를 입력해주세요`, '');
-    if(typed===null) return;
+    if(typed===null) return null;
     toEmail=typed.trim();
   }
-  if(!toEmail||!toEmail.includes('@')){ alert('수신 이메일을 확인해 주세요'); return; }
+  if(!fromEmail||!fromEmail.includes('@')){ alert('발신인을 선택해 주세요'); return null; }
+  if(!toEmail||!toEmail.includes('@')){ alert('수신 이메일을 확인해 주세요'); return null; }
   const isPo=_docMailMeta.type==='po'||!!document.querySelector('.po-title-band');
   const docLabel=isPo?'발주서':'거래명세표';
   const nos=collectDocNos(isPo);
   const noText=nos.length?nos.join(', '):'';
   const subject=`[상보프레카] ${docLabel}${noText?' '+noText:''}`;
-  const lines=[
-    `${toName||'담당자'} 님 안녕하세요.`,
-    `${MY.name||'상보프레카'} ${fromName}입니다.`,
-    '',
-    `${docLabel}${noText?' (No. '+noText+')':''} 보내 드립니다.`,
-    'PDF 파일은 이 메일에 첨부해 주세요. (미리보기에서 프린트/PDF 저장 후 첨부)',
-    ''
-  ];
-  const items=(_docMailMeta.items||[]).slice(0,20);
-  if(items.length){
-    lines.push('[품목 요약]');
-    items.forEach((it,i)=>{
-      const name=it.item||'';
-      const qty=it.sqty||it.bqty||'';
-      const ship=it.ship||'';
-      lines.push(`${i+1}. ${name}${qty!==''?' / 수량 '+qty:''}${ship?' / 출하 '+ship:''}`);
-    });
-    if((_docMailMeta.items||[]).length>20) lines.push('…');
-    lines.push('');
+  const mgr=(MY.managers&&MY.managers[fromName])||{};
+  const lines=[fromName];
+  if(mgr.tel) lines.push(mgr.tel);
+  lines.push('(주) 상보프레카', fromEmail);
+  const safeNo=(nos[0]||'doc').replace(/[^\w.\-]+/g,'_').replace(/_+/g,'_')||'doc';
+  const filename=`${isPo?'PO':'TS'}_${safeNo}.pdf`;
+  return {fromEmail, fromName, toEmail, toName, subject, body:lines.join('\r\n'), filename, docLabel};
+}
+function bytesToBase64(bytes){
+  let binary='';
+  const chunk=0x8000;
+  for(let i=0;i<bytes.length;i+=chunk){
+    binary+=String.fromCharCode.apply(null, bytes.subarray(i, i+chunk));
   }
-  lines.push('감사합니다.','',`${fromName}`,'(주) 상보프레카', fromEmail);
-  const body=lines.join('\r\n');
-  const url=`mailto:${encodeURIComponent(toEmail)}?cc=${encodeURIComponent(fromEmail)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-  if(url.length>1800){
-    // 메일 클라이언트가 긴 URL을 자를 수 있어 요약만
-    const shortBody=[`${toName||'담당자'} 님 안녕하세요.`,`${MY.name||'상보프레카'} ${fromName}입니다.`, '', `${docLabel}${noText?' (No. '+noText+')':''} 보내 드립니다.`, 'PDF는 첨부해 주세요.', '', fromName, fromEmail].join('\r\n');
-    window.location.href=`mailto:${encodeURIComponent(toEmail)}?cc=${encodeURIComponent(fromEmail)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(shortBody)}`;
-  }else{
-    window.location.href=url;
+  return btoa(binary);
+}
+async function buildDocPdfBase64(){
+  if(typeof html2pdf==='undefined') throw new Error('PDF 라이브러리를 불러오지 못했습니다');
+  const root=document.getElementById('doc-content');
+  const pages=[...root.querySelectorAll('.a4-page')];
+  if(!pages.length) throw new Error('발송할 문서가 없습니다');
+
+  const host=document.createElement('div');
+  host.setAttribute('data-mail-pdf-host','1');
+  host.style.cssText='position:fixed;left:-10000px;top:0;width:794px;background:#fff;z-index:-1;';
+  pages.forEach((p,i)=>{
+    const clone=p.cloneNode(true);
+    clone.style.borderTop='none';
+    clone.style.pageBreakAfter=(i<pages.length-1)?'always':'auto';
+    clone.style.breakAfter=(i<pages.length-1)?'page':'auto';
+    clone.querySelectorAll('input.ts-contact-input').forEach(inp=>{
+      const span=document.createElement('span');
+      span.textContent=inp.value||'　';
+      span.style.cssText='display:inline-block;min-width:4em';
+      inp.replaceWith(span);
+    });
+    host.appendChild(clone);
+  });
+  document.body.appendChild(host);
+
+  try{
+    const opt={
+      margin:0,
+      image:{type:'jpeg', quality:0.92},
+      html2canvas:{scale:2, useCORS:true, letterRendering:true, logging:false, windowWidth:794},
+      jsPDF:{unit:'mm', format:'a4', orientation:'portrait'},
+      pagebreak:{mode:['css','legacy'], after:'.a4-page'}
+    };
+    const blob=await html2pdf().set(opt).from(host).outputPdf('blob');
+    const buf=await blob.arrayBuffer();
+    const bytes=new Uint8Array(buf);
+    if(bytes.length<100 || bytes[0]!==0x25 || bytes[1]!==0x50 || bytes[2]!==0x44 || bytes[3]!==0x46){
+      throw new Error('PDF 생성에 실패했습니다. 다시 시도해 주세요.');
+    }
+    return bytesToBase64(bytes);
+  }finally{
+    host.remove();
+  }
+}
+async function sendDocMail(){
+  const ctx=docMailContext();
+  if(!ctx) return;
+  const btn=document.getElementById('mail-send-btn');
+  const prev=btn?btn.textContent:'';
+  try{
+    if(btn){ btn.disabled=true; btn.textContent='PDF 생성 중...'; }
+    const pdfBase64=await buildDocPdfBase64();
+    if(!pdfBase64||pdfBase64.length<200) throw new Error('PDF가 비어 있습니다. 문서 미리보기를 다시 열어 주세요.');
+    if(btn) btn.textContent='발송 중...';
+    const {data, error}=await sb.functions.invoke('send-doc-mail', {
+      body:{
+        fromEmail:ctx.fromEmail,
+        fromName:ctx.fromName,
+        toEmail:ctx.toEmail,
+        toName:ctx.toName,
+        subject:ctx.subject,
+        body:ctx.body,
+        pdfBase64,
+        filename:ctx.filename
+      }
+    });
+    if(error){
+      let detail=(data&&data.error)||error.message||'발송 실패';
+      try{
+        if(!data&&error.context&&typeof error.context.json==='function'){
+          const body=await error.context.json();
+          if(body&&body.error) detail=body.error;
+        }
+      }catch(_){}
+      if(/Failed to send a request|Function not found|404/i.test(detail)){
+        detail='메일 발송 서버(함수)가 아직 배포되지 않았습니다. Supabase에 send-doc-mail 함수와 네이버 SMTP 비밀번호를 등록해 주세요.';
+      }
+      throw new Error(detail);
+    }
+    if(data&&data.error) throw new Error(data.error);
+    const size=data&&data.bytes?`\n첨부: ${data.filename||ctx.filename} (${Math.round(data.bytes/1024)}KB)`:'';
+    alert(`${ctx.docLabel} 메일을 발송했습니다.\n발신: ${ctx.fromName} <${ctx.fromEmail}>\n수신: ${ctx.toName||''} <${ctx.toEmail}>${size}`);
+  }catch(e){
+    alert((e&&e.message)||'메일 발송에 실패했습니다');
+  }finally{
+    if(btn){ btn.disabled=false; btn.textContent=prev||'PDF 첨부하여 발송'; }
   }
 }
 function openDocOverlay(html, opts){
