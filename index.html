@@ -6338,20 +6338,22 @@ async function upsertTxRule(keyword,account){
   return data&&data[0];
 }
 function txIdentityKey(r){
+  // 구분(label)이 달라도 같은 출금이면 중복으로 본다 — 재업로드 시 급여 등 신규분만 남기기 위함
   const date=String(r.tx_date||'').slice(0,10);
   const amount=Math.round(+r.amount||0);
   const desc=String(r.description||'').trim();
-  return [r.source||'', r.account_label||'', date, desc, amount, r.direction||''].join('|');
+  return [r.source||'', date, desc, amount, r.direction||''].join('|');
 }
 async function existingTxKeySet(source, accountLabel, months){
   const keys=new Set();
   for(const ym of months){
     if(!ym) continue;
-    const {data, error}=await sb.from('bank_tx')
+    // label 무관하게 같은 source·월의 기존 거래를 모두 본다
+    let q=sb.from('bank_tx')
       .select('source,account_label,tx_date,description,amount,direction')
       .eq('source', source)
-      .eq('account_label', accountLabel)
       .eq('year_month', ym);
+    const {data, error}=await q;
     if(error){ console.error(error); continue; }
     (data||[]).forEach(r=>keys.add(txIdentityKey(r)));
   }
@@ -6429,14 +6431,36 @@ function sgaSupplyAmt(t){
 }
 
 function excelDateToStr(v){
-  if(typeof v==='number'){
-    const d=XLSX.SSF.parse_date_code(v);
-    return `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
+  if(v instanceof Date && !isNaN(v.getTime())){
+    const p=n=>String(n).padStart(2,'0');
+    return `${v.getFullYear()}-${p(v.getMonth()+1)}-${p(v.getDate())}`;
   }
-  const s=String(v).trim();
-  const m=s.match(/(\d{4})[.\-\/](\d{1,2})[.\-\/](\d{1,2})/);
+  if(typeof v==='number' && isFinite(v)){
+    // 엑셀 일련번호 또는 yyyymmdd 숫자
+    if(v>19000101 && v<21001231 && Number.isInteger(v)){
+      const s=String(v);
+      if(s.length===8) return `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}`;
+    }
+    if(typeof XLSX!=='undefined' && XLSX.SSF && XLSX.SSF.parse_date_code){
+      const d=XLSX.SSF.parse_date_code(v);
+      if(d && d.y) return `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
+    }
+  }
+  const s=String(v==null?'':v).trim();
+  if(!s) return '';
+  let m=s.match(/(\d{4})[.\-\/년\s]+(\d{1,2})[.\-\/월\s]+(\d{1,2})/);
   if(m) return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
-  return s.slice(0,10);
+  m=s.match(/^(\d{2})[.\-\/](\d{1,2})[.\-\/](\d{1,2})/); // YY.MM.DD
+  if(m){
+    const yy=+m[1];
+    const y=yy>=70?1900+yy:2000+yy;
+    return `${y}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+  }
+  m=s.match(/^(\d{8})$/);
+  if(m) return `${m[1].slice(0,4)}-${m[1].slice(4,6)}-${m[1].slice(6,8)}`;
+  // 이미 ISO면 앞 10자리
+  if(/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10);
+  return '';
 }
 
 async function handleTxFile(e){
@@ -6464,6 +6488,7 @@ async function handleTxFile(e){
   const idx=name=>header.indexOf(name);
   const parsed=[];
 
+  let badDate=0;
   if(isBank){
     const iDate=idx('거래일시'), iIn=idx('입금액'), iOut=idx('출금액'), iDesc=idx('내용');
     for(let i=1;i<rows.length;i++){
@@ -6473,9 +6498,11 @@ async function handleTxFile(e){
       if(inAmt===0 && outAmt===0) continue;
       const desc=String(r[iDesc]||'').trim();
       if(!desc) continue;
+      const txDate=excelDateToStr(r[iDate]);
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(txDate)){ badDate++; continue; }
       parsed.push({
         source:'bank', account_label:label,
-        tx_date:excelDateToStr(r[iDate]),
+        tx_date:txDate,
         description:desc,
         amount: inAmt>0?inAmt:outAmt,
         direction: inAmt>0?'in':'out'
@@ -6490,9 +6517,11 @@ async function handleTxFile(e){
       if(amt===0) continue;
       const desc=String(r[iDesc]||'').trim();
       if(!desc) continue;
+      const txDate=excelDateToStr(r[iDate]);
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(txDate)){ badDate++; continue; }
       parsed.push({
         source:'card', account_label:label,
-        tx_date:excelDateToStr(r[iDate]),
+        tx_date:txDate,
         description:desc,
         amount: Math.abs(amt),
         direction: amt<0?'in':'out'
@@ -6501,7 +6530,9 @@ async function handleTxFile(e){
   }
 
   if(!parsed.length){
-    alert('읽을 수 있는 거래가 없어요.');
+    alert(badDate
+      ? `날짜를 읽지 못한 행이 ${badDate}건 있어 가져올 거래가 없어요. 엑셀의 거래일시 형식을 확인해주세요.`
+      : '읽을 수 있는 거래가 없어요.');
     document.getElementById('tx-file-status').textContent='';
     return;
   }
@@ -6510,8 +6541,8 @@ async function handleTxFile(e){
   const existing=await existingTxKeySet(parsed[0].source, label, months);
   const {fresh, skipped}=keepNewTxRows(parsed, existing);
   if(!fresh.length){
-    alert(`${label}에 이미 있는 거래 ${skipped}건이라, 새로 넣을 내역이 없어요.`);
-    document.getElementById('tx-file-status').textContent=`새 내역 없음 (${skipped}건 제외)`;
+    alert(`이미 저장된 거래 ${skipped}건이라 새로 넣을 내역이 없어요.\n\n※ 같은 출금(날짜·내용·금액)은 구분명(label)이 달라도 중복으로 봐요.\n※ 급여 등 새 거래가 파일에 있다면, 분류 확인 화면이 뜨는지·「전체 저장」을 눌렀는지 확인해주세요.`);
+    document.getElementById('tx-file-status').textContent=`새 내역 없음 (${skipped}건 제외${badDate?`, 날짜오류 ${badDate}건`:''})`;
     document.getElementById('tx-file').value='';
     return;
   }
@@ -6525,8 +6556,10 @@ async function handleTxFile(e){
     const defaultAccount = matched ? matched.account : '';
     return {...p, account: defaultAccount, vat_type: vatTypeFor(p.description, defaultAccount, p.amount), ruleKeyword: matched?matched.keyword:p.description, saveRule: !matched};
   });
-  document.getElementById('tx-file-status').textContent=`새 내역 ${fresh.length}건${skipped?` (이미 저장된 ${skipped}건 제외)`:''} · ${isBank?'은행':'카드'} · ${label}`;
+  document.getElementById('tx-file-status').textContent=`새 내역 ${fresh.length}건${skipped?` (이미 저장된 ${skipped}건 제외)`:''}${badDate?` · 날짜오류 ${badDate}건 제외`:''} · ${isBank?'은행':'카드'} · ${label} · 아래 표에서 「전체 저장」을 눌러야 DB에 반영됩니다`;
   renderTxReview();
+  const box=document.getElementById('tx-review-box');
+  if(box) box.scrollIntoView({behavior:'smooth', block:'start'});
 }
 
 function renderTxReview(){
@@ -6570,11 +6603,19 @@ function renderTxReviewRowState(i){
 }
 
 async function saveTxReview(){
+  const ready=txRowsPending.filter(r=>r.account);
   const missing=txRowsPending.filter(r=>!r.account);
-  if(missing.length){ alert(`계정이 지정 안 된 항목이 ${missing.length}건 있어요. 전부 지정해주세요.`); return; }
+  if(!ready.length){
+    alert(`계정이 지정된 항목이 없어요. ${missing.length}건 모두 계정을 선택해주세요.`);
+    return;
+  }
+  if(missing.length){
+    const sample=missing.slice(0,5).map(r=>`· ${r.tx_date} ${r.description}`).join('\n');
+    if(!confirm(`계정 미지정 ${missing.length}건은 이번엔 빼고, 지정된 ${ready.length}건만 먼저 저장할까요?\n\n미지정 예:\n${sample}${missing.length>5?'\n…':''}\n\n※ 급여(김은희/이은진/신창수)처럼 계정이 있는 건은 저장됩니다.`)) return;
+  }
   showSyncStatus('저장 중...');
-  // 규칙 저장
-  for(const r of txRowsPending){
+  // 규칙 저장 (이번에 저장하는 행만)
+  for(const r of ready){
     if(r.saveRule && r.ruleKeyword.trim()){
       const rule=await upsertTxRule(r.ruleKeyword.trim(), r.account);
       if(rule){
@@ -6584,7 +6625,7 @@ async function saveTxReview(){
     }
   }
   // 거래 저장
-  const rows=txRowsPending.map(r=>({
+  const rows=ready.map(r=>({
     source:r.source, account_label:r.account_label, tx_date:r.tx_date, description:r.description,
     amount:r.amount, direction:r.direction, account:r.account, pl_type:ACCOUNT_PLTYPE[r.account]||'비손익',
     vat_type:vatTypeFor(r.description, r.account, r.amount),
@@ -6593,12 +6634,20 @@ async function saveTxReview(){
   const ok=await saveBankTxRows(rows);
   if(ok){
     showSyncStatus('저장됨');
-    txRowsPending=[];
-    document.getElementById('tx-review-box').style.display='none';
-    document.getElementById('tx-file-status').textContent='저장 완료!';
+    txRowsPending=missing; // 미지정만 남겨 이어서 고치게
     document.getElementById('tx-file').value='';
     txAll=await loadBankTxFromDb();
     renderTxSummary();
+    if(missing.length){
+      document.getElementById('tx-file-status').textContent=`${ready.length}건 저장됨 · 계정 미지정 ${missing.length}건은 아래에 남아 있어요`;
+      renderTxReview();
+      alert(`${ready.length}건을 저장했어요.\n계정 미지정 ${missing.length}건은 표에 남겨 두었으니 계정을 고른 뒤 다시 「전체 저장」을 눌러주세요.\n\n손익에 넣으려면 월별 분류 현황에서 「손익계산서에 반영」도 눌러주세요.`);
+    }else{
+      txRowsPending=[];
+      document.getElementById('tx-review-box').style.display='none';
+      document.getElementById('tx-file-status').textContent=`저장 완료! ${ready.length}건`;
+      alert(`${ready.length}건을 저장했어요.\n손익계산서에 넣으려면 아래에서 「손익계산서에 반영」을 눌러주세요.`);
+    }
   }
 }
 
