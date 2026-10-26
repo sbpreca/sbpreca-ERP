@@ -2615,12 +2615,14 @@ function buildPOHtml(order){
   const items=(order.items||[]).filter(i=>i && (i.buyer||i.item));
   const groups={};
   items.forEach(i=>{if(i.buyer)(groups[i.buyer]=groups[i.buyer]||[]).push(i);});
+  const buyerCount=Object.keys(groups).length;
   const FIXED_ROWS=10;
   let html='';
   Object.entries(groups).forEach(([buyer,its],idx)=>{
     const bi=BUYERS[buyer]||{contact:'담당자'};
     const sub=its.reduce((s,i)=>s+(+i.bamt||0),0);
-    const poNo=no+'-'+String(idx+1).padStart(2,'0');
+    // 매입처가 하나면 발주번호 그대로. 여러 장이면 -01, -02 구분
+    const poNo=buyerCount===1?no:`${no}-${String(idx+1).padStart(2,'0')}`;
     const rawSeller=(its.find(i=>i.seller)||{seller:''}).seller||'';
     const deliverCompany=sellerCompany(rawSeller);
     const deliverSiteName=sellerSite(rawSeller);
