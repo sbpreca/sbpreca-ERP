@@ -3746,11 +3746,22 @@ function go(p){
   if(p==='closing')renderClosing();
   if(p==='cashflow')renderCashflow();
   if(p==='hometax')renderHometax();
-  if(p==='pl')renderPL();
+  if(p==='pl'){
+    // DB에서 다시 읽어 메모리의 오래된 판관비(중복·잘못된 동일 금액 등)가 화면에 남지 않게 함
+    loadPlItemsFromDb().then(pl=>{
+      sgaData=pl.sga; otherData=pl.other; inventoryData=pl.inventory;
+      vatData=pl.vat; salesAdjData=pl.salesAdj; purchaseAdjData=pl.purchaseAdj;
+      captureAnnualPlMonths();
+      renderPL();
+    }).catch(err=>{ console.error(err); renderPL(); });
+  }
   // 일반 사용자 조회 전용 탭 안내 배너 표시
   applyRoleRestrictions(p);
   if(p==='balance')renderBalance();
-  if(p==='txclass')renderTxSummary();
+  if(p==='txclass'){
+    loadBankTxFromDb().then(rows=>{ txAll=rows||[]; renderTxSummary(); })
+      .catch(err=>{ console.error(err); renderTxSummary(); });
+  }
   if(p==='annual')renderAnnual();
   if(p==='settings')loadConfig();
 }
