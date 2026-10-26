@@ -741,6 +741,7 @@ input[readonly]{background:#f5f5f5;color:#999}
             <button class="btn btn-save" style="font-size:11px;padding:3px 12px" onclick="addSgaItem()">+ 항목 추가</button>
           </div>
           <p id="sga-source-note" style="margin:0 12px 8px;font-size:12px;color:#888"></p>
+          <p id="sga-missing-warn" style="display:none;margin:0 12px 8px;padding:8px 10px;background:#fff7ed;border:1px solid #fdba74;border-radius:6px;font-size:12px;color:#9a3412"></p>
           <table class="data-tbl">
             <thead><tr><th>계정 과목</th><th class="r">금액(공급가액)</th><th style="width:30px"></th></tr></thead>
             <tbody id="sga-body"></tbody>
@@ -823,6 +824,7 @@ input[readonly]{background:#f5f5f5;color:#999}
           <button class="btn btn-save" onclick="applyTxToPL()">손익계산서에 반영</button>
         </div>
       </div>
+      <p id="tx-summary-warn" style="display:none;margin:0 12px 10px;padding:10px 12px;background:#fff7ed;border:1px solid #fdba74;border-radius:6px;font-size:12px;color:#9a3412"></p>
       <table class="data-tbl">
         <thead><tr><th>계정과목</th><th style="width:100px">구분</th><th class="r" style="width:130px">합계</th></tr></thead>
         <tbody id="tx-summary-body"></tbody>
@@ -5339,6 +5341,12 @@ function toggleDetail(detailId, rowEl){
 }
 
 /* ── 손익계산서 ── */
+function priorYearMonth(ym){
+  if(!/^\d{4}-\d{2}$/.test(String(ym||''))) return '';
+  const y=+ym.slice(0,4), m=+ym.slice(5,7);
+  const d=new Date(y, m-2, 1);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+}
 // 지출분류(bank_tx)에서 판관비만 계정별로 합산 (건별 내역은 넣지 않음)
 // 공제(과세)는 공급가액(÷1.1), 면세·불공제는 출금액 그대로
 function aggregateSgaFromBank(ym){
@@ -5355,6 +5363,40 @@ function aggregateSgaFromBank(ym){
     .map(([name,amt])=>({name, amt}))
     .filter(i=>i.amt)
     .sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+}
+/** 지난달 판관비(저장·지출분류)에는 있는데 이번 달 지출분류·저장본 어디에도 없는 계정 */
+function sgaAccountsMissingThisMonth(ym){
+  if(!ym) return [];
+  const prev=priorYearMonth(ym);
+  if(!prev) return [];
+  const prior=new Set();
+  (sgaData[prev]||[]).forEach(i=>{ const n=String(i.name||'').trim(); if(n && +i.amt) prior.add(n); });
+  aggregateSgaFromBank(prev).forEach(i=>prior.add(i.name));
+  const cur=new Set();
+  (sgaData[ym]||[]).forEach(i=>{ const n=String(i.name||'').trim(); if(n && +i.amt) cur.add(n); });
+  aggregateSgaFromBank(ym).forEach(i=>cur.add(i.name));
+  return [...prior].filter(n=>!cur.has(n)).sort((a,b)=>a.localeCompare(b,'ko'));
+}
+/** 저장된 판관비에 없고 지출분류에만 있는 계정을 합쳐 보여 줌 (추가 업로드 후 재반영 전에도 보이게) */
+function mergeSgaSavedWithBank(savedList, ym){
+  const bank=aggregateSgaFromBank(ym||'');
+  if(!(savedList||[]).length){
+    return {list:bank, source:bank.length?'bank':'empty', mergedFromBank:[]};
+  }
+  const map=new Map();
+  (savedList||[]).forEach(i=>{
+    const n=String(i.name||'').trim();
+    if(!n) return;
+    map.set(n, {name:n, amt:+i.amt||0});
+  });
+  const mergedFromBank=[];
+  bank.forEach(b=>{
+    if(map.has(b.name)) return;
+    map.set(b.name, {name:b.name, amt:b.amt, fromBank:true});
+    mergedFromBank.push(b.name);
+  });
+  const list=[...map.values()].filter(i=>i.amt).sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+  return {list, source:mergedFromBank.length?'mixed':'saved', mergedFromBank};
 }
 function rollupSgaSaved(){
   const map={};
@@ -5413,16 +5455,23 @@ async function renderPL(){
   const cogs=beginInv+purchases-endInv; // 매출원가 = 기초재고 + 당기매입 - 기말재고
   const gross=sales-cogs;
 
-  // 판관비: 저장된 계정별 합계. 없으면 지출분류(계정별)로 표시 (건별 내역은 안 씀)
+  // 판관비: 저장된 계정별 합계 + 지출분류에만 있는 계정 병합. 건별 내역은 안 씀
   const sgaKey=pm||'all';
   if(pm && !sgaData[sgaKey]) sgaData[sgaKey]=[];
   let sgaSource='saved';
   let sgaList=pm ? (sgaData[sgaKey]||[]) : rollupSgaSaved();
-  if(!sgaList.length){
-    sgaList=aggregateSgaFromBank(pm||'');
+  let mergedFromBank=[];
+  if(pm){
+    const merged=mergeSgaSavedWithBank(sgaList, pm);
+    sgaList=merged.list;
+    sgaSource=merged.source;
+    mergedFromBank=merged.mergedFromBank;
+  }else if(!sgaList.length){
+    sgaList=aggregateSgaFromBank('');
     sgaSource=sgaList.length?'bank':'empty';
   }
   const totalSga=sgaList.reduce((s,i)=>s+(+i.amt||0),0);
+  const missingSga=pm?sgaAccountsMissingThisMonth(pm):[];
   const opIncome=gross-totalSga;
 
   // 영업외
@@ -5516,7 +5565,19 @@ async function renderPL(){
   if(sgaNote){
     sgaNote.textContent=sgaSource==='bank'
       ? (pm?`${pm} · 지출분류 계정별 합계 · 공제는 ÷1.1 공급가액 (건별 내역은 표시하지 않아요)`:'전체 · 지출분류 계정별 합계 · 공제는 ÷1.1 공급가액')
+      : sgaSource==='mixed'
+        ? `${pm} · 저장분 + 지출분류에만 있는 계정(${mergedFromBank.join(', ')}) · 「손익계산서에 반영」을 다시 눌러 저장하세요`
       : (sgaSource==='saved'?(pm?`${pm} · 저장된 계정별 합계 (공급가액)`:'전체 · 저장된 계정별 합계 (공급가액)'):'');
+  }
+  const sgaMiss=document.getElementById('sga-missing-warn');
+  if(sgaMiss){
+    if(missingSga.length){
+      sgaMiss.style.display='block';
+      sgaMiss.innerHTML=`지난달에는 있었는데 이번 달 지출분류·손익에 없어요: <strong>${missingSga.map(escHtml).join(', ')}</strong><br>은행/카드 내역을 지출분류에 올린 뒤 「손익계산서에 반영」을 다시 눌러주세요.`;
+    }else{
+      sgaMiss.style.display='none';
+      sgaMiss.textContent='';
+    }
   }
   const sgaBody=document.getElementById('sga-body');
   const sgaTot=document.getElementById('sga-total');
@@ -5526,9 +5587,9 @@ async function renderPL(){
     }else{
       const editable=sgaSource==='saved' && !!pm;
       sgaBody.innerHTML=sgaList.map((it,idx)=>{
-        if(!editable){
+        if(!editable || it.fromBank){
           return `<tr>
-            <td style="font-weight:600">${escHtml(it.name)}</td>
+            <td style="font-weight:600">${escHtml(it.name)}${it.fromBank?' <span style="font-size:11px;color:#c2410c;font-weight:400">지출분류</span>':''}</td>
             <td class="r" style="font-variant-numeric:tabular-nums">${fmtW(it.amt)}</td>
             <td></td>
           </tr>`;
@@ -6561,6 +6622,30 @@ async function renderTxSummary(){
     return (order[a.pl_type]-order[b.pl_type]) || a.account.localeCompare(b.account);
   });
 
+  const warn=document.getElementById('tx-summary-warn');
+  const missing=sgaAccountsMissingThisMonth(curYm);
+  const outDates=rows.filter(t=>t.direction==='out').map(t=>String(t.tx_date||'').slice(0,10)).filter(Boolean).sort();
+  const lastOut=outDates[outDates.length-1]||'';
+  const tips=[];
+  if(missing.length){
+    tips.push(`지난달에는 있었는데 이번 달 지출분류에 없어요: <strong>${missing.map(escHtml).join(', ')}</strong>`);
+  }
+  if(missing.includes('급여') || (missing.length && !rows.some(t=>t.account==='급여'))){
+    tips.push('급여는 보통 월 중·하순에 나갑니다. 해당 기간 은행 거래내역을 올려 분류·저장한 뒤 「손익계산서에 반영」을 눌러주세요.');
+  }
+  if(lastOut && lastOut.slice(8,10) < '20' && (missing.includes('급여') || !rows.some(t=>t.account==='급여'))){
+    tips.push(`지금 저장된 ${curYm} 출금 마지막 날짜는 <strong>${escHtml(lastOut)}</strong>입니다. 그 이후 급여 이체가 있다면 엑셀을 다시 올려주세요.`);
+  }
+  if(warn){
+    if(tips.length){
+      warn.style.display='block';
+      warn.innerHTML=tips.join('<br>');
+    }else{
+      warn.style.display='none';
+      warn.textContent='';
+    }
+  }
+
   if(!list.length){
     document.getElementById('tx-summary-body').innerHTML=`<tr><td colspan="3" style="text-align:center;color:#bbb;padding:1.5rem">이 달에 저장된 분류 내역이 없어요</td></tr>`;
     document.getElementById('tx-summary-foot').innerHTML='';
@@ -6587,8 +6672,18 @@ async function renderTxSummary(){
 async function applyTxToPL(){
   const ym=document.getElementById('tx-summary-month').value;
   if(!ym) return;
-  if(!confirm(`${ym} 손익계산서의 판관비/영업외손익을 지금 분류된 내역으로 덮어쓸까요?\n\n· 공제(과세) 판관비는 부가세 제외(÷1.1)한 공급가액으로 넣어요\n· 급여·보험료·세금과공과·기업업무추진비·500원 지급수수료(이체수수료)는 출금액 그대로예요\n· 기존 수동 입력값은 사라져요`)) return;
   const rows=txAll.filter(t=>t.year_month===ym);
+  const bankSga=new Set(aggregateSgaFromBank(ym).map(i=>i.name));
+  const prev=priorYearMonth(ym);
+  const priorNames=new Set();
+  (sgaData[prev]||[]).forEach(i=>{ const n=String(i.name||'').trim(); if(n && +i.amt) priorNames.add(n); });
+  aggregateSgaFromBank(prev).forEach(i=>priorNames.add(i.name));
+  const missing=[...priorNames].filter(n=>!bankSga.has(n)).sort((a,b)=>a.localeCompare(b,'ko'));
+  let msg=`${ym} 손익계산서의 판관비/영업외손익을 지금 분류된 내역으로 덮어쓸까요?\n\n· 공제(과세) 판관비는 부가세 제외(÷1.1)한 공급가액으로 넣어요\n· 급여·보험료·세금과공과·기업업무추진비·500원 지급수수료(이체수수료)는 출금액 그대로예요\n· 기존 수동 입력값은 사라져요`;
+  if(missing.length){
+    msg+=`\n\n⚠ 지난달에는 있었는데 이번 달 지출분류에 없는 계정: ${missing.join(', ')}\n이 계정들은 손익에서 빠집니다. 은행 내역을 더 올린 뒤 반영하는 편이 안전해요.`;
+  }
+  if(!confirm(msg)) return;
   const byAccount={};
   rows.forEach(t=>{
     if(!byAccount[t.account]) byAccount[t.account]={account:t.account, pl_type:t.pl_type, in:0, out:0, deductible:0};
