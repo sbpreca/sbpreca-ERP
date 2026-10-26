@@ -3289,7 +3289,6 @@ function renderList(){
   area.innerHTML=filtered.map(o=>{
     const bs=[...new Set(o.items.map(i=>i.buyer).filter(Boolean))].join(', ');
     const its=[...new Set(o.items.map(i=>i.item).filter(Boolean))].join(', ');
-    const m=o.total_sell-o.total_buy,r=o.total_sell?(m/o.total_sell*100).toFixed(1):0;
     const pend=o.items.filter(i=>i.status==='미납품').length;
     return `<div class="card">
       <div class="card-top">
@@ -3303,8 +3302,6 @@ function renderList(){
       <div class="card-items-txt">${its}</div>
       <div class="card-amts">
         <div class="card-amt"><span class="card-amt-lbl">매입</span><span class="card-amt-val">${fmtW(o.total_buy)}</span></div>
-        <div class="card-amt"><span class="card-amt-lbl">매출</span><span class="card-amt-val" style="color:#15803d">${fmtW(o.total_sell)}</span></div>
-        <div class="card-amt"><span class="card-amt-lbl">이익</span><span class="card-amt-val" style="color:#1d4ed8">${fmtW(m)} (${r}%)</span></div>
       </div>
       <div class="card-btns">
         <button class="btn" style="font-size:12px;padding:5px 12px" onclick="loadOrder('${o.no}')">수정</button>
