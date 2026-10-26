@@ -3306,6 +3306,7 @@ async function buildDocPdfBase64(){
   }
 }
 async function sendDocMail(){
+  try{ await syncOverlayDocSeq(); }catch(e){ console.warn(e); }
   const ctx=docMailContext();
   if(!ctx) return;
   const btn=document.getElementById('mail-send-btn');
