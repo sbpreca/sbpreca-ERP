@@ -1425,12 +1425,15 @@ let _persistTimer=null;
 let _ordersReady=false;
 let _knownOrderNos=new Set();
 let _dirtyOrderNos=new Set();
+let _pendingOrderDeletes=new Set(); // 발주번호 변경 시 삭제할 옛 번호
+let _formSourceNo=null; // 수정 화면이 불러온 원래 발주번호 (새 작성은 null)
 let _saveQueue=Promise.resolve();
 
 function rememberLoadedOrders(){
   _ordersReady=true;
   _knownOrderNos=new Set(orders.map(o=>o.no));
   _dirtyOrderNos.clear();
+  _pendingOrderDeletes.clear();
 }
 
 // 바꾼 발주만 저장한다. 인자 없는 persist()는 아무것도 쓰지 않는다.
@@ -1444,6 +1447,14 @@ const persist=(no)=>{
   clearTimeout(_persistTimer);
   _persistTimer=setTimeout(()=>{ saveOrdersToDb(); }, 300);
 };
+function queueOrderDelete(no){
+  if(!no) return;
+  _pendingOrderDeletes.add(no);
+  _dirtyOrderNos.delete(no);
+  _knownOrderNos.delete(no);
+  clearTimeout(_persistTimer);
+  _persistTimer=setTimeout(()=>{ saveOrdersToDb(); }, 300);
+}
 
 function saveOrdersToDb(){
   const job=_saveQueue.then(()=>saveDirtyOrdersNow());
@@ -1472,62 +1483,73 @@ async function saveDirtyOrdersNow(){
     return;
   }
   const nos=[..._dirtyOrderNos];
+  const deleteNos=[..._pendingOrderDeletes].filter(n=>!orders.some(o=>o.no===n));
   _dirtyOrderNos=new Set();
+  _pendingOrderDeletes=new Set();
   // 참조가 아니라 깊은 복사 — 저장 중 폼이 다시 바뀌어도 옛/새가 섞이지 않게
   const snapshot=nos
     .map(no=>cloneOrder(orders.find(o=>o.no===no)))
     .filter(o=>o&&_knownOrderNos.has(o.no));
-  if(!snapshot.length){
+  if(!snapshot.length && !deleteNos.length){
     if(nos.length) showSyncStatus('저장할 발주를 찾지 못했어요', true);
     return;
   }
   showSyncStatus('저장 중...');
   try{
-    const orderRows=snapshot.map(o=>({
-      no:o.no, date:o.date, note:o.note||'', manager:o.manager||'이은진'
-    }));
-    const {error:e1}=await sb.from('orders').upsert(orderRows, {onConflict:'no'});
-    if(e1) throw e1;
-    const {data:dbOrders, error:e2}=await sb.from('orders').select('id,no').in('no', snapshot.map(o=>o.no));
-    if(e2) throw e2;
-    const noToId={};
-    (dbOrders||[]).forEach(o=>{ noToId[o.no]=o.id; });
-
-    for(const o of snapshot){
-      const orderId=noToId[o.no];
-      if(!orderId) throw new Error('발주 번호를 저장하지 못했어요: '+o.no);
-      const itemRows=(o.items||[]).map((it,idx)=>({
-        order_id:orderId, buyer:it.buyer||'', item:it.item||'', spec:it.spec||'',
-        bqty:it.bqty||0, bprice:it.bprice||0, bamt:it.bamt||0,
-        seller:it.seller||'', sqty:it.sqty||0, sprice:it.sprice||0, samt:it.samt||0,
-        ship:it.ship||null, status:it.status||'미납품', closing_sell_exclude:it.closing_sell_exclude||false, closing_month_override:it.closing_month_override||null, sort_order:idx
+    if(snapshot.length){
+      const orderRows=snapshot.map(o=>({
+        no:o.no, date:o.date, note:o.note||'', manager:o.manager||'이은진'
       }));
-      // 전체 교체: 기존 삭제 → 신규 삽입. 삽입 실패 시 백업으로 복구
-      const {data:oldRows, error:oldErr}=await sb.from('order_items').select('*').eq('order_id', orderId);
-      if(oldErr) throw oldErr;
-      const {error:delErr}=await sb.from('order_items').delete().eq('order_id', orderId);
-      if(delErr) throw delErr;
-      if(itemRows.length){
-        const {error:e3}=await sb.from('order_items').insert(itemRows);
-        if(e3){
-          console.error('저장 실패 - 이전 품목 복구 시도:', e3);
-          if(oldRows&&oldRows.length){
-            const restore=oldRows.map(r=>{
-              const {id, ...rest}=r;
-              return rest;
-            });
-            await sb.from('order_items').insert(restore);
+      const {error:e1}=await sb.from('orders').upsert(orderRows, {onConflict:'no'});
+      if(e1) throw e1;
+      const {data:dbOrders, error:e2}=await sb.from('orders').select('id,no').in('no', snapshot.map(o=>o.no));
+      if(e2) throw e2;
+      const noToId={};
+      (dbOrders||[]).forEach(o=>{ noToId[o.no]=o.id; });
+
+      for(const o of snapshot){
+        const orderId=noToId[o.no];
+        if(!orderId) throw new Error('발주 번호를 저장하지 못했어요: '+o.no);
+        const itemRows=(o.items||[]).map((it,idx)=>({
+          order_id:orderId, buyer:it.buyer||'', item:it.item||'', spec:it.spec||'',
+          bqty:it.bqty||0, bprice:it.bprice||0, bamt:it.bamt||0,
+          seller:it.seller||'', sqty:it.sqty||0, sprice:it.sprice||0, samt:it.samt||0,
+          ship:it.ship||null, status:it.status||'미납품', closing_sell_exclude:it.closing_sell_exclude||false, closing_month_override:it.closing_month_override||null, sort_order:idx
+        }));
+        // 전체 교체: 기존 삭제 → 신규 삽입. 삽입 실패 시 백업으로 복구
+        const {data:oldRows, error:oldErr}=await sb.from('order_items').select('*').eq('order_id', orderId);
+        if(oldErr) throw oldErr;
+        const {error:delErr}=await sb.from('order_items').delete().eq('order_id', orderId);
+        if(delErr) throw delErr;
+        if(itemRows.length){
+          const {error:e3}=await sb.from('order_items').insert(itemRows);
+          if(e3){
+            console.error('저장 실패 - 이전 품목 복구 시도:', e3);
+            if(oldRows&&oldRows.length){
+              const restore=oldRows.map(r=>{
+                const {id, ...rest}=r;
+                return rest;
+              });
+              await sb.from('order_items').insert(restore);
+            }
+            alert('저장에 실패했어요 (기존 데이터는 복구했어요). 다시 시도해주세요.\n\n오류: '+e3.message);
+            throw e3;
           }
-          alert('저장에 실패했어요 (기존 데이터는 복구했어요). 다시 시도해주세요.\n\n오류: '+e3.message);
-          throw e3;
         }
       }
+    }
+    // 발주번호 변경으로 버려진 옛 번호 삭제 (order_items는 cascade)
+    for(const oldNo of deleteNos){
+      const {error:delOrdErr}=await sb.from('orders').delete().eq('no', oldNo);
+      if(delOrdErr) throw delOrdErr;
     }
     showSyncStatus('저장됨');
   }catch(err){
     snapshot.forEach(o=>_dirtyOrderNos.add(o.no));
+    deleteNos.forEach(n=>_pendingOrderDeletes.add(n));
     console.error('saveOrdersToDb error:', err);
     showSyncStatus('저장 실패 - 네트워크 확인', true);
+    throw err;
   }
 }
 
@@ -2477,14 +2499,24 @@ function findPrevItemForMerge(prevItems, it, idx){
   if(at && at.item===it.item && at.buyer===it.buyer) return at;
   return list.find(p=>p.item===it.item && p.buyer===it.buyer && p.spec===it.spec) || null;
 }
+/** 발주번호 변경(이름 바꾸기): 메모리에서 옛 번호 제거하고 DB 삭제 예약 */
+function renameOrderInMemory(fromNo, toNo){
+  if(!fromNo || !toNo || fromNo===toNo) return;
+  for(let i=orders.length-1;i>=0;i--){
+    if(orders[i].no===fromNo) orders.splice(i,1);
+  }
+  queueOrderDelete(fromNo);
+}
 function commitFormOrder(){
   const no=String(document.getElementById('f-no').value||'').trim();
   const date=document.getElementById('f-date').value,note=document.getElementById('f-note').value;
   const manager=document.getElementById('f-manager').value;
   const items=getRows();
   if(!no||!date||!items.length) return null;
+  const sourceNo=_formSourceNo;
   // 기존 발주가 있으면 납품 관련 필드(closing 등)만 보존. 화면 값(수량·단가·출하일·상태)이 우선.
-  const existingOrder=orders.find(x=>x.no===no);
+  // 번호 변경 시에는 원래 번호의 품목에서 closing 정보를 가져온다.
+  const existingOrder=orders.find(x=>x.no===no) || (sourceNo && sourceNo!==no ? orders.find(x=>x.no===sourceNo) : null);
   const mergedItems=items.map((it,i)=>{
     const prev=findPrevItemForMerge(existingOrder&&existingOrder.items, it, i);
     return {
@@ -2496,12 +2528,16 @@ function commitFormOrder(){
     };
   });
   const o={no,date,note,manager,items:mergedItems,total_buy:mergedItems.reduce((s,i)=>s+i.bamt,0),total_sell:mergedItems.reduce((s,i)=>s+i.samt,0),saved_at:new Date().toISOString()};
+  if(sourceNo && sourceNo!==no){
+    renameOrderInMemory(sourceNo, no);
+  }
   const idx=orders.findIndex(x=>x.no===no);
   if(idx>=0)orders[idx]=o;else orders.push(o);
   // 같은 번호 중복본이 있으면 제거 (옛 내용이 PDF에 남는 원인)
   for(let i=orders.length-1;i>=0;i--){
     if(orders[i].no===no && orders[i]!==o) orders.splice(i,1);
   }
+  _formSourceNo=no;
   persist(no);
   return o;
 }
@@ -2537,6 +2573,7 @@ async function saveOrder(){
   }
 }
 function initForm(){
+  _formSourceNo=null;
   document.getElementById('f-no').value=nextNo();
   document.getElementById('f-date').value=new Date().toISOString().slice(0,10);
   document.getElementById('f-note').value=MY.note||'';
@@ -2546,6 +2583,7 @@ function initForm(){
 function loadOrder(no){
   const o=orders.find(x=>x.no===no);if(!o)return;
   go('new');
+  _formSourceNo=o.no;
   document.getElementById('f-no').value=o.no;
   document.getElementById('f-date').value=o.date;
   document.getElementById('f-manager').value=o.manager||'이은진';
@@ -3726,12 +3764,25 @@ async function loadAndDoc(no){
   const noRaw=prompt('발주 번호를 확인/수정해주세요', order.no);
   if(noRaw===null)return;
   const finalNo=String(noRaw).trim()||order.no;
-  order.no=finalNo;
+  // 프롬프트에서 번호를 바꿨으면 실제 발주번호로 저장 (PDF에만 잠깐 바꾸던 문제 수정)
+  if(finalNo!==order.no){
+    const fromNo=order.no;
+    renameOrderInMemory(fromNo, finalNo);
+    order.no=finalNo;
+    const idx=orders.findIndex(x=>x.no===finalNo);
+    if(idx>=0) orders[idx]=cloneOrder(order); else orders.push(cloneOrder(order));
+    _formSourceNo=finalNo;
+    persist(finalNo);
+    clearTimeout(_persistTimer);
+    try{ await saveOrdersToDb(); }catch(e){ console.warn(e); }
+  }else{
+    order.no=finalNo;
+  }
   const built=buildPOHtml(order);
   if(!built.html){alert('발주서에 넣을 품목이 없어요 (매입처를 확인해주세요)');return;}
   setDocMailMeta('po', Object.keys(built.groups).map(name=>({name, role:'buyer'})), built.items);
   openDocOverlay(built.html);
-  loadOrder(no);
+  loadOrder(finalNo);
 }
 
 // ── 납품현황으로 이동 (발주번호 필터) ──
