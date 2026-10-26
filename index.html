@@ -1012,14 +1012,14 @@ input[readonly]{background:#f5f5f5;color:#999}
 <div id="overlay">
   <div id="doc-frame">
     <div class="doc-btns">
-      <button class="doc-print" onclick="window.print()">프린트 / PDF 저장</button>
+      <button class="doc-print" onclick="printDocOverlay()">프린트 / PDF 저장</button>
       <button id="mail-open-btn" class="doc-close" style="display:none;color:#0f766e;border-color:#99f6e4" onclick="toggleMailPanel()">메일 보내기</button>
       <label id="mail-sent-wrap" class="mail-sent-wrap" title="발송하면 자동으로 체크됩니다. 직접 고쳐도 됩니다.">
         <input type="checkbox" id="mail-sent-chk" onchange="toggleDocMailSent(this.checked)">
         메일 발송됨
         <span id="mail-sent-info" class="mail-sent-info"></span>
       </label>
-      <button class="doc-close" onclick="document.getElementById('overlay').style.display='none'">닫기</button>
+      <button class="doc-close" onclick="closeDocOverlay()">닫기</button>
       <button id="ts-save-contact-btn" class="doc-close" style="display:none;color:#1d4ed8;border-color:#bfdbfe" onclick="saveTsContactsToSettings()">담당자 설정 저장</button>
       <span id="ts-edit-hint" style="display:none;font-size:11px;color:#b45309;align-self:center;margin-left:8px">공급받는자 담당자 입력칸에서 바로 수정할 수 있어요</span>
       <span style="font-size:11px;color:#999;align-self:center;margin-left:8px">※ A4 용지로 인쇄해주세요</span>
@@ -1809,8 +1809,9 @@ async function loadConfigFromDb(){
 async function saveConfigToDb(){
   showSyncStatus('저장 중...');
   const {error}=await sb.from('company_config').upsert({id:1, data:MY}, {onConflict:'id'});
-  if(error){ console.error(error); showSyncStatus('저장 실패', true); }
-  else showSyncStatus('저장됨');
+  if(error){ console.error(error); showSyncStatus('저장 실패', true); return false; }
+  showSyncStatus('저장됨');
+  return true;
 }
 
 // ── 마감현황 상태 (key-value) ──
@@ -2709,14 +2710,12 @@ async function suggestQuoteNo(quoteDate){
   return `QT-${ymd}-${String(next).padStart(2,'0')}`;
 }
 async function commitQuoteDocNo(finalNo, quoteDate){
-  const ymd=quoteDateKey(quoteDate);
-  const m=String(finalNo||'').trim().match(new RegExp(`^QT-${ymd}-(\\d+)`, 'i'));
-  const seq=m?parseInt(m[1],10):null;
   await refreshQuoteDocSeqFromDb();
-  const last=+MY.doc_seq.quote[ymd]||0;
-  if(seq!=null && seq>last){
-    MY.doc_seq.quote[ymd]=seq;
-    await saveConfigToDb();
+  // 번호 문자열에 들어 있는 날짜 기준으로 저장 (거래일과 달라도 수정분이 남도록)
+  const ok=await commitDocSeqFromNos('quote', [finalNo], quoteDateKey(quoteDate));
+  if(!ok && finalNo){
+    const parts=parseDocNoParts('quote', finalNo);
+    if(!parts) console.warn('견적 번호 형식을 인식하지 못했어요:', finalNo);
   }
 }
 function fillQuoteCustomers(selected){
@@ -2946,14 +2945,49 @@ function promptTsTradeDate(defaultDate){
 function tsDateKey(tradeDate){
   return String(tradeDate||'').replace(/-/g,'').slice(2,8); // YYMMDD
 }
+/** TS-YYMMDD-NN / QT-YYMMDD-NN (뒤에 -01 등 접미사 있어도 본번 인식) */
+function parseDocNoParts(kind, docNo){
+  const prefix=kind==='quote'?'QT':'TS';
+  const m=String(docNo||'').trim().match(new RegExp(`^${prefix}-(\\d{6})-(\\d+)`, 'i'));
+  if(!m) return null;
+  return {ymd:m[1], seq:parseInt(m[2],10)};
+}
 function parseTsDocSeq(docNo, ymd){
-  const m=String(docNo||'').trim().match(new RegExp(`^TS-${ymd}-(\\d+)`, 'i'));
-  return m?parseInt(m[1],10):null;
+  const parts=parseDocNoParts('ts', docNo);
+  if(!parts) return null;
+  if(ymd && parts.ymd!==String(ymd)) return null;
+  return parts.seq;
+}
+function ensureDocSeqBuckets(){
+  if(!MY.doc_seq||typeof MY.doc_seq!=='object') MY.doc_seq={ts:{},quote:{}};
+  if(!MY.doc_seq.ts||typeof MY.doc_seq.ts!=='object') MY.doc_seq.ts={};
+  if(!MY.doc_seq.quote||typeof MY.doc_seq.quote!=='object') MY.doc_seq.quote={};
+}
+/** 문서번호 수정분을 공유 채번에 반영. 번호 안의 날짜를 우선하고, 없으면 fallbackYmd 사용 */
+async function commitDocSeqFromNos(kind, nos, fallbackYmd){
+  ensureDocSeqBuckets();
+  const bucket=kind==='quote'?MY.doc_seq.quote:MY.doc_seq.ts;
+  let raised=false;
+  (nos||[]).forEach(no=>{
+    let parts=parseDocNoParts(kind, no);
+    if(!parts && fallbackYmd){
+      const prefix=kind==='quote'?'QT':'TS';
+      const m=String(no||'').trim().match(new RegExp(`^${prefix}-${fallbackYmd}-(\\d+)`, 'i'));
+      if(m) parts={ymd:fallbackYmd, seq:parseInt(m[1],10)};
+    }
+    if(!parts || !(parts.seq>0)) return;
+    const last=+bucket[parts.ymd]||0;
+    if(parts.seq>last){
+      bucket[parts.ymd]=parts.seq;
+      raised=true;
+    }
+  });
+  if(!raised) return true;
+  return !!(await saveConfigToDb());
 }
 async function refreshTsDocSeqFromDb(){
   const cfg=await loadConfigFromDb();
-  if(!MY.doc_seq||typeof MY.doc_seq!=='object') MY.doc_seq={ts:{}};
-  if(!MY.doc_seq.ts||typeof MY.doc_seq.ts!=='object') MY.doc_seq.ts={};
+  ensureDocSeqBuckets();
   const remote=(cfg&&cfg.doc_seq&&cfg.doc_seq.ts)||{};
   Object.keys(remote).forEach(d=>{
     MY.doc_seq.ts[d]=Math.max(+MY.doc_seq.ts[d]||0, +remote[d]||0);
@@ -2965,7 +2999,7 @@ async function suggestTsDocNo(tradeDate){
   const next=(+MY.doc_seq.ts[ymd]||0)+1;
   return `TS-${ymd}-${String(next).padStart(2,'0')}`;
 }
-/** 공유 채번: 사용자가 확인한 번호를 그대로 쓰고, 새 번호(이전보다 큰 값)일 때만 DB 갱신 */
+/** 공유 채번: 확인·수정한 번호를 그대로 쓰고, 더 큰 순번이면 DB에 저장 */
 async function confirmTsDocNo(tradeDate){
   const ymd=tsDateKey(tradeDate);
   const suggested=await suggestTsDocNo(tradeDate);
@@ -2974,14 +3008,39 @@ async function confirmTsDocNo(tradeDate){
   const finalNo=String(userDocNo).trim();
   if(!finalNo){ alert('문서번호를 입력해주세요'); return null; }
   await refreshTsDocSeqFromDb();
-  const last=+MY.doc_seq.ts[ymd]||0;
-  const seq=parseTsDocSeq(finalNo, ymd);
-  // 수정·재발행 허용. 채번은 "이번에 쓴 번호가 마지막보다 클 때만" 올린다.
-  if(seq!=null && seq>last){
-    MY.doc_seq.ts[ymd]=seq;
-    await saveConfigToDb();
+  const saved=await commitDocSeqFromNos('ts', [finalNo], ymd);
+  if(!parseDocNoParts('ts', finalNo) && !parseTsDocSeq(finalNo, ymd)){
+    alert('문서번호 형식을 인식하지 못했어요. TS-YYMMDD-순번 형태로 입력하면 다음 채번에 반영됩니다.');
+  }else if(!saved){
+    alert('문서번호 저장에 실패했어요. 네트워크를 확인한 뒤 다시 시도해주세요.');
   }
   return finalNo;
+}
+let _docSeqSaveTimer=null;
+function onTsDocNoInput(el){
+  if(el){
+    el.size=Math.max((el.value||'').length, 8);
+    refreshMailSentUi();
+  }
+  clearTimeout(_docSeqSaveTimer);
+  _docSeqSaveTimer=setTimeout(()=>{ syncOverlayDocSeq(); }, 400);
+}
+async function syncOverlayDocSeq(){
+  const kind=currentDocKind();
+  if(kind!=='ts' && kind!=='quote') return;
+  const nos=collectDocNos(kind);
+  if(!nos.length) return;
+  if(kind==='ts') await refreshTsDocSeqFromDb();
+  else await refreshQuoteDocSeqFromDb();
+  await commitDocSeqFromNos(kind, nos);
+}
+async function printDocOverlay(){
+  try{ await syncOverlayDocSeq(); }catch(e){ console.warn(e); }
+  window.print();
+}
+async function closeDocOverlay(){
+  try{ await syncOverlayDocSeq(); }catch(e){ console.warn(e); }
+  document.getElementById('overlay').style.display='none';
 }
 function collectDocNos(kind){
   // kind: true/'po' | 'quote' | false/'ts'
@@ -3247,6 +3306,7 @@ async function buildDocPdfBase64(){
   }
 }
 async function sendDocMail(){
+  try{ await syncOverlayDocSeq(); }catch(e){ console.warn(e); }
   const ctx=docMailContext();
   if(!ctx) return;
   const btn=document.getElementById('mail-send-btn');
@@ -3379,7 +3439,7 @@ function tsPageHtml({company, seller, contact, its, dy, dm, dd, tsNo, sepClass, 
     :(MY.contact||'　');
   return `<div class="a4-page${sepClass||''}">
     <div class="ts-title">거 래 명 세 표</div>
-    <div class="ts-no"><span class="ts-no-label">No.</span><input class="ts-no-input" size="${Math.max((tsNo||'').length, 8)}" value="${escHtml(tsNo||'')}" title="클릭해서 문서번호 수정" oninput="this.size=Math.max((this.value||'').length,8);refreshMailSentUi()"></div>
+    <div class="ts-no"><span class="ts-no-label">No.</span><input class="ts-no-input" size="${Math.max((tsNo||'').length, 8)}" value="${escHtml(tsNo||'')}" title="클릭해서 문서번호 수정" oninput="onTsDocNoInput(this)" onblur="syncOverlayDocSeq()"></div>
     <div class="ts-meta">
       <div class="ts-side">
         <div class="ts-side-hd">공급받는자</div>
