@@ -2655,13 +2655,23 @@ function onQuoteCustomerChange(){
     deliver.dataset.auto='1';
   }
 }
+function quoteItemDatalistId(){
+  let dl=document.getElementById('quote-item-list');
+  if(!dl){
+    dl=document.createElement('datalist');
+    dl.id='quote-item-list';
+    document.body.appendChild(dl);
+  }
+  const allItems=[...new Set([...ITEMS, ...Object.keys(ITEM_PRICES||{})])].sort();
+  dl.innerHTML=allItems.map(k=>`<option value="${escHtml(k)}"></option>`).join('');
+  return 'quote-item-list';
+}
 function addQuoteRow(it={}){
   const tr=document.createElement('tr');
-  const allItems=[...new Set([...ITEMS, ...Object.keys(ITEM_PRICES||{})])].sort();
-  const iOpts=allItems.map(k=>`<option${k===it.item?' selected':''}>${k}</option>`).join('');
+  const listId=quoteItemDatalistId();
   tr.innerHTML=`
-    <td><select class="q-isel" onchange="autoQuoteSpec(this);autoQuotePrice(this)" style="width:100%;font-size:12px;border:1px solid #e8e8e8;padding:4px 5px;border-radius:4px"><option></option>${iOpts}</select></td>
-    <td><input type="text" class="q-spec" value="${escHtml(it.spec||'')}" style="width:100%"></td>
+    <td><input type="text" class="q-isel" list="${listId}" value="${escHtml(it.item||'')}" placeholder="품목명 직접 입력" style="width:100%;font-size:12px;border:1px solid #e8e8e8;padding:4px 5px;border-radius:4px" onchange="autoQuoteSpec(this);autoQuotePrice(this)"></td>
+    <td><input type="text" class="q-spec" value="${escHtml(it.spec||'')}" style="width:100%" oninput="this.dataset.auto='0'"></td>
     <td><input type="number" class="q-qty" value="${it.qty||''}" style="width:100%;text-align:right" oninput="calcQuoteRow(this)"></td>
     <td><input type="number" class="q-price" value="${it.price||''}" style="width:100%;text-align:right" oninput="calcQuoteRow(this)"></td>
     <td class="amt q-amt">${it.qty&&it.price?fmt(it.qty*it.price):'-'}</td>
@@ -2670,15 +2680,22 @@ function addQuoteRow(it={}){
     <td><button class="del-btn" onclick="this.closest('tr').remove();calcQuoteSum()">×</button></td>`;
   document.getElementById('quote-items-body').appendChild(tr);
 }
-function autoQuoteSpec(sel){
-  const tr=sel.closest('tr'), s=SPECS[sel.value];
-  if(s) tr.querySelector('.q-spec').value=s;
+function autoQuoteSpec(el){
+  const name=String(el.value||'').trim();
+  const tr=el.closest('tr'), s=SPECS[name];
+  if(s){
+    const specEl=tr.querySelector('.q-spec');
+    if(specEl && (!specEl.value || specEl.dataset.auto==='1')){
+      specEl.value=s;
+      specEl.dataset.auto='1';
+    }
+  }
 }
-function autoQuotePrice(sel){
-  const tr=sel.closest('tr');
+function autoQuotePrice(el){
+  const tr=el.closest('tr');
   const priceEl=tr.querySelector('.q-price');
   if(priceEl.value) return;
-  const found=ITEM_PRICES[sel.value];
+  const found=ITEM_PRICES[String(el.value||'').trim()];
   if(found && found.sell){ priceEl.value=found.sell; calcQuoteRow(priceEl); }
 }
 function calcQuoteRow(inp){
@@ -2703,7 +2720,7 @@ function calcQuoteSum(){
 }
 function getQuoteRows(){
   return Array.from(document.querySelectorAll('#quote-items-body tr')).map(tr=>({
-    item:tr.querySelector('.q-isel').value,
+    item:String(tr.querySelector('.q-isel').value||'').trim(),
     spec:tr.querySelector('.q-spec').value,
     qty:+tr.querySelector('.q-qty').value||0,
     price:+tr.querySelector('.q-price').value||0,
