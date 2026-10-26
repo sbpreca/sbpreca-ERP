@@ -160,6 +160,7 @@ input[readonly]{background:#f5f5f5;color:#999}
 .po-foot-key{background:#dbe4f0;padding:5px 10px;width:70px;min-width:70px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:11px;color:#333;font-weight:700;border-right:var(--doc-line)}
 .po-foot-val{padding:5px 10px;display:flex;align-items:center;flex:1;font-size:12px}
 .po-note{font-size:11px;color:#666;line-height:1.9;padding-top:12px;border-top:var(--doc-line);white-space:pre-line}
+.a4-page.quote-page{padding-top:28mm}
 .quote-title-band{background:#1f3864;color:#fff;text-align:center;font-size:26px;font-weight:700;letter-spacing:14px;padding:20px 0;margin-bottom:2px}
 .quote-no{text-align:right;font-size:12px;color:#333;margin-bottom:10px;padding:4px 2px}
 .quote-lead{display:flex;justify-content:space-between;align-items:baseline;font-size:12px;margin:0 2px 10px;color:#333}
@@ -243,6 +244,7 @@ input[readonly]{background:#f5f5f5;color:#999}
   .doc-btns,.mail-panel{display:none!important}
   .app{display:none!important}
   .a4-page{page-break-after:always;width:210mm!important;height:297mm!important;padding:20mm 10mm!important;box-sizing:border-box;overflow:hidden}
+  .a4-page.quote-page{padding-top:28mm!important}
   .a4-page:last-child{page-break-after:auto}
   .a4-page+.a4-page{border-top:none!important}
   .ts-contact-input,.ts-no-input{border:none!important;background:transparent!important;padding:0!important;box-shadow:none!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
@@ -2806,9 +2808,6 @@ async function showQuote(){
   const deliver=document.getElementById('q-deliver').value||'';
   const note=(document.getElementById('q-note').value||MY.quote_note||DEFAULT_CFG.quote_note||'').trim();
   const si=SELLERS[customer]||{};
-  const sub=items.reduce((s,i)=>s+i.amt,0);
-  const vat=Math.round(sub*0.1);
-  const total=sub+vat;
   const mgrInfo=(MY.managers&&MY.managers[manager])||{};
   const myContact=manager+(mgrInfo.tel?'　'+mgrInfo.tel:'')+(mgrInfo.email?' / '+mgrInfo.email:'');
   // 견적은 빈 줄 최소화(입력 행 + 여유 1~2줄). 10줄 고정 시 하단 멘트가 A4에서 잘림
@@ -2825,7 +2824,7 @@ async function showQuote(){
   </tr>`).join('');
   const blank=emptyRows(items.length, Math.max(FIXED_ROWS, items.length), 8, 'empty-row');
   const noteHtml=escHtml(note).replace(/\n/g,'<br>');
-  const html=`<div class="a4-page">
+  const html=`<div class="a4-page quote-page">
     <div class="quote-title-band">견 적 서</div>
     <div class="quote-no">No. ${escHtml(finalNo)}</div>
     <div class="po-meta">
@@ -2846,11 +2845,6 @@ async function showQuote(){
     <table class="po-tbl">
       <thead><tr><th style="width:34px">NO</th><th>품목</th><th style="width:80px">규격</th><th style="width:54px">수량</th><th style="width:90px">단가(원)</th><th style="width:100px">금액(원)</th><th style="width:90px">납기일</th><th style="width:80px">비고</th></tr></thead>
       <tbody>${dataRows}${blank}</tbody>
-      <tfoot>
-        <tr><td colspan="5" style="text-align:right;padding:8px">공급가액</td><td class="r">${fmt(sub)}</td><td colspan="2"></td></tr>
-        <tr><td colspan="5" style="text-align:right;padding:8px">부가세(10%)</td><td class="r">${fmt(vat)}</td><td colspan="2"></td></tr>
-        <tr><td colspan="5" style="text-align:right;padding:8px">합　계</td><td class="r">${fmt(total)}</td><td colspan="2"></td></tr>
-      </tfoot>
     </table>
     <div class="quote-foot">
       <div class="po-foot-row"><span class="po-foot-key">지불조건</span><span class="po-foot-val">${escHtml(pay||'　')}</span></div>
