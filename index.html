@@ -1471,25 +1471,31 @@ async function saveDirtyOrdersNow(){
     for(const o of snapshot){
       const orderId=noToId[o.no];
       if(!orderId) throw new Error('발주 번호를 저장하지 못했어요: '+o.no);
-      const {data:oldRows, error:oldErr}=await sb.from('order_items').select('id').eq('order_id', orderId);
-      if(oldErr) throw oldErr;
-      const oldIds=(oldRows||[]).map(r=>r.id);
       const itemRows=(o.items||[]).map((it,idx)=>({
         order_id:orderId, buyer:it.buyer||'', item:it.item||'', spec:it.spec||'',
         bqty:it.bqty||0, bprice:it.bprice||0, bamt:it.bamt||0,
         seller:it.seller||'', sqty:it.sqty||0, sprice:it.sprice||0, samt:it.samt||0,
         ship:it.ship||null, status:it.status||'미납품', closing_sell_exclude:it.closing_sell_exclude||false, closing_month_override:it.closing_month_override||null, sort_order:idx
       }));
+      // 새 품목을 먼저 넣고, 성공한 뒤에만 기존 품목 삭제 (실패 시 기존 데이터 유지)
+      // 삭제 누락으로 옛+새 품목이 함께 남는 경우를 막기 위해 삭제 범위를 order_id 전체로 하되
+      // 방금 넣은 id는 제외한다.
+      let newIds=[];
       if(itemRows.length){
-        const {error:e3}=await sb.from('order_items').insert(itemRows);
+        const {data:insRows, error:e3}=await sb.from('order_items').insert(itemRows).select('id');
         if(e3){
           console.error('저장 실패 - 기존 데이터는 보존됨:', e3);
           alert('저장에 실패했어요 (기존 데이터는 안전하게 남아있어요). 관리자에게 문의해주세요.\n\n오류: '+e3.message);
           throw e3;
         }
+        newIds=(insRows||[]).map(r=>r.id);
       }
-      if(oldIds.length){
-        const {error:delErr}=await sb.from('order_items').delete().in('id', oldIds);
+      const {data:allRows, error:oldErr}=await sb.from('order_items').select('id').eq('order_id', orderId);
+      if(oldErr) throw oldErr;
+      const newSet=new Set(newIds);
+      const staleIds=(allRows||[]).map(r=>r.id).filter(id=>!newSet.has(id));
+      if(staleIds.length){
+        const {error:delErr}=await sb.from('order_items').delete().in('id', staleIds);
         if(delErr) throw delErr;
       }
     }
@@ -2436,19 +2442,27 @@ function getRows(){
     status:tr.querySelector('.status').value||'미납품',
   })).filter(r=>r.buyer||r.item);
 }
+function findPrevItemForMerge(prevItems, it, idx){
+  const list=prevItems||[];
+  // 같은 위치·같은 품목 우선, 없으면 품목+매입처로 매칭 (순서 변경 시 잘못된 납품정보 복원 방지)
+  const at=list[idx];
+  if(at && at.item===it.item && at.buyer===it.buyer) return at;
+  return list.find(p=>p.item===it.item && p.buyer===it.buyer && p.spec===it.spec) || null;
+}
 function commitFormOrder(){
-  const no=document.getElementById('f-no').value,date=document.getElementById('f-date').value,note=document.getElementById('f-note').value;
+  const no=String(document.getElementById('f-no').value||'').trim();
+  const date=document.getElementById('f-date').value,note=document.getElementById('f-note').value;
   const manager=document.getElementById('f-manager').value;
   const items=getRows();
-  if(!date||!items.length) return false;
-  // 기존 발주가 있으면 납품 관련 필드(ship, status, closing 등) 보존
+  if(!no||!date||!items.length) return false;
+  // 기존 발주가 있으면 납품 관련 필드(closing 등)만 보존. 화면 값(수량·단가·출하일·상태)이 우선.
   const existingOrder=orders.find(x=>x.no===no);
   const mergedItems=items.map((it,i)=>{
-    const prev=existingOrder&&existingOrder.items[i];
+    const prev=findPrevItemForMerge(existingOrder&&existingOrder.items, it, i);
     return {
       ...it,
-      ship: it.ship||((prev&&prev.ship)||''),
-      status: it.status||(prev&&prev.status)||'미납품',
+      ship: it.ship||'',
+      status: it.status||'미납품',
       closing_sell_exclude: (prev&&prev.closing_sell_exclude)||false,
       closing_month_override: (prev&&prev.closing_month_override)||''
     };
@@ -2456,6 +2470,10 @@ function commitFormOrder(){
   const o={no,date,note,manager,items:mergedItems,total_buy:mergedItems.reduce((s,i)=>s+i.bamt,0),total_sell:mergedItems.reduce((s,i)=>s+i.samt,0),saved_at:new Date().toISOString()};
   const idx=orders.findIndex(x=>x.no===no);
   if(idx>=0)orders[idx]=o;else orders.push(o);
+  // 같은 번호 중복본이 있으면 제거 (옛 내용이 PDF에 남는 원인)
+  for(let i=orders.length-1;i>=0;i--){
+    if(i!==(idx>=0?idx:orders.length-1) && orders[i].no===no) orders.splice(i,1);
+  }
   persist(no);
   return true;
 }
@@ -2494,24 +2512,22 @@ function emptyRows(current, total, cols, cls){
 }
 
 /* ── 발주서: 매입처별, A4 고정, 날인란 없음 ── */
-function showPO(){
-  const items=getRows();if(!items.length){alert('품목을 입력해주세요');return;}
-  const date=document.getElementById('f-date').value,note=document.getElementById('f-note').value;
-  const defaultNo=document.getElementById('f-no').value;
-  const no=prompt('발주 번호를 확인/수정해주세요', defaultNo);
-  if(no===null)return;
-  document.getElementById('f-no').value=no;
-  if(!commitFormOrder()){alert('날짜와 품목을 입력해주세요');return;}
-  const manager=document.getElementById('f-manager').value||'이은진';
+/** 목록·메모리(orders)와 동일한 데이터로 PDF HTML 생성 */
+function buildPOHtml(order){
+  if(!order) return '';
+  const no=order.no;
+  const date=order.date||'';
+  const note=order.note||'';
+  const manager=order.manager||'이은진';
+  const items=(order.items||[]).filter(i=>i && (i.buyer||i.item));
   const groups={};
   items.forEach(i=>{if(i.buyer)(groups[i.buyer]=groups[i.buyer]||[]).push(i);});
-  const FIXED_ROWS=10; // 품목이 적어도 표는 항상 10줄
+  const FIXED_ROWS=10;
   let html='';
   Object.entries(groups).forEach(([buyer,its],idx)=>{
     const bi=BUYERS[buyer]||{contact:'담당자'};
-    const sub=its.reduce((s,i)=>s+i.bamt,0);
+    const sub=its.reduce((s,i)=>s+(+i.bamt||0),0);
     const poNo=no+'-'+String(idx+1).padStart(2,'0');
-    // 매출처=회사, 배송지에서 소재지·담당자. 납품처 표기는 회사명만.
     const rawSeller=(its.find(i=>i.seller)||{seller:''}).seller||'';
     const deliverCompany=sellerCompany(rawSeller);
     const deliverSiteName=sellerSite(rawSeller);
@@ -2521,31 +2537,30 @@ function showPO(){
     const deliverName=deliverCompany;
     const dataRows=its.map((r,i)=>`<tr>
       <td>${i+1}</td>
-      <td class="l">${r.item}</td>
-      <td>${r.spec||''}</td>
+      <td class="l">${escHtml(r.item||'')}</td>
+      <td>${escHtml(r.spec||'')}</td>
       <td class="r">${fmt(r.bqty)}</td>
       <td class="r">${fmt(r.bprice)}</td>
       <td class="r">${fmt(r.bamt)}</td>
-      <td>${r.ship?r.ship.replace(/-/g,'.'):'　'}</td>
+      <td>${r.ship?String(r.ship).replace(/-/g,'.'):'　'}</td>
       <td class="l"></td>
     </tr>`).join('');
-    // 데이터 행 + 빈 행 = 최소 FIXED_ROWS줄 (초과분은 그대로 표시)
     const blank=emptyRows(its.length, Math.max(FIXED_ROWS, its.length), 8, 'empty-row');
     html+=`<div class="a4-page">
       <div class="po-title-band">발 주 서</div>
-      <div class="po-no">No. ${poNo}</div>
+      <div class="po-no">No. ${escHtml(poNo)}</div>
       <div class="po-meta">
         <div class="po-side">
-          <div class="po-row"><span class="po-key">수 신 처</span><span class="po-val">${buyer}</span></div>
-          <div class="po-row"><span class="po-key">담 당 자</span><span class="po-val">${bi.contact}</span></div>
-          <div class="po-row"><span class="po-key">발 주 일</span><span class="po-val">${date.replace(/-/g,'.')}</span></div>
+          <div class="po-row"><span class="po-key">수 신 처</span><span class="po-val">${escHtml(buyer)}</span></div>
+          <div class="po-row"><span class="po-key">담 당 자</span><span class="po-val">${escHtml(bi.contact||'')}</span></div>
+          <div class="po-row"><span class="po-key">발 주 일</span><span class="po-val">${escHtml(String(date).replace(/-/g,'.'))}</span></div>
           <div class="po-row"><span class="po-key">　</span><span class="po-val">　</span></div>
         </div>
         <div class="po-side">
-          <div class="po-row"><span class="po-key">상 호</span><span class="po-val">${MY.name}</span></div>
-          <div class="po-row"><span class="po-key">사업자번호</span><span class="po-val">${MY.biz}　대표: ${MY.ceo}</span></div>
-          <div class="po-row"><span class="po-key">소 재 지</span><span class="po-val">${MY.addr}</span></div>
-          <div class="po-row"><span class="po-key">담 당 자</span><span class="po-val">${manager}　${(MY.managers&&MY.managers[manager])?(MY.managers[manager].tel||'')+(MY.managers[manager].email?' / '+MY.managers[manager].email:''):MY.contact}</span></div>
+          <div class="po-row"><span class="po-key">상 호</span><span class="po-val">${escHtml(MY.name)}</span></div>
+          <div class="po-row"><span class="po-key">사업자번호</span><span class="po-val">${escHtml(MY.biz)}　대표: ${escHtml(MY.ceo)}</span></div>
+          <div class="po-row"><span class="po-key">소 재 지</span><span class="po-val">${escHtml(MY.addr)}</span></div>
+          <div class="po-row"><span class="po-key">담 당 자</span><span class="po-val">${escHtml(manager)}　${escHtml((MY.managers&&MY.managers[manager])?(MY.managers[manager].tel||'')+(MY.managers[manager].email?' / '+MY.managers[manager].email:''): (MY.contact||''))}</span></div>
         </div>
       </div>
       <table class="po-tbl">
@@ -2554,16 +2569,31 @@ function showPO(){
         <tfoot><tr><td colspan="5" style="text-align:right;padding:8px">합　계</td><td class="r">${fmt(sub)}</td><td colspan="2"></td></tr></tfoot>
       </table>
       <div class="po-foot">
-        <div class="po-foot-row"><span class="po-foot-key">납 품 처</span><span class="po-foot-val">${deliverName||'　'}</span></div>
-        <div class="po-foot-row"><span class="po-foot-key">소 재 지</span><span class="po-foot-val">${di.addr||'　'}</span></div>
-        <div class="po-foot-row"><span class="po-foot-key">담 당 자</span><span class="po-foot-val">${di.contact||'　'}</span></div>
-        ${note?`<div class="po-foot-row"><span class="po-foot-key">특기사항</span><span class="po-foot-val">${note}</span></div>`:''}
+        <div class="po-foot-row"><span class="po-foot-key">납 품 처</span><span class="po-foot-val">${escHtml(deliverName||'　')}</span></div>
+        <div class="po-foot-row"><span class="po-foot-key">소 재 지</span><span class="po-foot-val">${escHtml(di.addr||'　')}</span></div>
+        <div class="po-foot-row"><span class="po-foot-key">담 당 자</span><span class="po-foot-val">${escHtml(di.contact||'　')}</span></div>
+        ${note?`<div class="po-foot-row"><span class="po-foot-key">특기사항</span><span class="po-foot-val">${escHtml(note)}</span></div>`:''}
       </div>
       <div class="po-note">※ COA 메일 송부 요청 드립니다.</div>
     </div>`;
   });
-  setDocMailMeta('po', Object.keys(groups).map(name=>({name, role:'buyer'})), items);
-  openDocOverlay(html);
+  return {html, groups, items};
+}
+function showPO(){
+  if(!getRows().length){alert('품목을 입력해주세요');return;}
+  const defaultNo=document.getElementById('f-no').value;
+  const noRaw=prompt('발주 번호를 확인/수정해주세요', defaultNo);
+  if(noRaw===null)return;
+  document.getElementById('f-no').value=String(noRaw).trim()||defaultNo;
+  // 폼 → orders 반영 후, 목록과 같은 orders 데이터로 PDF 작성 (옛 폼 스냅샷 사용 금지)
+  if(!commitFormOrder()){alert('날짜와 품목을 입력해주세요');return;}
+  const no=document.getElementById('f-no').value;
+  const order=orders.find(o=>o.no===no);
+  if(!order){alert('발주 데이터를 찾을 수 없어요');return;}
+  const built=buildPOHtml(order);
+  if(!built.html){alert('발주서에 넣을 품목이 없어요 (매입처를 확인해주세요)');return;}
+  setDocMailMeta('po', Object.keys(built.groups).map(name=>({name, role:'buyer'})), built.items);
+  openDocOverlay(built.html);
 }
 
 /* ── 견적서 ── */
@@ -3607,7 +3637,22 @@ function renderList(){
   }).join('');
 
 }
-function loadAndDoc(no){loadOrder(no);setTimeout(()=>showPO(),80);}
+async function loadAndDoc(no){
+  // 저장 대기 중인 수정분을 먼저 반영한 뒤, 목록과 같은 orders로 PDF 생성
+  try{ await saveOrdersToDb(); }catch(e){ console.warn(e); }
+  const order=orders.find(x=>x.no===no);
+  if(!order){alert('발주를 찾을 수 없어요');return;}
+  const noRaw=prompt('발주 번호를 확인/수정해주세요', order.no);
+  if(noRaw===null)return;
+  const finalNo=String(noRaw).trim()||order.no;
+  // 폼이 다른 발주/옛 내용을 들고 있어도 PDF는 목록 데이터 기준
+  const built=buildPOHtml({...order, no:finalNo});
+  if(!built.html){alert('발주서에 넣을 품목이 없어요 (매입처를 확인해주세요)');return;}
+  setDocMailMeta('po', Object.keys(built.groups).map(name=>({name, role:'buyer'})), built.items);
+  openDocOverlay(built.html);
+  // 다음 수정을 위해 폼도 최신 내용으로 맞춤
+  loadOrder(no);
+}
 
 // ── 납품현황으로 이동 (발주번호 필터) ──
 function goToDeliver(orderNo){
