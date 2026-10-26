@@ -5585,9 +5585,11 @@ async function renderPL(){
     if(!sgaList.length){
       sgaBody.innerHTML='<tr><td colspan="3" style="text-align:center;color:#bbb;padding:1rem">계정별 판관비가 없어요</td></tr>';
     }else{
-      const editable=sgaSource==='saved' && !!pm;
-      sgaBody.innerHTML=sgaList.map((it,idx)=>{
-        if(!editable || it.fromBank){
+      // 표시 목록은 이름순·병합본이라 인덱스가 sgaData와 다름 → 이름 기준으로 수정/삭제
+      const canEditSaved=!!pm && (sgaSource==='saved' || sgaSource==='mixed');
+      sgaBody.innerHTML=sgaList.map(it=>{
+        const nameJs=JSON.stringify(String(it.name||''));
+        if(!canEditSaved || it.fromBank){
           return `<tr>
             <td style="font-weight:600">${escHtml(it.name)}${it.fromBank?' <span style="font-size:11px;color:#c2410c;font-weight:400">지출분류</span>':''}</td>
             <td class="r" style="font-variant-numeric:tabular-nums">${fmtW(it.amt)}</td>
@@ -5598,9 +5600,9 @@ async function renderPL(){
           <td style="font-weight:600">${escHtml(it.name)}</td>
           <td class="r">
             <input type="number" value="${+it.amt||0}" style="width:130px;text-align:right;border:1px solid #ddd;border-radius:4px;padding:4px 8px;font-size:13px"
-              onchange="saveSgaAmt('${sgaKey}',${idx},this.value)">
+              onchange="saveSgaAmt(${JSON.stringify(sgaKey)},${nameJs},this.value)">
           </td>
-          <td style="text-align:center"><button class="del-btn" title="삭제" onclick="delSgaItem('${sgaKey}',${idx})">×</button></td>
+          <td style="text-align:center"><button class="del-btn" title="삭제" onclick="delSgaItem(${JSON.stringify(sgaKey)},${nameJs})">×</button></td>
         </tr>`;
       }).join('');
     }
@@ -5624,16 +5626,27 @@ async function renderPL(){
 }
 let _plCache=null;
 
-function saveSgaAmt(key, idx, value){
-  if(!sgaData[key]||!sgaData[key][idx]) return;
+function findSgaIndexByName(key, name){
+  const list=sgaData[key];
+  if(!list) return -1;
+  const n=String(name||'').trim();
+  return list.findIndex(i=>String(i.name||'').trim()===n);
+}
+function saveSgaAmt(key, nameOrIdx, value){
+  if(!sgaData[key]) return;
+  let idx=typeof nameOrIdx==='number'?nameOrIdx:findSgaIndexByName(key, nameOrIdx);
+  if(idx<0 || !sgaData[key][idx]) return;
   sgaData[key][idx].amt=+value||0;
   markAnnualPlMonth(key);
   persistSga();
   renderPL();
 }
-function delSgaItem(key, idx){
-  if(!sgaData[key]||!sgaData[key][idx]) return;
-  if(!confirm(`「${sgaData[key][idx].name}」항목을 삭제할까요?`)) return;
+function delSgaItem(key, nameOrIdx){
+  if(!sgaData[key]) return;
+  let idx=typeof nameOrIdx==='number'?nameOrIdx:findSgaIndexByName(key, nameOrIdx);
+  if(idx<0 || !sgaData[key][idx]) return;
+  const itemName=sgaData[key][idx].name||'';
+  if(!confirm(`「${itemName}」항목을 삭제할까요?`)) return;
   sgaData[key].splice(idx,1);
   persistSga();
   renderPL();
