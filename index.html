@@ -1446,6 +1446,21 @@ function saveOrdersToDb(){
   return job;
 }
 
+function cloneOrder(o){
+  return o?JSON.parse(JSON.stringify(o)):null;
+}
+/** 옛·새 품목이 섞인 경우: id가 큰(최근 저장) 행을 sort_order별로 우선 */
+function normalizeDbItems(rawItems){
+  const latest=[];
+  const seen=new Set();
+  [...(rawItems||[])].sort((a,b)=>(+b.id||0)-(+a.id||0)).forEach(it=>{
+    const s=it.sort_order!=null?String(it.sort_order):`id-${it.id}`;
+    if(seen.has(s)) return;
+    seen.add(s);
+    latest.push(it);
+  });
+  return latest.sort((a,b)=>(+a.sort_order||0)-(+b.sort_order||0));
+}
 async function saveDirtyOrdersNow(){
   if(!_ordersReady){
     showSyncStatus('불러오기가 끝나기 전에는 저장하지 않아요', true);
@@ -1453,8 +1468,9 @@ async function saveDirtyOrdersNow(){
   }
   const nos=[..._dirtyOrderNos];
   _dirtyOrderNos=new Set();
+  // 참조가 아니라 깊은 복사 — 저장 중 폼이 다시 바뀌어도 옛/새가 섞이지 않게
   const snapshot=nos
-    .map(no=>orders.find(o=>o.no===no))
+    .map(no=>cloneOrder(orders.find(o=>o.no===no)))
     .filter(o=>o&&_knownOrderNos.has(o.no));
   if(!snapshot.length){
     if(nos.length) showSyncStatus('저장할 발주를 찾지 못했어요', true);
@@ -1481,26 +1497,25 @@ async function saveDirtyOrdersNow(){
         seller:it.seller||'', sqty:it.sqty||0, sprice:it.sprice||0, samt:it.samt||0,
         ship:it.ship||null, status:it.status||'미납품', closing_sell_exclude:it.closing_sell_exclude||false, closing_month_override:it.closing_month_override||null, sort_order:idx
       }));
-      // 새 품목을 먼저 넣고, 성공한 뒤에만 기존 품목 삭제 (실패 시 기존 데이터 유지)
-      // 삭제 누락으로 옛+새 품목이 함께 남는 경우를 막기 위해 삭제 범위를 order_id 전체로 하되
-      // 방금 넣은 id는 제외한다.
-      let newIds=[];
+      // 전체 교체: 기존 삭제 → 신규 삽입. 삽입 실패 시 백업으로 복구
+      const {data:oldRows, error:oldErr}=await sb.from('order_items').select('*').eq('order_id', orderId);
+      if(oldErr) throw oldErr;
+      const {error:delErr}=await sb.from('order_items').delete().eq('order_id', orderId);
+      if(delErr) throw delErr;
       if(itemRows.length){
-        const {data:insRows, error:e3}=await sb.from('order_items').insert(itemRows).select('id');
+        const {error:e3}=await sb.from('order_items').insert(itemRows);
         if(e3){
-          console.error('저장 실패 - 기존 데이터는 보존됨:', e3);
-          alert('저장에 실패했어요 (기존 데이터는 안전하게 남아있어요). 관리자에게 문의해주세요.\n\n오류: '+e3.message);
+          console.error('저장 실패 - 이전 품목 복구 시도:', e3);
+          if(oldRows&&oldRows.length){
+            const restore=oldRows.map(r=>{
+              const {id, ...rest}=r;
+              return rest;
+            });
+            await sb.from('order_items').insert(restore);
+          }
+          alert('저장에 실패했어요 (기존 데이터는 복구했어요). 다시 시도해주세요.\n\n오류: '+e3.message);
           throw e3;
         }
-        newIds=(insRows||[]).map(r=>r.id);
-      }
-      const {data:allRows, error:oldErr}=await sb.from('order_items').select('id').eq('order_id', orderId);
-      if(oldErr) throw oldErr;
-      const newSet=new Set(newIds);
-      const staleIds=(allRows||[]).map(r=>r.id).filter(id=>!newSet.has(id));
-      if(staleIds.length){
-        const {error:delErr}=await sb.from('order_items').delete().in('id', staleIds);
-        if(delErr) throw delErr;
       }
     }
     showSyncStatus('저장됨');
@@ -1514,21 +1529,25 @@ async function saveDirtyOrdersNow(){
 async function loadOrdersFromDb(){
   const {data:dbOrders, error:e1}=await sb.from('orders').select('*').order('date',{ascending:true});
   if(e1){ console.error(e1); return []; }
-  const {data:dbItems, error:e2}=await sb.from('order_items').select('*').order('sort_order',{ascending:true});
+  const {data:dbItems, error:e2}=await sb.from('order_items').select('*').order('sort_order',{ascending:true}).order('id',{ascending:true});
   if(e2){ console.error(e2); return []; }
 
-  return dbOrders.map(o=>({
-    no:o.no, date:o.date, note:o.note||'', manager:o.manager||'이은진',
-    items: dbItems.filter(it=>it.order_id===o.id).map(it=>({
+  return dbOrders.map(o=>{
+    const raw=normalizeDbItems((dbItems||[]).filter(it=>it.order_id===o.id));
+    const items=raw.map(it=>({
       buyer:it.buyer, item:it.item, spec:it.spec,
       bqty:it.bqty, bprice:it.bprice, bamt:it.bamt,
       seller:it.seller, sqty:it.sqty, sprice:it.sprice, samt:it.samt,
       ship:it.ship, status:it.status, closing_sell_exclude:it.closing_sell_exclude||false, closing_month_override:it.closing_month_override||''
-    })),
-    total_buy: dbItems.filter(it=>it.order_id===o.id).reduce((s,it)=>s+(it.bamt||0),0),
-    total_sell: dbItems.filter(it=>it.order_id===o.id).reduce((s,it)=>s+(it.samt||0),0),
-    saved_at: o.updated_at
-  }));
+    }));
+    return {
+      no:o.no, date:o.date, note:o.note||'', manager:o.manager||'이은진',
+      items,
+      total_buy: items.reduce((s,it)=>s+(+it.bamt||0),0),
+      total_sell: items.reduce((s,it)=>s+(+it.samt||0),0),
+      saved_at: o.updated_at
+    };
+  });
 }
 
 async function seedSampleOrdersIfEmpty(){
@@ -2481,10 +2500,19 @@ function commitFormOrder(){
   persist(no);
   return true;
 }
-function saveOrder(){
+async function saveOrder(){
   if(!commitFormOrder()){alert('날짜와 품목을 입력해주세요');return;}
-  document.getElementById('save-msg').textContent='저장 완료!';
-  setTimeout(()=>{document.getElementById('save-msg').textContent='';go('list');},1000);
+  const msg=document.getElementById('save-msg');
+  if(msg) msg.textContent='저장 중...';
+  clearTimeout(_persistTimer);
+  try{
+    await saveOrdersToDb();
+    if(msg) msg.textContent='저장 완료!';
+  }catch(e){
+    console.error(e);
+    if(msg) msg.textContent='저장 실패';
+  }
+  setTimeout(()=>{if(msg) msg.textContent='';go('list');},800);
 }
 function initForm(){
   document.getElementById('f-no').value=nextNo();
@@ -2583,16 +2611,18 @@ function buildPOHtml(order){
   });
   return {html, groups, items};
 }
-function showPO(){
+async function showPO(){
   if(!getRows().length){alert('품목을 입력해주세요');return;}
   const defaultNo=document.getElementById('f-no').value;
   const noRaw=prompt('발주 번호를 확인/수정해주세요', defaultNo);
   if(noRaw===null)return;
   document.getElementById('f-no').value=String(noRaw).trim()||defaultNo;
-  // 폼 → orders 반영 후, 목록과 같은 orders 데이터로 PDF 작성 (옛 폼 스냅샷 사용 금지)
+  // 폼 → orders 반영 후, 복사본으로 PDF 작성 (이후 저장 레이스에 안 흔들리게)
   if(!commitFormOrder()){alert('날짜와 품목을 입력해주세요');return;}
   const no=document.getElementById('f-no').value;
-  const order=orders.find(o=>o.no===no);
+  clearTimeout(_persistTimer);
+  try{ await saveOrdersToDb(); }catch(e){ console.warn(e); }
+  const order=cloneOrder(orders.find(o=>o.no===no));
   if(!order){alert('발주 데이터를 찾을 수 없어요');return;}
   const built=buildPOHtml(order);
   if(!built.html){alert('발주서에 넣을 품목이 없어요 (매입처를 확인해주세요)');return;}
@@ -3664,19 +3694,37 @@ function renderList(){
 
 }
 async function loadAndDoc(no){
-  // 저장 대기 중인 수정분을 먼저 반영한 뒤, 목록과 같은 orders로 PDF 생성
+  // 수정 화면이 같은 발주를 열고 있으면 폼 내용을 먼저 반영
+  const formNo=String((document.getElementById('f-no')||{}).value||'').trim();
+  if(formNo===no && getRows().length){
+    commitFormOrder();
+  }
+  clearTimeout(_persistTimer);
   try{ await saveOrdersToDb(); }catch(e){ console.warn(e); }
-  const order=orders.find(x=>x.no===no);
+  // 저장 성공한 건 DB에서 다시 읽어 옛 품목 잔존분을 제거한 최신본 사용
+  if(!_dirtyOrderNos.has(no)){
+    try{
+      const all=await loadOrdersFromDb();
+      const fresh=all.find(o=>o.no===no);
+      if(fresh){
+        const idx=orders.findIndex(o=>o.no===no);
+        if(idx>=0) orders[idx]=fresh; else orders.push(fresh);
+        for(let i=orders.length-1;i>=0;i--){
+          if(orders[i].no===no && i!==orders.findIndex(o=>o.no===no)) orders.splice(i,1);
+        }
+      }
+    }catch(e){ console.warn(e); }
+  }
+  const order=cloneOrder(orders.find(x=>x.no===no));
   if(!order){alert('발주를 찾을 수 없어요');return;}
   const noRaw=prompt('발주 번호를 확인/수정해주세요', order.no);
   if(noRaw===null)return;
   const finalNo=String(noRaw).trim()||order.no;
-  // 폼이 다른 발주/옛 내용을 들고 있어도 PDF는 목록 데이터 기준
-  const built=buildPOHtml({...order, no:finalNo});
+  order.no=finalNo;
+  const built=buildPOHtml(order);
   if(!built.html){alert('발주서에 넣을 품목이 없어요 (매입처를 확인해주세요)');return;}
   setDocMailMeta('po', Object.keys(built.groups).map(name=>({name, role:'buyer'})), built.items);
   openDocOverlay(built.html);
-  // 다음 수정을 위해 폼도 최신 내용으로 맞춤
   loadOrder(no);
 }
 
