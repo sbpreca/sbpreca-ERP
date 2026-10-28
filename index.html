@@ -3859,11 +3859,28 @@ async function showTSfromDeliver(){
     (groups[k]=groups[k]||[]).push(i);
   });
   const contactMap={};
+  const addrMap={};
   for(const [co,items] of Object.entries(groups)){
     const raw=(items[0]&&items[0].seller)||co;
-    const c=promptTsContact(co, raw);
-    if(c===null) return;
-    contactMap[co]=c;
+    const def=resolveDeliverInfo(raw, items[0]);
+    const useManual=confirm(`${co} 배송지를 직접 입력할까요?\n\n확인 = 직접 입력\n취소 = 등록 배송지 사용`);
+    if(useManual){
+      const man=promptManualDeliver({label:def.label||'직접입력', addr:def.addr||'', contact:def.contact||''});
+      if(man===null) return;
+      contactMap[co]=man.contact||'　';
+      addrMap[co]=man.addr||'';
+      items.forEach(i=>{
+        i.deliver_label=man.label||'';
+        i.deliver_addr=man.addr||'';
+        i.deliver_contact=man.contact||'';
+        if(man.label) i.seller=encodeSeller(co, man.label);
+      });
+    }else{
+      const c=promptTsContact(co, raw);
+      if(c===null) return;
+      contactMap[co]=c;
+      addrMap[co]=def.addr||'';
+    }
   }
   const reuseNos=[...new Set(checked.map(i=>String(i.ts_no||'').trim()).filter(Boolean))];
   const isEdit=reuseNos.length>0;
@@ -3880,6 +3897,7 @@ async function showTSfromDeliver(){
       : stripTsRevSuffix(tsNo);
     html+=tsPageHtml({
       company, seller:its[0]&&its[0].seller||seller, contact:contactMap[company],
+      addr:addrMap[company],
       its, dy, dm, dd, tsNo, tsOrig, tradeDate, sepClass:idx>0?' doc-sep':''
     });
   });
