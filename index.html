@@ -173,7 +173,9 @@ input[readonly]{background:#f5f5f5;color:#999}
 
 /* 거래명세표 서식 */
 .ts-title{text-align:center;font-size:24px;font-weight:700;letter-spacing:12px;margin-bottom:8px;color:#111}
-.ts-no{display:flex;justify-content:flex-end;align-items:baseline;gap:3px;width:100%;font-size:12px;color:#333;margin:0 0 14px;padding:0;box-sizing:border-box}
+.ts-no-block{display:flex;flex-direction:column;align-items:flex-end;width:100%;margin:0 0 14px;gap:2px;box-sizing:border-box}
+.ts-no-orig{font-size:11px;color:#888;line-height:1.3;font-variant-numeric:tabular-nums}
+.ts-no{display:flex;justify-content:flex-end;align-items:baseline;gap:3px;width:100%;font-size:12px;color:#333;margin:0;padding:0;box-sizing:border-box}
 .ts-no-label{flex:0 0 auto;white-space:nowrap;line-height:1.4}
 .ts-no-input{border:1px solid transparent;background:transparent;width:auto!important;min-width:0!important;max-width:100%;flex:0 0 auto;text-align:left;font:inherit;font-size:12px;color:#333;padding:0;margin:0;border-radius:3px;box-sizing:content-box;line-height:1.4}
 .ts-no-input:hover{background:#fffde7;border-color:#fde68a;padding:1px 3px;margin:-1px -3px}
@@ -2950,12 +2952,44 @@ function promptTsTradeDate(defaultDate){
 function tsDateKey(tradeDate){
   return String(tradeDate||'').replace(/-/g,'').slice(2,8); // YYMMDD
 }
-/** TS-YYMMDD-NN / QT-YYMMDD-NN (뒤에 -01 등 접미사 있어도 본번 인식) */
+/** TS-YYMMDD-NN / QT-YYMMDD-NN (뒤에 -01·-R1 등 접미사 있어도 본번 인식) */
 function parseDocNoParts(kind, docNo){
   const prefix=kind==='quote'?'QT':'TS';
   const m=String(docNo||'').trim().match(new RegExp(`^${prefix}-(\\d{6})-(\\d+)`, 'i'));
   if(!m) return null;
   return {ymd:m[1], seq:parseInt(m[2],10)};
+}
+/** 수정 차수 접미사(-R1, -R2…) 제거한 원 문서번호 */
+function stripTsRevSuffix(no){
+  return String(no||'').trim().replace(/-R\d+$/i,'');
+}
+function tsRevNumber(no){
+  const m=String(no||'').trim().match(/-R(\d+)$/i);
+  return m?parseInt(m[1],10):0;
+}
+/** 수정본 다음 번호: TS-…-01 → TS-…-01-R1, R1 → R2 */
+function nextTsRevNo(currentNo){
+  const cur=String(currentNo||'').trim();
+  if(!cur) return '';
+  return `${stripTsRevSuffix(cur)}-R${tsRevNumber(cur)+1}`;
+}
+function resolveTsOrig(item, fallbackNo){
+  if(item && typeof item==='object'){
+    const o=String(item.ts_orig||'').trim();
+    if(o) return stripTsRevSuffix(o);
+    return stripTsRevSuffix(item.ts_no||fallbackNo||'');
+  }
+  return stripTsRevSuffix(fallbackNo||'');
+}
+/** 목록용: 원번호 위, 수정번호(-Rn) 아래 */
+function tsNoStackHtml(cur, orig){
+  const c=String(cur||'').trim();
+  if(!c) return '<span style="color:#bbb">—</span>';
+  const o=String(orig||'').trim() || stripTsRevSuffix(c);
+  if(o && o!==c){
+    return `<div style="line-height:1.3;text-align:center"><div style="color:#888;font-size:10px">${escHtml(o)}</div><div style="font-weight:600">${escHtml(c)}</div></div>`;
+  }
+  return `<span>${escHtml(c)}</span>`;
 }
 function parseTsDocSeq(docNo, ymd){
   const parts=parseDocNoParts('ts', docNo);
@@ -3013,9 +3047,12 @@ async function confirmTsDocNo(tradeDate, opts={}){
   const ymd=tsDateKey(tradeDate);
   const isEdit=!!opts.isEdit;
   const reuseNo=String(opts.reuseNo||'').trim();
-  const suggested=reuseNo || await suggestTsDocNo(tradeDate);
+  // 수정: 원번호 유지 + -R1/-R2 … / 신규·재발행: 다음 순번
+  const suggested=isEdit && reuseNo
+    ? nextTsRevNo(reuseNo)
+    : (reuseNo || await suggestTsDocNo(tradeDate));
   const tip=isEdit
-    ? '기존 문서번호를 확인/수정해주세요\n※ 닫기만 하면 번호가 확정·채번되지 않습니다. 프린트/메일 발송 시 저장됩니다.'
+    ? '수정 문서번호를 확인해주세요 (원번호 뒤에 -R1, -R2 …)\n※ 닫기만 하면 확정되지 않습니다. 프린트/메일 발송 시 저장됩니다.'
     : '문서번호를 확인/수정해주세요\n※ 닫기만 하면 번호가 채번되지 않습니다. 프린트/메일 발송 시 저장됩니다.';
   const userDocNo=prompt(tip, suggested);
   if(userDocNo===null) return null;
@@ -3023,7 +3060,7 @@ async function confirmTsDocNo(tradeDate, opts={}){
   if(!finalNo){ alert('문서번호를 입력해주세요'); return null; }
   if(!parseDocNoParts('ts', finalNo) && !parseTsDocSeq(finalNo, ymd)){
     // 형식만 안내 — 저장은 finalize 때
-    if(!confirm(`문서번호 형식을 인식하지 못했어요 (권장: TS-YYMMDD-순번).\n그래도 "${finalNo}" 로 진행할까요?`)) return null;
+    if(!confirm(`문서번호 형식을 인식하지 못했어요 (권장: TS-YYMMDD-순번 또는 …-Rn).\n그래도 "${finalNo}" 로 진행할까요?`)) return null;
   }
   return finalNo;
 }
@@ -3054,7 +3091,7 @@ async function finalizeTsIssue(){
   }
   persistTsNosFromOverlay();
 }
-/** 오버레이에 보이는 명세표 번호를 해당 품목(ts 대상)에 기록 */
+/** 오버레이에 보이는 명세표 번호를 해당 품목(ts 대상)에 기록 (ts_no=현재, ts_orig=원번호) */
 function persistTsNosFromOverlay(){
   const pages=[...document.querySelectorAll('#doc-content .a4-page')];
   const metaItems=_docMailMeta&&_docMailMeta.items||[];
@@ -3064,6 +3101,7 @@ function persistTsNosFromOverlay(){
     const noEl=page.querySelector('.ts-no-input');
     const no=(noEl&&noEl.value||'').trim();
     if(!no) return;
+    const origFromDom=stripTsRevSuffix((noEl&&noEl.dataset.tsOrig||'').trim());
     let company='';
     page.querySelectorAll('.ts-row').forEach(row=>{
       const key=((row.querySelector('.ts-key')||{}).textContent||'').replace(/\s+/g,'');
@@ -3076,7 +3114,10 @@ function persistTsNosFromOverlay(){
       if(co && sellerCompany(it.seller)!==co) return;
       const o=orders.find(x=>x.no===it.order_no);
       if(!o || !o.items || !o.items[it.item_idx]) return;
-      o.items[it.item_idx].ts_no=no;
+      const prev=o.items[it.item_idx];
+      const orig=origFromDom || resolveTsOrig(prev, no) || stripTsRevSuffix(no);
+      prev.ts_no=no;
+      prev.ts_orig=orig;
       touched.add(o.no);
     });
   });
@@ -3474,7 +3515,7 @@ async function saveTsContactsToSettings(){
 }
 
 /* ── 거래명세표: 선택 품목, A4 고정 ── */
-function tsPageHtml({company, seller, contact, its, dy, dm, dd, tsNo, sepClass, tradeDate}){
+function tsPageHtml({company, seller, contact, its, dy, dm, dd, tsNo, tsOrig, sepClass, tradeDate}){
   const FIXED_ROWS=10;
   const si=sellerInfo(seller||company);
   const siteName=sellerSite(seller||'')||'';
@@ -3498,9 +3539,15 @@ function tsPageHtml({company, seller, contact, its, dy, dm, dd, tsNo, sepClass, 
   const myContact=(MY.managers&&MY.managers['이은진'])
     ?`이은진 ${(MY.managers['이은진'].tel||'')}`.trim()
     :formatDocContact(MY.contact||'　');
+  const curNo=String(tsNo||'').trim();
+  const origNo=stripTsRevSuffix(String(tsOrig||'').trim() || curNo);
+  const showOrig=!!(origNo && origNo!==curNo);
   return `<div class="a4-page${sepClass||''}">
     <div class="ts-title">거 래 명 세 표</div>
-    <div class="ts-no"><span class="ts-no-label">No.</span><input class="ts-no-input" size="${Math.max((tsNo||'').length, 8)}" value="${escHtml(tsNo||'')}" title="클릭해서 문서번호 수정" oninput="onTsDocNoInput(this)"></div>
+    <div class="ts-no-block">
+      ${showOrig?`<div class="ts-no-orig">원 No. ${escHtml(origNo)}</div>`:''}
+      <div class="ts-no"><span class="ts-no-label">No.</span><input class="ts-no-input" data-ts-orig="${escHtml(origNo)}" size="${Math.max(curNo.length, 8)}" value="${escHtml(curNo)}" title="클릭해서 문서번호 수정" oninput="onTsDocNoInput(this)"></div>
+    </div>
     <div class="ts-meta">
       <div class="ts-side">
         <div class="ts-side-hd">공급받는자</div>
@@ -3566,19 +3613,20 @@ async function buildTS(selectedItems, issueDate){
     contactMap[seller]=c;
   }
   const reuseNos=[...new Set(selectedItems.map(i=>String(i.ts_no||'').trim()).filter(Boolean))];
-  const isEdit=reuseNos.length>0 || selectedItems.some(i=>i.status==='납품완료');
+  const isEdit=reuseNos.length>0;
   const reuseNo=reuseNos.length===1?reuseNos[0]:'';
   const userDocNo=await confirmTsDocNo(tradeDate, {isEdit, reuseNo});
   if(userDocNo===null) return;
   let html='';
   Object.entries(groups).forEach(([seller,its],idx)=>{
     const company=sellerCompany(seller);
-    const existing=[...new Set(its.map(i=>String(i.ts_no||'').trim()).filter(Boolean))];
-    const tsNo=existing.length===1?existing[0]
-      :(Object.keys(groups).length===1?userDocNo:`${userDocNo}-${String(idx+1).padStart(2,'0')}`);
+    const tsNo=Object.keys(groups).length===1?userDocNo:`${userDocNo}-${String(idx+1).padStart(2,'0')}`;
+    const tsOrig=isEdit
+      ? (resolveTsOrig(its[0], reuseNo) || stripTsRevSuffix(userDocNo))
+      : stripTsRevSuffix(tsNo);
     html+=tsPageHtml({
       company, seller:its[0]&&its[0].seller||seller, contact:contactMap[seller],
-      its, dy, dm, dd, tsNo, tradeDate, sepClass:idx>0?' doc-sep':''
+      its, dy, dm, dd, tsNo, tsOrig, tradeDate, sepClass:idx>0?' doc-sep':''
     });
   });
   setDocMailMeta('ts', Object.keys(groups).map(k=>({name:sellerCompany(k), role:'seller'})), selectedItems);
@@ -3640,7 +3688,7 @@ async function showTSfromDeliver(){
     contactMap[co]=c;
   }
   const reuseNos=[...new Set(checked.map(i=>String(i.ts_no||'').trim()).filter(Boolean))];
-  const isEdit=reuseNos.length>0 || checked.some(i=>i.status==='납품완료');
+  const isEdit=reuseNos.length>0;
   const reuseNo=reuseNos.length===1?reuseNos[0]:'';
   const userDocNo=await confirmTsDocNo(tradeDate, {isEdit, reuseNo});
   if(userDocNo===null)return;
@@ -3648,12 +3696,13 @@ async function showTSfromDeliver(){
   let html='';
   Object.entries(groups).forEach(([seller,its],idx)=>{
     const company=sellerCompany(seller);
-    const existing=[...new Set(its.map(i=>String(i.ts_no||'').trim()).filter(Boolean))];
-    const tsNo=existing.length===1?existing[0]
-      :(Object.keys(groups).length===1?userDocNo:`${userDocNo}-${String(idx+1).padStart(2,'0')}`);
+    const tsNo=Object.keys(groups).length===1?userDocNo:`${userDocNo}-${String(idx+1).padStart(2,'0')}`;
+    const tsOrig=isEdit
+      ? (resolveTsOrig(its[0], reuseNo) || stripTsRevSuffix(userDocNo))
+      : stripTsRevSuffix(tsNo);
     html+=tsPageHtml({
       company, seller:its[0]&&its[0].seller||seller, contact:contactMap[company],
-      its, dy, dm, dd, tsNo, tradeDate, sepClass:idx>0?' doc-sep':''
+      its, dy, dm, dd, tsNo, tsOrig, tradeDate, sepClass:idx>0?' doc-sep':''
     });
   });
   setDocMailMeta('ts', Object.keys(groups).map(k=>({name:sellerCompany(k), role:'seller'})), checked);
@@ -3704,7 +3753,7 @@ async function quickTS(idx, mode){
     if(c===null) return;
     contactMap[company]=c;
   }
-  // edit: 기존 번호 재사용 / reissue·new: 다음 순번 제안 (채번은 finalize 때)
+  // edit: -R1/-R2 제안 / reissue·new: 다음 순번 (채번은 finalize 때)
   const reuseNo=isEdit?String(r.ts_no||'').trim():'';
   const userDocNo=await confirmTsDocNo(tradeDate, {isEdit, reuseNo});
   if(userDocNo===null)return;
@@ -3712,16 +3761,13 @@ async function quickTS(idx, mode){
   let html='';
   Object.entries(groups).forEach(([seller,its],gIdx)=>{
     const company=sellerCompany(seller);
-    let tsNo;
-    if(isEdit){
-      const existing=[...new Set(its.map(i=>String(i.ts_no||'').trim()).filter(Boolean))];
-      tsNo=existing.length===1?existing[0]:userDocNo;
-    }else{
-      tsNo=Object.keys(groups).length===1?userDocNo:`${userDocNo}-${gIdx+1}`;
-    }
+    const tsNo=Object.keys(groups).length===1?userDocNo:`${userDocNo}-${gIdx+1}`;
+    const tsOrig=isEdit
+      ? (resolveTsOrig(its[0], reuseNo) || stripTsRevSuffix(userDocNo))
+      : stripTsRevSuffix(tsNo);
     html+=tsPageHtml({
       company, seller:its[0]&&its[0].seller||seller, contact:contactMap[company],
-      its, dy, dm, dd, tsNo,
+      its, dy, dm, dd, tsNo, tsOrig,
       tradeDate, sepClass:gIdx>0?' doc-sep':''
     });
   });
@@ -3753,7 +3799,8 @@ function renderDeliver(){
       const label=sellerLabel(sk);
       const buyer=(item.buyer||'').toLowerCase();
       const tsNoStr=String(item.ts_no||'').toLowerCase();
-      if(dq&&!(item.item||'').toLowerCase().includes(dq)&&!o.no.toLowerCase().includes(dq)&&!label.toLowerCase().includes(dq)&&!sk.toLowerCase().includes(dq)&&!buyer.includes(dq)&&!tsNoStr.includes(dq))return;
+      const tsOrigStr=String(item.ts_orig||'').toLowerCase();
+      if(dq&&!(item.item||'').toLowerCase().includes(dq)&&!o.no.toLowerCase().includes(dq)&&!label.toLowerCase().includes(dq)&&!sk.toLowerCase().includes(dq)&&!buyer.includes(dq)&&!tsNoStr.includes(dq)&&!tsOrigStr.includes(dq))return;
       deliverRows.push({...item,seller:sk,order_no:o.no,order_date:o.date,item_idx});
     });
   });
@@ -3794,14 +3841,14 @@ function renderDeliver(){
           <option${isPend?' selected':''}>미납품</option>
           <option${!isPend?' selected':''}>납품완료</option>
         </select></td>
-        <td class="c" style="font-size:11px;font-variant-numeric:tabular-nums;color:${String(r.ts_no||'').trim()?'#111':'#bbb'}" title="${String(r.ts_no||'').trim()?('거래명세표 '+escHtml(String(r.ts_no).trim())):'미발급'}">${escHtml(String(r.ts_no||'').trim())||'—'}</td>
+        <td class="c" style="font-size:11px;font-variant-numeric:tabular-nums;color:${String(r.ts_no||'').trim()?'#111':'#bbb'}" title="${String(r.ts_no||'').trim()?('거래명세표 '+escHtml(String(r.ts_no).trim())):'미발급'}">${tsNoStackHtml(r.ts_no, resolveTsOrig(r))}</td>
         <td class="c">${(()=>{
           if(!(r.samt>0)) return '　';
           const tsNo=String(r.ts_no||'').trim();
           const btn=(label,mode,title,extra='')=>`<button class="btn btn-ts" style="font-size:11px;padding:3px 6px;margin:1px${extra}" onclick="quickTS(${idx},'${mode}')" title="${escHtml(title)}">${label}</button>`;
           // 기존 번호 있거나 납품완료 → 수정 + 재발행 둘 다
           if(tsNo || !isPend){
-            const editTip=tsNo?(`기존 번호 ${tsNo} 로 수정`):'기존 문서번호로 수정 (없으면 입력)';
+            const editTip=tsNo?(`수정본 ${nextTsRevNo(tsNo)} 발급`):'기존 문서번호 입력 후 -R1 수정';
             return `${btn('수정','edit',editTip)}${btn('재발행','reissue','새 문서번호로 재발행',';margin-left:2px')}`;
           }
           // 미납품·번호 없음 → 최초 명세서만
@@ -3859,7 +3906,7 @@ function renderList(){
   const filtered=orders.filter(o=>{
     if(fm&&ym(o.date)!==fm)return false;
     if(fb&&!o.items.some(i=>i.buyer===fb))return false;
-    if(fs&&!o.no.toLowerCase().includes(fs)&&!o.items.some(i=>(i.item||'').toLowerCase().includes(fs)||(i.buyer||'').toLowerCase().includes(fs)||String(i.ts_no||'').toLowerCase().includes(fs)))return false;
+    if(fs&&!o.no.toLowerCase().includes(fs)&&!o.items.some(i=>(i.item||'').toLowerCase().includes(fs)||(i.buyer||'').toLowerCase().includes(fs)||String(i.ts_no||'').toLowerCase().includes(fs)||String(i.ts_orig||'').toLowerCase().includes(fs)))return false;
     return true;
   }).sort((a,b)=>{
     // 미납품이 있는 발주를 상단, 같은 그룹 안에서는 최근 발주일 순
@@ -3873,9 +3920,16 @@ function renderList(){
     const bs=[...new Set(o.items.map(i=>i.buyer).filter(Boolean))].join(', ');
     const its=[...new Set(o.items.map(i=>i.item).filter(Boolean))].join(', ');
     const pend=o.items.filter(i=>i.status==='미납품').length;
-    const tsNos=[...new Set(o.items.map(i=>String(i.ts_no||'').trim()).filter(Boolean))];
-    const tsLabel=tsNos.length
-      ? tsNos.map(n=>escHtml(n)).join(', ')
+    const tsPairs=[];
+    o.items.forEach(i=>{
+      const cur=String(i.ts_no||'').trim();
+      if(!cur) return;
+      const orig=resolveTsOrig(i);
+      const key=cur+'|'+orig;
+      if(!tsPairs.some(p=>p.key===key)) tsPairs.push({key, cur, orig});
+    });
+    const tsLabel=tsPairs.length
+      ? tsPairs.map(p=>tsNoStackHtml(p.cur, p.orig)).join('<span style="color:#ccc;margin:0 4px">·</span>')
       : '<span style="color:#bbb">명세 미발급</span>';
     return `<div class="card">
       <div class="card-top">
