@@ -358,7 +358,7 @@ input[readonly]{background:#f5f5f5;color:#999}
   <div id="page-list" class="page on">
     <div class="filter-row">
       <button class="btn btn-save" onclick="newOrderFromList()">+ 새 발주</button>
-      <input id="fl-search" type="text" placeholder="🔍 품목명·발주번호 검색" style="width:200px;padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px" oninput="renderList()">
+      <input id="fl-search" type="text" placeholder="🔍 품목·발주번호·문서번호 검색" style="width:220px;padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px" oninput="renderList()">
       <select id="fl-month" onchange="renderList()"><option value="">전체 월</option></select>
       <select id="fl-buyer" onchange="renderList()"><option value="">전체 매입처</option></select>
       <button class="btn" onclick="document.getElementById('order-upload-file').click()">📤 엑셀로 발주 업로드</button>
@@ -431,7 +431,7 @@ input[readonly]{background:#f5f5f5;color:#999}
   <!-- 납품 현황 -->
   <div id="page-deliver" class="page">
     <div class="filter-row">
-      <input id="dl-search" type="text" placeholder="🔍 품목·발주번호·매입처·매출처 검색" style="width:240px;padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px" oninput="renderDeliver()">
+      <input id="dl-search" type="text" placeholder="🔍 품목·발주번호·문서번호·매입처·매출처 검색" style="width:260px;padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px" oninput="renderDeliver()">
       <select id="dl-month" onchange="renderDeliver()"><option value="">전체 월</option></select>
       <select id="dl-seller" onchange="renderDeliver()"><option value="">전체 매출처</option></select>
       <select id="dl-status" onchange="renderDeliver()">
@@ -466,7 +466,7 @@ input[readonly]{background:#f5f5f5;color:#999}
           <th style="width:80px" class="r">공급가액</th>
           <th style="width:100px">출하일</th>
           <th style="width:74px" class="c">납품상태</th>
-          <th style="width:48px" class="c">분할</th>
+          <th style="width:110px" class="c">문서번호</th>
           <th style="width:108px" class="c">명세</th>
         </tr></thead>
         <tbody id="deliver-body"></tbody>
@@ -3096,6 +3096,9 @@ async function closeDocOverlay(){
     try{ await syncOverlayDocSeq(); }catch(e){ console.warn(e); }
   }
   document.getElementById('overlay').style.display='none';
+  // 명세 저장 후 목록·납품현황의 문서번호 칸을 바로 갱신
+  if(document.getElementById('page-deliver')?.classList.contains('on') && typeof renderDeliver==='function') renderDeliver();
+  if(document.getElementById('page-list')?.classList.contains('on') && typeof renderList==='function') renderList();
 }
 function collectDocNos(kind){
   // kind: true/'po' | 'quote' | false/'ts'
@@ -3658,29 +3661,6 @@ async function showTSfromDeliver(){
   // 명세표 PDF만 생성. 납품완료(매입·매출 인식)는 상태 칸에서 따로 바꾼다. 채번·ts_no는 프린트/메일 시에만.
 }
 
-function splitItem(idx){
-  const r=deliverRows[idx];if(!r)return;
-  const o=orders.find(x=>x.no===r.order_no);if(!o)return;
-  const orig=o.items[r.item_idx];
-  const total=orig.sqty||orig.bqty||0;
-  const qty1=prompt(`분할할 첫 번째 수량을 입력하세요 (전체: ${total}개)`, Math.floor(total/2));
-  if(!qty1)return;
-  const q1=+qty1;
-  if(isNaN(q1)||q1<=0||q1>=total){alert(`1 이상 ${total-1} 이하로 입력해주세요`);return;}
-  const q2=total-q1;
-  // 원본 수량 변경
-  orig.sqty=q1;orig.bqty=q1;
-  orig.bamt=Math.round(q1*orig.bprice);
-  orig.samt=Math.round(q1*orig.sprice);
-  // 새 항목 추가 (같은 발주서에)
-  const newItem={...orig,sqty:q2,bqty:q2,bamt:Math.round(q2*orig.bprice),samt:Math.round(q2*orig.sprice),ship:'',status:'미납품'};
-  o.items.splice(r.item_idx+1,0,newItem);
-  // 발주서 합계 재계산
-  o.total_buy=o.items.reduce((s,i)=>s+i.bamt,0);
-  o.total_sell=o.items.reduce((s,i)=>s+i.samt,0);
-  persist(o.no);renderDeliver();
-}
-
 /**
  * 납품현황 단건 거래명세표
  * mode: 'edit' 기존 번호로 수정 | 'reissue' 새 번호로 재발행 | 'new' 최초 명세서
@@ -3772,7 +3752,8 @@ function renderDeliver(){
       if(dst&&item.status!==dst)return;
       const label=sellerLabel(sk);
       const buyer=(item.buyer||'').toLowerCase();
-      if(dq&&!(item.item||'').toLowerCase().includes(dq)&&!o.no.toLowerCase().includes(dq)&&!label.toLowerCase().includes(dq)&&!sk.toLowerCase().includes(dq)&&!buyer.includes(dq))return;
+      const tsNoStr=String(item.ts_no||'').toLowerCase();
+      if(dq&&!(item.item||'').toLowerCase().includes(dq)&&!o.no.toLowerCase().includes(dq)&&!label.toLowerCase().includes(dq)&&!sk.toLowerCase().includes(dq)&&!buyer.includes(dq)&&!tsNoStr.includes(dq))return;
       deliverRows.push({...item,seller:sk,order_no:o.no,order_date:o.date,item_idx});
     });
   });
@@ -3813,7 +3794,7 @@ function renderDeliver(){
           <option${isPend?' selected':''}>미납품</option>
           <option${!isPend?' selected':''}>납품완료</option>
         </select></td>
-        <td class="c">${isPend?`<button class="btn" style="font-size:11px;padding:3px 8px" onclick="splitItem(${idx})">분할</button>`:'　'}</td>
+        <td class="c" style="font-size:11px;font-variant-numeric:tabular-nums;color:${String(r.ts_no||'').trim()?'#111':'#bbb'}" title="${String(r.ts_no||'').trim()?('거래명세표 '+escHtml(String(r.ts_no).trim())):'미발급'}">${escHtml(String(r.ts_no||'').trim())||'—'}</td>
         <td class="c">${(()=>{
           if(!(r.samt>0)) return '　';
           const tsNo=String(r.ts_no||'').trim();
@@ -3878,7 +3859,7 @@ function renderList(){
   const filtered=orders.filter(o=>{
     if(fm&&ym(o.date)!==fm)return false;
     if(fb&&!o.items.some(i=>i.buyer===fb))return false;
-    if(fs&&!o.no.toLowerCase().includes(fs)&&!o.items.some(i=>(i.item||'').toLowerCase().includes(fs)||(i.buyer||'').toLowerCase().includes(fs)))return false;
+    if(fs&&!o.no.toLowerCase().includes(fs)&&!o.items.some(i=>(i.item||'').toLowerCase().includes(fs)||(i.buyer||'').toLowerCase().includes(fs)||String(i.ts_no||'').toLowerCase().includes(fs)))return false;
     return true;
   }).sort((a,b)=>{
     // 미납품이 있는 발주를 상단, 같은 그룹 안에서는 최근 발주일 순
@@ -3892,9 +3873,13 @@ function renderList(){
     const bs=[...new Set(o.items.map(i=>i.buyer).filter(Boolean))].join(', ');
     const its=[...new Set(o.items.map(i=>i.item).filter(Boolean))].join(', ');
     const pend=o.items.filter(i=>i.status==='미납품').length;
+    const tsNos=[...new Set(o.items.map(i=>String(i.ts_no||'').trim()).filter(Boolean))];
+    const tsLabel=tsNos.length
+      ? tsNos.map(n=>escHtml(n)).join(', ')
+      : '<span style="color:#bbb">명세 미발급</span>';
     return `<div class="card">
       <div class="card-top">
-        <div style="display:flex;align-items:center;gap:8px">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <span class="card-no">${o.no}</span>
           ${pend?`<span class="badge badge-pend" style="cursor:pointer;text-decoration:underline" title="클릭하면 납품현황으로 이동" onclick="goToDeliver('${o.no}')">미납품 ${pend}건</span>`:`<span class="badge badge-done">전체 납품완료</span>`}
         </div>
@@ -3902,6 +3887,10 @@ function renderList(){
       </div>
       <div class="card-name">${bs||'미지정'}</div>
       <div class="card-items-txt">${its}</div>
+      <div style="font-size:12px;color:#444;margin:6px 0 2px;display:flex;gap:6px;align-items:baseline;flex-wrap:wrap">
+        <span style="color:#888;font-size:11px;flex-shrink:0">문서번호</span>
+        <span style="font-variant-numeric:tabular-nums">${tsLabel}</span>
+      </div>
       <div class="card-amts">
         <div class="card-amt"><span class="card-amt-lbl">매입</span><span class="card-amt-val">${fmtW(o.total_buy)}</span></div>
       </div>
