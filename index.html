@@ -3262,6 +3262,40 @@ async function suggestTsDocNo(tradeDate){
   const next=(+MY.doc_seq.ts[ymd]||0)+1;
   return `TS-${ymd}-${String(next).padStart(2,'0')}`;
 }
+/** 품목 묶음에서 재사용할 명세 번호 선택 (선호값 → 최고 -Rn) */
+function pickTsReuseNo(items, preferred){
+  const pref=String(preferred||'').trim();
+  if(pref) return pref;
+  const nos=[...new Set((items||[]).map(i=>String(i.ts_no||'').trim()).filter(Boolean))];
+  if(!nos.length) return '';
+  nos.sort((a,b)=>{
+    const ba=stripTsRevSuffix(a), bb=stripTsRevSuffix(b);
+    if(ba!==bb) return ba.localeCompare(bb);
+    return tsRevNumber(b)-tsRevNumber(a);
+  });
+  return nos[0];
+}
+/** 목록 표시용: 본인 번호 없으면 같은 매출처·출하일 형제 번호 사용 */
+function resolveDisplayTsNo(row){
+  const own=String((row&&row.ts_no)||'').trim();
+  if(own) return {ts_no:own, ts_orig:resolveTsOrig(row, own), inherited:false};
+  const co=sellerCompany(row&&row.seller);
+  const ship=(row&&row.ship)||'';
+  if(!co||!ship) return {ts_no:'', ts_orig:'', inherited:false};
+  let best='';
+  orders.forEach(o=>{
+    (o.items||[]).forEach(item=>{
+      if(sellerCompany(item.seller)!==co) return;
+      if((item.ship||'')!==ship) return;
+      if(!(+item.samt>0)) return;
+      const cur=String(item.ts_no||'').trim();
+      if(!cur) return;
+      if(!best || tsRevNumber(cur)>tsRevNumber(best)) best=cur;
+    });
+  });
+  if(!best) return {ts_no:'', ts_orig:'', inherited:false};
+  return {ts_no:best, ts_orig:stripTsRevSuffix(best), inherited:true};
+}
 /**
  * 문서번호 확인 프롬프트.
  * isEdit/reuseNo: 기존 번호로 수정 모드 (새 채번 제안 안 함)
@@ -3271,13 +3305,32 @@ async function confirmTsDocNo(tradeDate, opts={}){
   const ymd=tsDateKey(tradeDate);
   const isEdit=!!opts.isEdit;
   const reuseNo=String(opts.reuseNo||'').trim();
-  // 수정: 원번호 유지 + -R1/-R2 … / 신규·재발행: 다음 순번
-  const suggested=isEdit && reuseNo
-    ? nextTsRevNo(reuseNo)
-    : (reuseNo || await suggestTsDocNo(tradeDate));
-  const tip=isEdit
-    ? '수정 문서번호를 확인해주세요 (원번호 뒤에 -R1, -R2 …)\n※ 닫기만 하면 확정되지 않습니다. 프린트/메일 발송 시 저장됩니다.'
-    : '문서번호를 확인/수정해주세요\n※ 닫기만 하면 번호가 채번되지 않습니다. 프린트/메일 발송 시 저장됩니다.';
+  const origNo=stripTsRevSuffix(String(opts.origNo||reuseNo||'').trim());
+  // 수정: 기존 번호가 있으면 -R 제안(현재 발급번호는 안내에 표시). 없으면 빈칸(새 채번 금지).
+  // 신규·재발행: 다음 순번
+  let suggested;
+  if(isEdit){
+    suggested=reuseNo?nextTsRevNo(reuseNo):'';
+  }else{
+    suggested=reuseNo || await suggestTsDocNo(tradeDate);
+  }
+  let tip;
+  if(isEdit){
+    if(reuseNo){
+      tip=`수정 문서번호를 확인해주세요\n현재 발급번호: ${reuseNo}`+
+        (origNo && origNo!==reuseNo ? `\n원번호: ${origNo}` : '')+
+        `\n제안(수정본): ${suggested}`+
+        `\n※ 다시 입력할 필요 없이 확인만 하면 됩니다.`+
+        `\n※ 닫기만 하면 확정되지 않습니다. 프린트/메일 발송 시 저장됩니다.`;
+    }else{
+      tip='이미 발급된 문서번호가 이 품목들에 저장되어 있지 않아요.\n'+
+        '기존 번호(예: TS-YYMMDD-순번)를 입력해주세요.\n'+
+        '※ 납품현황·발주목록의 문서번호 칸을 확인하세요.\n'+
+        '※ 닫기만 하면 확정되지 않습니다. 프린트/메일 발송 시 저장됩니다.';
+    }
+  }else{
+    tip='문서번호를 확인/수정해주세요\n※ 닫기만 하면 번호가 채번되지 않습니다. 프린트/메일 발송 시 저장됩니다.';
+  }
   const userDocNo=prompt(tip, suggested);
   if(userDocNo===null) return null;
   const finalNo=String(userDocNo).trim();
@@ -3900,15 +3953,18 @@ async function buildTS(selectedItems, issueDate){
   }
   const reuseNos=[...new Set(selectedItems.map(i=>String(i.ts_no||'').trim()).filter(Boolean))];
   const isEdit=reuseNos.length>0;
-  const reuseNo=reuseNos.length===1?reuseNos[0]:'';
-  const userDocNo=await confirmTsDocNo(tradeDate, {isEdit, reuseNo});
+  const reuseNo=pickTsReuseNo(selectedItems);
+  const userDocNo=await confirmTsDocNo(tradeDate, {
+    isEdit, reuseNo,
+    origNo:resolveTsOrig(selectedItems.find(i=>i.ts_orig||i.ts_no)||{}, reuseNo)
+  });
   if(userDocNo===null) return;
   let html='';
   Object.entries(groups).forEach(([seller,its],idx)=>{
     const company=sellerCompany(seller);
     const tsNo=Object.keys(groups).length===1?userDocNo:`${userDocNo}-${String(idx+1).padStart(2,'0')}`;
     const tsOrig=isEdit
-      ? (resolveTsOrig(its[0], reuseNo) || stripTsRevSuffix(userDocNo))
+      ? (resolveTsOrig(its.find(i=>i.ts_orig||i.ts_no)||its[0], reuseNo) || stripTsRevSuffix(userDocNo))
       : stripTsRevSuffix(tsNo);
     html+=tsPageHtml({
       company, seller:its[0]&&its[0].seller||seller, contact:contactMap[seller],
@@ -3993,8 +4049,11 @@ async function showTSfromDeliver(){
   }
   const reuseNos=[...new Set(checked.map(i=>String(i.ts_no||'').trim()).filter(Boolean))];
   const isEdit=reuseNos.length>0;
-  const reuseNo=reuseNos.length===1?reuseNos[0]:'';
-  const userDocNo=await confirmTsDocNo(tradeDate, {isEdit, reuseNo});
+  const reuseNo=pickTsReuseNo(checked);
+  const userDocNo=await confirmTsDocNo(tradeDate, {
+    isEdit, reuseNo,
+    origNo:resolveTsOrig(checked.find(i=>i.ts_orig||i.ts_no)||{}, reuseNo)
+  });
   if(userDocNo===null)return;
   const dy=tradeDate.slice(0,4),dm=tradeDate.slice(5,7),dd=tradeDate.slice(8,10);
   let html='';
@@ -4002,7 +4061,7 @@ async function showTSfromDeliver(){
     const company=sellerCompany(seller);
     const tsNo=Object.keys(groups).length===1?userDocNo:`${userDocNo}-${String(idx+1).padStart(2,'0')}`;
     const tsOrig=isEdit
-      ? (resolveTsOrig(its[0], reuseNo) || stripTsRevSuffix(userDocNo))
+      ? (resolveTsOrig(its.find(i=>i.ts_orig||i.ts_no)||its[0], reuseNo) || stripTsRevSuffix(userDocNo))
       : stripTsRevSuffix(tsNo);
     html+=tsPageHtml({
       company, seller:its[0]&&its[0].seller||seller, contact:contactMap[company],
@@ -4072,9 +4131,10 @@ async function quickTS(idx, mode){
       addrMap[company]=def.addr||'';
     }
   }
-  // edit: -R1/-R2 제안 / reissue·new: 다음 순번 (채번은 finalize 때)
-  const reuseNo=isEdit?String(r.ts_no||'').trim():'';
-  const userDocNo=await confirmTsDocNo(tradeDate, {isEdit, reuseNo});
+  // edit: 묶음 안 기존 번호 우선 표시 후 -R 제안 / reissue·new: 다음 순번 (채번은 finalize 때)
+  const reuseNo=isEdit?pickTsReuseNo(items, r.ts_no):'';
+  const origHint=isEdit?resolveTsOrig(items.find(i=>i.ts_orig||i.ts_no)||r, reuseNo):'';
+  const userDocNo=await confirmTsDocNo(tradeDate, {isEdit, reuseNo, origNo:origHint});
   if(userDocNo===null)return;
   const dy=tradeDate.slice(0,4),dm=tradeDate.slice(5,7),dd=tradeDate.slice(8,10);
   let html='';
@@ -4082,7 +4142,7 @@ async function quickTS(idx, mode){
     const company=sellerCompany(seller);
     const tsNo=Object.keys(groups).length===1?userDocNo:`${userDocNo}-${gIdx+1}`;
     const tsOrig=isEdit
-      ? (resolveTsOrig(its[0], reuseNo) || stripTsRevSuffix(userDocNo))
+      ? (resolveTsOrig(its.find(i=>i.ts_orig||i.ts_no)||its[0], reuseNo) || stripTsRevSuffix(userDocNo))
       : stripTsRevSuffix(tsNo);
     html+=tsPageHtml({
       company, seller:its[0]&&its[0].seller||seller, contact:contactMap[company],
@@ -4144,6 +4204,11 @@ function renderDeliver(){
       const di=resolveDeliverInfo(r.seller, r);
       const contact=di.contact||'';
       const siteHint=di.label?` · ${di.label}`:'';
+      const disp=resolveDisplayTsNo(r);
+      const dispNo=disp.ts_no||'';
+      const dispTip=dispNo
+        ?(disp.inherited?`같은 출하일 형제 품목 번호 ${dispNo}`:`거래명세표 ${dispNo}`)
+        :'미발급';
       return `<tr class="${!isPend?'done-row':''}">
         <td class="c" style="color:#999;font-size:11px">${idx+1}</td>
         <td class="c"><input type="checkbox" class="dl-chk" data-idx="${idx}" ${!isPend?'disabled':''} onchange="updateTsBar()"></td>
@@ -4159,14 +4224,14 @@ function renderDeliver(){
           <option${isPend?' selected':''}>미납품</option>
           <option${!isPend?' selected':''}>납품완료</option>
         </select></td>
-        <td class="c" style="font-size:11px;font-variant-numeric:tabular-nums;color:${String(r.ts_no||'').trim()?'#111':'#bbb'}" title="${String(r.ts_no||'').trim()?('거래명세표 '+escHtml(String(r.ts_no).trim())):'미발급'}">${tsNoStackHtml(r.ts_no, resolveTsOrig(r))}</td>
+        <td class="c" style="font-size:11px;font-variant-numeric:tabular-nums;color:${dispNo?(disp.inherited?'#64748b':'#111'):'#bbb'}" title="${escHtml(dispTip)}">${tsNoStackHtml(dispNo, disp.ts_orig)}${disp.inherited&&dispNo?'<div style="font-size:9px;color:#94a3b8">형제</div>':''}</td>
         <td class="c">${(()=>{
           if(!(r.samt>0)) return '　';
-          const tsNo=String(r.ts_no||'').trim();
+          const tsNo=dispNo||String(r.ts_no||'').trim();
           const btn=(label,mode,title,extra='')=>`<button class="btn btn-ts" style="font-size:11px;padding:3px 6px;margin:1px${extra}" onclick="quickTS(${idx},'${mode}')" title="${escHtml(title)}">${label}</button>`;
           // 기존 번호 있거나 납품완료 → 수정 + 재발행 둘 다
           if(tsNo || !isPend){
-            const editTip=tsNo?(`수정본 ${nextTsRevNo(tsNo)} 발급`):'기존 문서번호 입력 후 -R1 수정';
+            const editTip=tsNo?(`현재 ${tsNo} → 수정본 ${nextTsRevNo(tsNo)}`):'기존 문서번호 입력 후 -R1 수정';
             return `${btn('수정','edit',editTip)}${btn('재발행','reissue','새 문서번호로 재발행',';margin-left:2px')}`;
           }
           // 미납품·번호 없음 → 최초 명세서만
