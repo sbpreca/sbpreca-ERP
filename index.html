@@ -199,9 +199,9 @@ input[readonly]{background:#f5f5f5;color:#999}
 .ts-key{background:#f0f0f0;padding:6px 8px;width:68px;min-width:68px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:11px;color:#111;font-weight:700;border-right:var(--doc-line);flex-shrink:0;line-height:1.4;word-break:keep-all;white-space:pre-line}
 .ts-val{padding:6px 10px;display:flex;align-items:center;flex:1;font-size:12px;color:#111;word-break:break-all;line-height:1.4}
 /* padding/border 없이 다른 ts-val 텍스트와 같은 왼쪽 시작선 유지. 호버는 배경·outline만 */
-.ts-contact-input{border:none;background:transparent;width:100%;font:inherit;font-size:12px;color:#111;padding:0;margin:0;border-radius:3px;box-sizing:border-box;outline:1px solid transparent;outline-offset:2px}
-.ts-contact-input:hover{background:#fffde7;outline-color:#fde68a}
-.ts-contact-input:focus{background:#fff9c4;outline-color:#f59e0b}
+.ts-contact-input,.ts-addr-input,.doc-inline-input{border:none;background:transparent;width:100%;font:inherit;font-size:12px;color:#111;padding:0;margin:0;border-radius:3px;box-sizing:border-box;outline:1px solid transparent;outline-offset:2px}
+.ts-contact-input:hover,.ts-addr-input:hover,.doc-inline-input:hover{background:#fffde7;outline-color:#fde68a}
+.ts-contact-input:focus,.ts-addr-input:focus,.doc-inline-input:focus{background:#fff9c4;outline-color:#f59e0b}
 .ts-amt-box{border:var(--doc-frame);padding:8px 14px;margin-bottom:12px;display:flex;gap:16px;align-items:center}
 .ts-amt-lbl{font-size:12px;color:#111;font-weight:700;min-width:36px}
 .ts-amt-val{font-size:18px;font-weight:700;color:#111}
@@ -253,7 +253,7 @@ input[readonly]{background:#f5f5f5;color:#999}
   .a4-page.quote-page{padding-top:28mm!important}
   .a4-page:last-child{page-break-after:auto}
   .a4-page+.a4-page{border-top:none!important}
-  .ts-contact-input,.ts-no-input{border:none!important;background:transparent!important;padding:0!important;box-shadow:none!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .ts-contact-input,.ts-addr-input,.doc-inline-input,.ts-no-input{border:none!important;background:transparent!important;padding:0!important;box-shadow:none!important;outline:none!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
   @page{size:A4 portrait;margin:0}
 }
 </style>
@@ -1026,7 +1026,7 @@ input[readonly]{background:#f5f5f5;color:#999}
       </label>
       <button class="doc-close" onclick="closeDocOverlay()">닫기</button>
       <button id="ts-save-contact-btn" class="doc-close" style="display:none;color:#1d4ed8;border-color:#bfdbfe" onclick="saveTsContactsToSettings()">담당자 설정 저장</button>
-      <span id="ts-edit-hint" style="display:none;font-size:11px;color:#b45309;align-self:center;margin-left:8px">공급받는자 담당자 입력칸에서 바로 수정할 수 있어요</span>
+      <span id="ts-edit-hint" style="display:none;font-size:11px;color:#b45309;align-self:center;margin-left:8px">담당자·주소·납품처 입력칸에서 바로 수정할 수 있어요</span>
       <span style="font-size:11px;color:#999;align-self:center;margin-left:8px">※ A4 용지로 인쇄해주세요</span>
     </div>
     <div id="mail-panel" class="mail-panel">
@@ -1213,6 +1213,7 @@ const SELLER_COMPANY_ALIASES={
   '센시기전력':'신세기전력',
 };
 // 매출처 저장: 회사@배송지 (예: 테크피아@음성본사). 레거시 회사_품목도 회사명으로 인식.
+const MANUAL_SITE_VALUE='__manual__';
 function sellerCompany(s){
   if(!s) return '';
   const str=String(s);
@@ -1229,7 +1230,8 @@ function sellerSite(s){
 }
 function encodeSeller(company, site){
   if(!company) return '';
-  return site ? company+'@'+site : company;
+  if(!site || site===MANUAL_SITE_VALUE) return company;
+  return company+'@'+site;
 }
 function sellerLabel(s){
   // 화면 표기는 회사명만 (배송지명은 설정·담당자/주소에서 확인)
@@ -1253,24 +1255,114 @@ function sellerInfo(s){
   const hit=Object.keys(SELLERS).find(k=>sellerCompany(k)===co);
   return hit?SELLERS[hit]:{};
 }
-function siteOptionsHtml(company, selected){
+function siteOptionsHtml(company, selected, extraManualLabel){
   const sites=getDeliverySites(company);
-  if(!sites.length) return '<option value="">(배송지 없음)</option>';
   let html='<option value=""></option>';
   sites.forEach(s=>{
     html+=`<option value="${escHtml(s.name)}"${s.name===selected?' selected':''}>${escHtml(s.name)}</option>`;
   });
+  if(extraManualLabel && !sites.some(s=>s.name===extraManualLabel)){
+    html+=`<option value="${escHtml(extraManualLabel)}"${selected===extraManualLabel?' selected':''}>${escHtml(extraManualLabel)} (직접입력)</option>`;
+  }
+  html+=`<option value="${MANUAL_SITE_VALUE}">직접 입력…</option>`;
   return html;
+}
+/** 배송지 직접 입력 프롬프트. 취소 시 null */
+function promptManualDeliver(defaults={}){
+  const labelRaw=prompt('배송지명 (예: 현장·창고·직접입력)', defaults.label||'직접입력');
+  if(labelRaw===null) return null;
+  const addrRaw=prompt('납품 주소(소재지)를 입력해주세요', defaults.addr||'');
+  if(addrRaw===null) return null;
+  const contactRaw=prompt('납품 담당자를 입력해주세요', defaults.contact||'');
+  if(contactRaw===null) return null;
+  return {
+    label:String(labelRaw).trim()||'직접입력',
+    addr:String(addrRaw).trim(),
+    contact:String(contactRaw).trim()
+  };
+}
+function clearManualDeliverOnRow(tr){
+  if(!tr) return;
+  delete tr.dataset.deliverAddr;
+  delete tr.dataset.deliverContact;
+  delete tr.dataset.deliverLabel;
+}
+function applyManualDeliverOnRow(tr, man){
+  if(!tr||!man) return;
+  tr.dataset.deliverAddr=man.addr||'';
+  tr.dataset.deliverContact=man.contact||'';
+  tr.dataset.deliverLabel=man.label||'직접입력';
+  const siteSel=tr.querySelector('.sitesel');
+  if(!siteSel) return;
+  const label=man.label||'직접입력';
+  let opt=[...siteSel.options].find(o=>o.value===label);
+  if(!opt){
+    opt=document.createElement('option');
+    opt.value=label;
+    opt.textContent=label+' (직접입력)';
+    // "직접 입력…" 앞에 삽입
+    const manualOpt=[...siteSel.options].find(o=>o.value===MANUAL_SITE_VALUE);
+    siteSel.insertBefore(opt, manualOpt||null);
+  }
+  siteSel.value=label;
+}
+function onSiteSelChange(sel){
+  const tr=sel.closest('tr');
+  if(!tr) return;
+  if(sel.value!==MANUAL_SITE_VALUE){
+    // 등록 배송지로 바꾸면 직접입력 값 제거
+    if(!tr.dataset.deliverLabel || sel.value!==tr.dataset.deliverLabel){
+      clearManualDeliverOnRow(tr);
+    }
+    return;
+  }
+  const man=promptManualDeliver({
+    label:tr.dataset.deliverLabel||'직접입력',
+    addr:tr.dataset.deliverAddr||'',
+    contact:tr.dataset.deliverContact||''
+  });
+  if(!man){
+    sel.value=tr.dataset.deliverLabel||'';
+    return;
+  }
+  applyManualDeliverOnRow(tr, man);
 }
 function onSellerCompanyChange(sel){
   const tr=sel.closest('tr');
   const siteSel=tr.querySelector('.sitesel');
   const company=sel.value;
+  clearManualDeliverOnRow(tr);
   const sites=getDeliverySites(company);
   siteSel.innerHTML=siteOptionsHtml(company, sites.length===1?sites[0].name:'');
   if(sites.length===1) siteSel.value=sites[0].name;
   calcS();
   autoSPrice(sel);
+}
+/** 품목(또는 등록정보)에서 납품지 주소·담당자 해석 */
+function resolveDeliverInfo(rawSeller, item){
+  const company=sellerCompany(rawSeller||'');
+  const siteName=sellerSite(rawSeller||'');
+  const site=findDeliverySite(company, siteName);
+  const si=sellerInfo(rawSeller||company);
+  const it=item||{};
+  return {
+    company,
+    label:String(it.deliver_label||siteName||'').trim(),
+    addr:String(it.deliver_addr!=null && it.deliver_addr!==''?it.deliver_addr:((site&&site.addr)||si.addr||'')).trim(),
+    contact:String(it.deliver_contact!=null && it.deliver_contact!==''?it.deliver_contact:((site&&site.contact)||si.contact||'')).trim()
+  };
+}
+/** 발행 시 배송지 직접입력 여부 확인 */
+function promptDeliverOverrideIfWanted(company, defaults){
+  const useManual=confirm(`${company||'납품처'} 배송지를 직접 입력할까요?\n\n확인 = 직접 입력\n취소 = 등록(또는 품목에 저장된) 배송지 사용`);
+  if(!useManual) return defaults;
+  const man=promptManualDeliver({
+    label:defaults.label||'직접입력',
+    addr:defaults.addr||'',
+    contact:defaults.contact||''
+  });
+  if(!man) return defaults;
+  return {company:defaults.company||company, label:man.label, addr:man.addr, contact:man.contact};
 }
 function ensureDeliverySites(){
   if(!MY.delivery_sites || typeof MY.delivery_sites!=='object') MY.delivery_sites={};
@@ -2427,7 +2519,9 @@ function addRow(it={}){
   const companies=Object.keys(SELLERS).sort((a,b)=>a.localeCompare(b,'ko'));
   const sOpts=companies.map(k=>`<option${k===company?' selected':''}>${k}</option>`).join('');
   const sites=getDeliverySites(company);
-  const selectedSite=site || (sites.length===1?sites[0].name:'');
+  const hasManual=!!(String(it.deliver_addr||'').trim()||String(it.deliver_contact||'').trim()||String(it.deliver_label||'').trim());
+  const extraLabel=hasManual?(it.deliver_label||site||'직접입력'):'';
+  const selectedSite=extraLabel||site||(sites.length===1?sites[0].name:'');
   tr.innerHTML=`
     <td><select class="bsel" onchange="calcS();autoBPrice(this)" style="width:100%;font-size:12px;border:1px solid #e8e8e8;padding:4px 5px;border-radius:4px"><option></option>${bOpts}</select></td>
     <td><select class="isel" onchange="autoSpec(this);autoBPrice(this);autoSPrice(this)" style="width:100%;font-size:12px;border:1px solid #e8e8e8;padding:4px 5px;border-radius:4px"><option></option>${iOpts}</select></td>
@@ -2436,13 +2530,18 @@ function addRow(it={}){
     <td><input type="number" class="bp" value="${it.bprice||''}" style="width:100%;text-align:right" oninput="calcRow(this);calcS()"></td>
     <td class="amt ba">${it.bamt?fmt(it.bamt):'-'}</td>
     <td><select class="ssel" onchange="onSellerCompanyChange(this)" style="width:100%;font-size:12px;border:1px solid #e8e8e8;padding:4px 5px;border-radius:4px"><option></option>${sOpts}</select></td>
-    <td><select class="sitesel" style="width:100%;font-size:12px;border:1px solid #e8e8e8;padding:4px 5px;border-radius:4px">${siteOptionsHtml(company, selectedSite)}</select></td>
+    <td><select class="sitesel" onchange="onSiteSelChange(this)" style="width:100%;font-size:12px;border:1px solid #e8e8e8;padding:4px 5px;border-radius:4px">${siteOptionsHtml(company, selectedSite, extraLabel||undefined)}</select></td>
     <td><input type="number" class="sq" value="${it.sqty||''}" style="width:100%;text-align:right" oninput="calcRow(this);calcS()"></td>
     <td><input type="number" class="sp2" value="${it.sprice||''}" style="width:100%;text-align:right" oninput="calcRow(this);calcS()"></td>
     <td class="amt sa">${it.samt?fmt(it.samt):'-'}</td>
     <td><input type="date" class="sh" value="${it.ship||''}" style="width:100%;font-size:11px"></td>
     <td style="text-align:center">${stSel(it.status||'미납품','status')}</td>
     <td><button class="del-btn" onclick="this.closest('tr').remove();calcS()">×</button></td>`;
+  if(hasManual){
+    tr.dataset.deliverAddr=it.deliver_addr||'';
+    tr.dataset.deliverContact=it.deliver_contact||'';
+    tr.dataset.deliverLabel=it.deliver_label||site||'직접입력';
+  }
   document.getElementById('items-body').appendChild(tr);
 }
 function autoSpec(sel){const tr=sel.closest('tr'),s=SPECS[sel.value];if(s)tr.querySelector('.spin').value=s;}
@@ -2483,20 +2582,29 @@ function calcS(){
   document.getElementById('s-rate').textContent=r.toFixed(1)+'%';
 }
 function getRows(){
-  return Array.from(document.querySelectorAll('#items-body tr')).map(tr=>({
-    buyer:tr.querySelector('.bsel').value,
-    item:tr.querySelector('.isel').value,
-    spec:tr.querySelector('.spin').value,
-    bqty:+tr.querySelector('.bq').value||0,
-    bprice:+tr.querySelector('.bp').value||0,
-    bamt:(+tr.querySelector('.bq').value||0)*(+tr.querySelector('.bp').value||0),
-    seller:encodeSeller(tr.querySelector('.ssel').value, (tr.querySelector('.sitesel')||{}).value||''),
-    sqty:+tr.querySelector('.sq').value||0,
-    sprice:+tr.querySelector('.sp2').value||0,
-    samt:(+tr.querySelector('.sq').value||0)*(+tr.querySelector('.sp2').value||0),
-    ship:tr.querySelector('.sh').value,
-    status:tr.querySelector('.status').value||'미납품',
-  })).filter(r=>r.buyer||r.item);
+  return Array.from(document.querySelectorAll('#items-body tr')).map(tr=>{
+    const company=tr.querySelector('.ssel').value;
+    const siteRaw=((tr.querySelector('.sitesel')||{}).value)||'';
+    const manualLabel=tr.dataset.deliverLabel||'';
+    const site=(siteRaw===MANUAL_SITE_VALUE)?(manualLabel||''):(manualLabel||siteRaw);
+    return {
+      buyer:tr.querySelector('.bsel').value,
+      item:tr.querySelector('.isel').value,
+      spec:tr.querySelector('.spin').value,
+      bqty:+tr.querySelector('.bq').value||0,
+      bprice:+tr.querySelector('.bp').value||0,
+      bamt:(+tr.querySelector('.bq').value||0)*(+tr.querySelector('.bp').value||0),
+      seller:encodeSeller(company, site),
+      deliver_addr:tr.dataset.deliverAddr||'',
+      deliver_contact:tr.dataset.deliverContact||'',
+      deliver_label:manualLabel||'',
+      sqty:+tr.querySelector('.sq').value||0,
+      sprice:+tr.querySelector('.sp2').value||0,
+      samt:(+tr.querySelector('.sq').value||0)*(+tr.querySelector('.sp2').value||0),
+      ship:tr.querySelector('.sh').value,
+      status:tr.querySelector('.status').value||'미납품',
+    };
+  }).filter(r=>r.buyer||r.item);
 }
 function findPrevItemForMerge(prevItems, it, idx){
   const list=prevItems||[];
@@ -2529,6 +2637,11 @@ function commitFormOrder(){
       ...it,
       ship: it.ship||'',
       status: it.status||'미납품',
+      deliver_addr: it.deliver_addr||'',
+      deliver_contact: it.deliver_contact||'',
+      deliver_label: it.deliver_label||'',
+      ts_no: (prev&&prev.ts_no)||'',
+      ts_orig: (prev&&prev.ts_orig)||'',
       closing_sell_exclude: (prev&&prev.closing_sell_exclude)||false,
       closing_month_override: (prev&&prev.closing_month_override)||''
     };
@@ -2628,13 +2741,11 @@ function buildPOHtml(order){
     const sub=its.reduce((s,i)=>s+(+i.bamt||0),0);
     // 매입처가 하나면 발주번호 그대로. 여러 장이면 -01, -02 구분
     const poNo=buyerCount===1?no:`${no}-${String(idx+1).padStart(2,'0')}`;
-    const rawSeller=(its.find(i=>i.seller)||{seller:''}).seller||'';
-    const deliverCompany=sellerCompany(rawSeller);
-    const deliverSiteName=sellerSite(rawSeller);
-    const site=findDeliverySite(deliverCompany, deliverSiteName);
-    const si=sellerInfo(rawSeller);
-    const di={addr:(site&&site.addr)||si.addr||'', contact:(site&&site.contact)||si.contact||''};
-    const deliverName=deliverCompany;
+    const sample=its.find(i=>i.seller||i.deliver_addr||i.deliver_label)||its[0]||{};
+    const di=resolveDeliverInfo(sample.seller||'', sample);
+    const deliverName=di.company||'';
+    const deliverLabel=di.label||'';
+    const deliverDisp=deliverLabel?`${deliverName} (${deliverLabel})`:deliverName;
     const dataRows=its.map((r,i)=>`<tr>
       <td>${i+1}</td>
       <td class="l">${escHtml(r.item||'')}</td>
@@ -2669,9 +2780,9 @@ function buildPOHtml(order){
         <tfoot><tr><td colspan="5" style="text-align:right;padding:8px">합　계</td><td class="r">${fmt(sub)}</td><td colspan="2"></td></tr></tfoot>
       </table>
       <div class="po-foot">
-        <div class="po-foot-row"><span class="po-foot-key">납 품 처</span><span class="po-foot-val">${escHtml(deliverName||'　')}</span></div>
-        <div class="po-foot-row"><span class="po-foot-key">소 재 지</span><span class="po-foot-val">${escHtml(di.addr||'　')}</span></div>
-        <div class="po-foot-row"><span class="po-foot-key">담 당 자</span><span class="po-foot-val">${escHtml(formatDocContact(di.contact||'')||'　')}</span></div>
+        <div class="po-foot-row"><span class="po-foot-key">납 품 처</span><span class="po-foot-val"><input class="doc-inline-input" value="${escHtml(deliverDisp||'')}" placeholder="납품처" title="클릭해서 수정"></span></div>
+        <div class="po-foot-row"><span class="po-foot-key">소 재 지</span><span class="po-foot-val"><input class="doc-inline-input" value="${escHtml(di.addr||'')}" placeholder="납품 주소" title="클릭해서 수정"></span></div>
+        <div class="po-foot-row"><span class="po-foot-key">담 당 자</span><span class="po-foot-val"><input class="doc-inline-input" value="${escHtml(formatDocContact(di.contact||'')||'')}" placeholder="담당자" title="클릭해서 수정"></span></div>
         ${note?`<div class="po-foot-row"><span class="po-foot-key">특기사항</span><span class="po-foot-val">${escHtml(note)}</span></div>`:''}
       </div>
       <div class="po-note">※ COA 메일 송부 요청 드립니다.</div>
@@ -2689,6 +2800,35 @@ async function showPO(){
   const committed=commitFormOrder();
   if(!committed){alert('날짜와 품목을 입력해주세요');return;}
   const order=cloneOrder(committed);
+  // 매입처 그룹별 배송지 직접입력 옵션
+  const byBuyer={};
+  (order.items||[]).forEach(i=>{if(i&&i.buyer)(byBuyer[i.buyer]=byBuyer[i.buyer]||[]).push(i);});
+  for(const [,its] of Object.entries(byBuyer)){
+    const sample=its.find(i=>i.seller||i.deliver_addr||i.deliver_label)||its[0]||{};
+    const def=resolveDeliverInfo(sample.seller||'', sample);
+    const overridden=promptDeliverOverrideIfWanted(def.company||sellerCompany(sample.seller||''), def);
+    its.forEach(i=>{
+      i.deliver_label=overridden.label||'';
+      i.deliver_addr=overridden.addr||'';
+      i.deliver_contact=overridden.contact||'';
+      if(overridden.label && def.company){
+        i.seller=encodeSeller(def.company, overridden.label);
+      }
+    });
+  }
+  // 직접입력 값을 원본 발주에도 반영
+  const live=orders.find(o=>o.no===order.no);
+  if(live&&Array.isArray(live.items)){
+    order.items.forEach((it,idx)=>{
+      const tgt=live.items[idx];
+      if(!tgt) return;
+      tgt.deliver_label=it.deliver_label||'';
+      tgt.deliver_addr=it.deliver_addr||'';
+      tgt.deliver_contact=it.deliver_contact||'';
+      if(it.seller) tgt.seller=it.seller;
+    });
+    persist(order.no);
+  }
   clearTimeout(_persistTimer);
   try{ await saveOrdersToDb(); }catch(e){ console.warn(e); }
   const built=buildPOHtml(order);
@@ -3091,7 +3231,7 @@ async function finalizeTsIssue(){
   }
   persistTsNosFromOverlay();
 }
-/** 오버레이에 보이는 명세표 번호를 해당 품목(ts 대상)에 기록 (ts_no=현재, ts_orig=원번호) */
+/** 오버레이에 보이는 명세표 번호·원번호·배송지 직접입력을 해당 품목(ts 대상)에 기록 */
 function persistTsNosFromOverlay(){
   const pages=[...document.querySelectorAll('#doc-content .a4-page')];
   const metaItems=_docMailMeta&&_docMailMeta.items||[];
@@ -3103,10 +3243,20 @@ function persistTsNosFromOverlay(){
     if(!no) return;
     const origFromDom=stripTsRevSuffix((noEl&&noEl.dataset.tsOrig||'').trim());
     let company='';
+    let overlayContact='';
+    let overlayAddr='';
     page.querySelectorAll('.ts-row').forEach(row=>{
       const key=((row.querySelector('.ts-key')||{}).textContent||'').replace(/\s+/g,'');
       if(key==='상호'){
         company=((row.querySelector('.ts-val')||{}).textContent||'').trim();
+      }
+      if(key==='담당자'){
+        const inp=row.querySelector('input.ts-contact-input');
+        overlayContact=inp?(inp.value||'').trim():((row.querySelector('.ts-val')||{}).textContent||'').trim();
+      }
+      if(key==='사업장주소'){
+        const inp=row.querySelector('input.ts-addr-input');
+        overlayAddr=inp?(inp.value||'').trim():((row.querySelector('.ts-val')||{}).textContent||'').trim();
       }
     });
     const co=sellerCompany(company)||company;
@@ -3114,10 +3264,17 @@ function persistTsNosFromOverlay(){
       if(co && sellerCompany(it.seller)!==co) return;
       const o=orders.find(x=>x.no===it.order_no);
       if(!o || !o.items || !o.items[it.item_idx]) return;
-      const prev=o.items[it.item_idx];
-      const orig=origFromDom || resolveTsOrig(prev, no) || stripTsRevSuffix(no);
-      prev.ts_no=no;
-      prev.ts_orig=orig;
+      const tgt=o.items[it.item_idx];
+      const orig=origFromDom || resolveTsOrig(tgt, no) || stripTsRevSuffix(no);
+      tgt.ts_no=no;
+      tgt.ts_orig=orig;
+      // 발행 시·오버레이에서 고친 배송지 값 유지
+      if(it.deliver_label!=null) tgt.deliver_label=it.deliver_label||'';
+      if(it.deliver_addr!=null) tgt.deliver_addr=it.deliver_addr||'';
+      if(it.deliver_contact!=null) tgt.deliver_contact=it.deliver_contact||'';
+      if(it.seller) tgt.seller=it.seller;
+      if(overlayAddr) tgt.deliver_addr=overlayAddr;
+      if(overlayContact) tgt.deliver_contact=overlayContact;
       touched.add(o.no);
     });
   });
@@ -3375,10 +3532,10 @@ async function buildDocPdfBase64(){
     clone.style.borderTop='none';
     clone.style.pageBreakAfter=(i<pages.length-1)?'always':'auto';
     clone.style.breakAfter=(i<pages.length-1)?'page':'auto';
-    clone.querySelectorAll('input.ts-contact-input').forEach(inp=>{
+    clone.querySelectorAll('input.ts-contact-input, input.ts-addr-input, input.doc-inline-input').forEach(inp=>{
       const span=document.createElement('span');
       span.textContent=inp.value||'　';
-      span.style.cssText='display:inline-block;min-width:4em';
+      span.style.cssText='display:inline-block;min-width:4em;width:100%';
       inp.replaceWith(span);
     });
     host.appendChild(clone);
@@ -3459,9 +3616,10 @@ function openDocOverlay(html, opts){
   document.getElementById('doc-frame').style.width='794px';
   document.getElementById('overlay').style.display='block';
   const hasTs=!!document.querySelector('.ts-contact-input');
+  const hasInline=!!document.querySelector('.doc-inline-input,.ts-addr-input');
   const hint=document.getElementById('ts-edit-hint');
   const btn=document.getElementById('ts-save-contact-btn');
-  if(hint) hint.style.display=hasTs?'':'none';
+  if(hint) hint.style.display=(hasTs||hasInline)?'':'none';
   if(btn) btn.style.display=hasTs?'':'none';
   if(opts&&opts.hideTsEdit){
     if(hint) hint.style.display='none';
@@ -3515,10 +3673,11 @@ async function saveTsContactsToSettings(){
 }
 
 /* ── 거래명세표: 선택 품목, A4 고정 ── */
-function tsPageHtml({company, seller, contact, its, dy, dm, dd, tsNo, tsOrig, sepClass, tradeDate}){
+function tsPageHtml({company, seller, contact, addr, its, dy, dm, dd, tsNo, tsOrig, sepClass, tradeDate}){
   const FIXED_ROWS=10;
   const si=sellerInfo(seller||company);
-  const siteName=sellerSite(seller||'')||'';
+  const di=resolveDeliverInfo(seller||company, (its&&its[0])||{});
+  const siteName=di.label||sellerSite(seller||'')||'';
   const totS=its.reduce((s,i)=>s+(i.samt||0),0),totV=Math.round(totS*0.1);
   // 명세표 일자 칸: 지정한 거래일자 우선 (출하일 ship은 발주에 그대로 둠)
   const dataRows=its.map(r=>{
@@ -3535,7 +3694,8 @@ function tsPageHtml({company, seller, contact, its, dy, dm, dd, tsNo, tsOrig, se
   </tr>`;
   }).join('');
   const blank=`<tr class="empty-row"><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>`.repeat(Math.max(0,FIXED_ROWS-its.length));
-  const contactText=(()=>{ const c=formatDocContact(contact); return c&&c!=='　'?c:'　'; })();
+  const contactText=(()=>{ const c=formatDocContact(contact!=null?contact:di.contact); return c&&c!=='　'?c:'　'; })();
+  const addrText=(addr!=null&&addr!=='')?addr:(di.addr||si.addr||'');
   const myContact=(MY.managers&&MY.managers['이은진'])
     ?`이은진 ${(MY.managers['이은진'].tel||'')}`.trim()
     :formatDocContact(MY.contact||'　');
@@ -3555,7 +3715,7 @@ function tsPageHtml({company, seller, contact, its, dy, dm, dd, tsNo, tsOrig, se
 등록번호</span><span class="ts-val">${si.biz||'　'}</span></div>
         <div class="ts-row"><span class="ts-key">상　호</span><span class="ts-val">${company}</span></div>
         <div class="ts-row"><span class="ts-key">담 당 자</span><span class="ts-val"><input class="ts-contact-input" data-company="${escHtml(company)}" data-site="${escHtml(siteName)}" value="${escHtml(contactText==='　'?'':contactText)}" placeholder="담당자 입력" title="클릭해서 수정"></span></div>
-        <div class="ts-row"><span class="ts-key">사업장주소</span><span class="ts-val">${si.addr||'　'}</span></div>
+        <div class="ts-row"><span class="ts-key">사업장주소</span><span class="ts-val"><input class="ts-addr-input" value="${escHtml(addrText||'')}" placeholder="주소 입력" title="클릭해서 수정"></span></div>
         <div class="ts-row"><span class="ts-key">업　태</span><span class="ts-val">${si.btype||'　'}</span></div>
       </div>
       <div class="ts-side">
@@ -3605,12 +3765,29 @@ async function buildTS(selectedItems, issueDate){
   if(tradeDate===null) return;
   const dy=tradeDate.slice(0,4),dm=tradeDate.slice(5,7),dd=tradeDate.slice(8,10);
   const contactMap={};
+  const addrMap={};
   for(const [seller,its] of Object.entries(groups)){
     const company=sellerCompany(seller);
     const raw=its[0]&&its[0].seller||seller;
-    const c=promptTsContact(company, raw);
-    if(c===null) return;
-    contactMap[seller]=c;
+    const def=resolveDeliverInfo(raw, its[0]);
+    const useManual=confirm(`${company} 배송지를 직접 입력할까요?\n\n확인 = 직접 입력\n취소 = 등록 배송지 사용`);
+    if(useManual){
+      const man=promptManualDeliver({label:def.label||'직접입력', addr:def.addr||'', contact:def.contact||''});
+      if(man===null) return;
+      contactMap[seller]=man.contact||'　';
+      addrMap[seller]=man.addr||'';
+      its.forEach(i=>{
+        i.deliver_label=man.label||'';
+        i.deliver_addr=man.addr||'';
+        i.deliver_contact=man.contact||'';
+        if(man.label) i.seller=encodeSeller(company, man.label);
+      });
+    }else{
+      const c=promptTsContact(company, raw);
+      if(c===null) return;
+      contactMap[seller]=c;
+      addrMap[seller]=def.addr||'';
+    }
   }
   const reuseNos=[...new Set(selectedItems.map(i=>String(i.ts_no||'').trim()).filter(Boolean))];
   const isEdit=reuseNos.length>0;
@@ -3626,6 +3803,7 @@ async function buildTS(selectedItems, issueDate){
       : stripTsRevSuffix(tsNo);
     html+=tsPageHtml({
       company, seller:its[0]&&its[0].seller||seller, contact:contactMap[seller],
+      addr:addrMap[seller],
       its, dy, dm, dd, tsNo, tsOrig, tradeDate, sepClass:idx>0?' doc-sep':''
     });
   });
@@ -3746,12 +3924,29 @@ async function quickTS(idx, mode){
   const groups={};
   items.forEach(i=>{const k=sellerCompany(i.seller);if(k)(groups[k]=groups[k]||[]).push(i);});
   const contactMap={};
+  const addrMap={};
   for(const [seller,its] of Object.entries(groups)){
     const company=sellerCompany(seller);
     const raw=its[0]&&its[0].seller||seller;
-    const c=promptTsContact(company, raw);
-    if(c===null) return;
-    contactMap[company]=c;
+    const def=resolveDeliverInfo(raw, its[0]);
+    const useManual=confirm(`${company} 배송지를 직접 입력할까요?\n\n확인 = 직접 입력\n취소 = 등록 배송지 사용`);
+    if(useManual){
+      const man=promptManualDeliver({label:def.label||'직접입력', addr:def.addr||'', contact:def.contact||''});
+      if(man===null) return;
+      contactMap[company]=man.contact||'　';
+      addrMap[company]=man.addr||'';
+      its.forEach(i=>{
+        i.deliver_label=man.label||'';
+        i.deliver_addr=man.addr||'';
+        i.deliver_contact=man.contact||'';
+        if(man.label) i.seller=encodeSeller(company, man.label);
+      });
+    }else{
+      const c=promptTsContact(company, raw);
+      if(c===null) return;
+      contactMap[company]=c;
+      addrMap[company]=def.addr||'';
+    }
   }
   // edit: -R1/-R2 제안 / reissue·new: 다음 순번 (채번은 finalize 때)
   const reuseNo=isEdit?String(r.ts_no||'').trim():'';
@@ -3767,6 +3962,7 @@ async function quickTS(idx, mode){
       : stripTsRevSuffix(tsNo);
     html+=tsPageHtml({
       company, seller:its[0]&&its[0].seller||seller, contact:contactMap[company],
+      addr:addrMap[company],
       its, dy, dm, dd, tsNo, tsOrig,
       tradeDate, sepClass:gIdx>0?' doc-sep':''
     });
@@ -3821,15 +4017,13 @@ function renderDeliver(){
   document.getElementById('deliver-body').innerHTML=deliverRows.length
     ?deliverRows.map((r,idx)=>{
       const isPend=r.status==='미납품';
-      const co=sellerCompany(r.seller);
-      const siteName=sellerSite(r.seller);
-      const site=findDeliverySite(co, siteName);
-      const si=sellerInfo(r.seller);
-      const contact=(site&&site.contact)||si.contact||'';
+      const di=resolveDeliverInfo(r.seller, r);
+      const contact=di.contact||'';
+      const siteHint=di.label?` · ${di.label}`:'';
       return `<tr class="${!isPend?'done-row':''}">
         <td class="c" style="color:#999;font-size:11px">${idx+1}</td>
         <td class="c"><input type="checkbox" class="dl-chk" data-idx="${idx}" ${!isPend?'disabled':''} onchange="updateTsBar()"></td>
-        <td style="font-weight:600">${escHtml(sellerLabel(r.seller))}</td>
+        <td style="font-weight:600">${escHtml(sellerLabel(r.seller))}${siteHint?`<span style="font-weight:400;color:#888;font-size:11px">${escHtml(siteHint)}</span>`:''}</td>
         <td style="font-size:12px;color:#666">${escHtml(contact)||'　'}</td>
         <td>${r.item}</td>
         <td style="font-size:11px;color:#888">${r.spec||''}</td>
@@ -3991,6 +4185,34 @@ async function loadAndDoc(no){
     try{ await saveOrdersToDb(); }catch(e){ console.warn(e); }
   }else{
     order.no=finalNo;
+  }
+  // 매입처 그룹별 배송지 직접입력 옵션
+  const byBuyer={};
+  (order.items||[]).forEach(i=>{if(i&&i.buyer)(byBuyer[i.buyer]=byBuyer[i.buyer]||[]).push(i);});
+  for(const [,its] of Object.entries(byBuyer)){
+    const sample=its.find(i=>i.seller||i.deliver_addr||i.deliver_label)||its[0]||{};
+    const def=resolveDeliverInfo(sample.seller||'', sample);
+    const overridden=promptDeliverOverrideIfWanted(def.company||sellerCompany(sample.seller||''), def);
+    its.forEach(i=>{
+      i.deliver_label=overridden.label||'';
+      i.deliver_addr=overridden.addr||'';
+      i.deliver_contact=overridden.contact||'';
+      if(overridden.label && def.company){
+        i.seller=encodeSeller(def.company, overridden.label);
+      }
+    });
+  }
+  const live=orders.find(o=>o.no===order.no);
+  if(live&&Array.isArray(live.items)){
+    order.items.forEach((it,idx)=>{
+      const tgt=live.items[idx];
+      if(!tgt) return;
+      tgt.deliver_label=it.deliver_label||'';
+      tgt.deliver_addr=it.deliver_addr||'';
+      tgt.deliver_contact=it.deliver_contact||'';
+      if(it.seller) tgt.seller=it.seller;
+    });
+    persist(order.no);
   }
   const built=buildPOHtml(order);
   if(!built.html){alert('발주서에 넣을 품목이 없어요 (매입처를 확인해주세요)');return;}
