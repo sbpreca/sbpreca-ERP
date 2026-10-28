@@ -908,7 +908,7 @@ input[readonly]{background:#f5f5f5;color:#999}
           <option value="미분류">미분류</option>
         </select>
       </div>
-      <p style="font-size:13px;color:#666;margin-bottom:12px">업체와 무관하게 품목 하나에 매입단가·매출단가를 등록해두면, 발주 입력 시 품목을 고를 때 자동으로 채워져요 (에누리 등 필요하면 그 자리에서 바로 수정 가능).</p>
+      <p style="font-size:13px;color:#666;margin-bottom:12px">업체와 무관하게 품목 하나에 매입단가·매출단가를 등록해두면, 발주·견적 입력 시 품목을 고를 때 자동으로 채워져요. <strong>품목명을 바꾸면 기존 발주·납품 내역에도 같이 반영</strong>됩니다.</p>
       <table class="data-tbl">
         <thead><tr><th>품목</th><th style="width:90px">분류</th><th class="r" style="width:140px">매입단가</th><th class="r" style="width:140px">매출단가</th><th style="width:60px"></th></tr></thead>
         <tbody id="item-price-body"></tbody>
@@ -1145,6 +1145,7 @@ const DEFAULT_CFG={
   },
   delivery_sites:JSON.parse(JSON.stringify(DEFAULT_DELIVERY_SITES)),
   item_categories:{},
+  item_specs:{},
   doc_seq:{ts:{},quote:{}},
   doc_mail:{},
   quote_pay:'세금계산서 발행 후 익월 말일 현금 지급',
@@ -1997,6 +1998,7 @@ async function loadConfigFromDb(){
   }
   const cfg=data.data||{};
   if(!cfg.item_categories||typeof cfg.item_categories!=='object') cfg.item_categories={};
+  if(!cfg.item_specs||typeof cfg.item_specs!=='object') cfg.item_specs={};
   if(!cfg.doc_seq||typeof cfg.doc_seq!=='object') cfg.doc_seq={ts:{},quote:{}};
   if(!cfg.doc_seq.ts||typeof cfg.doc_seq.ts!=='object') cfg.doc_seq.ts={};
   if(!cfg.doc_seq.quote||typeof cfg.doc_seq.quote!=='object') cfg.doc_seq.quote={};
@@ -2348,10 +2350,22 @@ function itemCategory(item){
   let best=null, n=0;
   Object.entries(counts).forEach(([k,v])=>{ if(v>n){best=k;n=v;} });
   if(best) return best;
-  if(/CTO|SR-40|ITO|Crucible|getter|Sensor Crystal|m bar|네오룩스|AlN|Al Crucible/i.test(item)) return '원부자재';
-  if(/LED|다운라이트|방습|평판|직부|투광|방폭|CR-25|클립|HL-Exd|방폭등/i.test(item)) return '조명';
+  if(/CTO|SR-40|ITO|Crucible|getter|Sensor Crystal|Crystal Sensor|m bar|네오룩스|AlN|AIN|Al Crucible|PBN|Quartz/i.test(item)) return '원부자재';
+  if(/LED|다운라이트|방습|평판|직부|투광|방폭|CR-25|클립|HL-Exd|방폭등|가로등|갓등|보안등|매입등/i.test(item)) return '조명';
   if(/배송|수수료|용역/i.test(item)) return '수수료';
   return '미분류';
+}
+/** 발주·견적 선택용 품목 목록: 단가표(+기존 발주에 쓰인 이름). 하드코드 ITEMS는 단가표가 비었을 때만 */
+function catalogItems(){
+  const fromPrices=Object.keys(ITEM_PRICES||{});
+  const fromOrders=(orders||[]).flatMap(o=>(o.items||[]).map(i=>String(i.item||'').trim()).filter(Boolean));
+  const base=fromPrices.length?fromPrices:ITEMS;
+  return [...new Set([...base, ...fromOrders])].sort((a,b)=>a.localeCompare(b,'ko'));
+}
+function itemSpecOf(name){
+  if(!name) return '';
+  if(MY&&MY.item_specs&&MY.item_specs[name]) return MY.item_specs[name];
+  return SPECS[name]||'';
 }
 async function setItemCategory(item, category){
   if(!MY.item_categories) MY.item_categories={};
@@ -2362,21 +2376,32 @@ async function setItemCategory(item, category){
 
 function renderItemPrices(){
   const filter=settingsCatFilter('filter-price-cat');
-  const names=Object.keys(ITEM_PRICES).sort().filter(item=>!filter||filter==='전체'||itemCategory(item)===filter);
+  // 단가표 + 발주에만 있는 품목도 보여 이름 변경·단가 등록이 가능하게
+  const names=[...new Set([
+    ...Object.keys(ITEM_PRICES||{}),
+    ...(orders||[]).flatMap(o=>(o.items||[]).map(i=>String(i.item||'').trim()).filter(Boolean))
+  ])].sort((a,b)=>a.localeCompare(b,'ko'))
+    .filter(item=>!filter||filter==='전체'||itemCategory(item)===filter);
   const body=document.getElementById('item-price-body');
   if(!names.length){
     body.innerHTML=`<tr><td colspan="5" style="text-align:center;color:#bbb;padding:1.2rem">${filter!=='전체'?'이 분류에 등록된 단가가 없어요':'등록된 단가가 없어요'}</td></tr>`;
     return;
   }
   body.innerHTML=names.map(item=>{
-    const p=ITEM_PRICES[item];
+    const p=ITEM_PRICES[item]||{buy:0,sell:0};
     const cat=itemCategory(item);
-    const esc=item.replace(/'/g,"\\'");
+    const inPrice=!!ITEM_PRICES[item];
+    const attr=escHtml(item);
     return `<tr>
-      <td style="font-weight:500">${item}</td>
       <td style="padding:4px 6px">
-        <select style="width:100%;border:1px solid #ddd;border-radius:4px;padding:4px 6px;font-size:12px"
-          onchange="setItemCategory('${esc}',this.value)">
+        <input type="text" value="${attr}" data-old="${attr}" title="품목명 수정 시 기존 발주에도 반영"
+          style="width:100%;font-weight:500;border:1px solid #ddd;border-radius:4px;padding:4px 6px;font-size:12px"
+          onchange="renameItemMaster(this.getAttribute('data-old'), this.value, this)">
+        ${inPrice?'':'<div style="font-size:10px;color:#b45309;margin-top:2px">발주에만 있음 · 단가 저장 시 단가표에 추가</div>'}
+      </td>
+      <td style="padding:4px 6px">
+        <select data-item="${attr}" style="width:100%;border:1px solid #ddd;border-radius:4px;padding:4px 6px;font-size:12px"
+          onchange="setItemCategory(this.getAttribute('data-item'),this.value)">
           <option value="조명"${cat==='조명'?' selected':''}>조명</option>
           <option value="원부자재"${cat==='원부자재'?' selected':''}>원부자재</option>
           <option value="수수료"${cat==='수수료'?' selected':''}>수수료</option>
@@ -2384,22 +2409,90 @@ function renderItemPrices(){
         </select>
       </td>
       <td class="r" style="padding:4px 8px">
-        <input type="number" value="${p.buy||0}" style="width:120px;text-align:right;border:1px solid #ddd;border-radius:4px;padding:4px 6px"
-          onchange="saveItemPriceField('${esc}','buy',this.value)">
+        <input type="number" value="${p.buy||0}" data-item="${attr}" style="width:120px;text-align:right;border:1px solid #ddd;border-radius:4px;padding:4px 6px"
+          onchange="saveItemPriceField(this.getAttribute('data-item'),'buy',this.value)">
       </td>
       <td class="r" style="padding:4px 8px">
-        <input type="number" value="${p.sell||0}" style="width:120px;text-align:right;border:1px solid #ddd;border-radius:4px;padding:4px 6px"
-          onchange="saveItemPriceField('${esc}','sell',this.value)">
+        <input type="number" value="${p.sell||0}" data-item="${attr}" style="width:120px;text-align:right;border:1px solid #ddd;border-radius:4px;padding:4px 6px"
+          onchange="saveItemPriceField(this.getAttribute('data-item'),'sell',this.value)">
       </td>
-      <td style="text-align:center"><button class="del-btn" onclick="delItemPrice('${esc}')">×</button></td>
+      <td style="text-align:center"><button class="del-btn" data-item="${attr}" onclick="delItemPrice(this.getAttribute('data-item'))" title="단가표에서만 삭제 (발주 내역은 유지)">×</button></td>
     </tr>`;
   }).join('');
 }
 
 async function saveItemPriceField(item,field,value){
+  if(!item) return;
   if(!ITEM_PRICES[item]) ITEM_PRICES[item]={buy:0,sell:0};
   ITEM_PRICES[item][field]=+value||0;
   await upsertItemPrice(item, ITEM_PRICES[item].buy, ITEM_PRICES[item].sell);
+  renderItemPrices();
+}
+
+/** 설정에서 품목명 변경 → 단가표·분류·규격·모든 발주 품목에 반영 */
+async function renameItemMaster(oldName, newName, inputEl){
+  const from=String(oldName||'').trim();
+  const to=String(newName||'').trim();
+  if(!from){ if(inputEl) inputEl.value=from; return; }
+  if(!to){
+    alert('품목명은 비울 수 없어요');
+    if(inputEl) inputEl.value=from;
+    return;
+  }
+  if(from===to) return;
+  if(ITEM_PRICES[to] && !confirm(`'${to}' 단가가 이미 있어요.\n기존 발주의 '${from}' 를 '${to}' 로 바꾸고 단가는 '${to}' 쪽을 유지할까요?`)){
+    if(inputEl) inputEl.value=from;
+    return;
+  }
+  if(!ITEM_PRICES[to] && !confirm(`품목명을\n  ${from}\n→ ${to}\n(으)로 바꾸고, 기존 발주·납품 내역에도 반영할까요?`)){
+    if(inputEl) inputEl.value=from;
+    return;
+  }
+  const oldPrice=ITEM_PRICES[from]||{buy:0,sell:0};
+  if(!ITEM_PRICES[to]) ITEM_PRICES[to]={buy:oldPrice.buy||0, sell:oldPrice.sell||0};
+  if(ITEM_PRICES[from]) delete ITEM_PRICES[from];
+  try{
+    if(from!==to) await deleteItemPrice(from);
+    await upsertItemPrice(to, ITEM_PRICES[to].buy, ITEM_PRICES[to].sell);
+  }catch(e){ console.warn(e); }
+
+  if(!MY.item_categories) MY.item_categories={};
+  if(MY.item_categories[from] && !MY.item_categories[to]) MY.item_categories[to]=MY.item_categories[from];
+  delete MY.item_categories[from];
+
+  if(!MY.item_specs) MY.item_specs={};
+  const spec=MY.item_specs[from]||SPECS[from]||'';
+  if(spec && !MY.item_specs[to]) MY.item_specs[to]=spec;
+  delete MY.item_specs[from];
+  if(SPECS[from] && !SPECS[to]) SPECS[to]=SPECS[from];
+
+  let changed=0;
+  orders.forEach(o=>{
+    let dirty=false;
+    (o.items||[]).forEach(it=>{
+      if(String(it.item||'')===from){ it.item=to; dirty=true; changed++; }
+    });
+    if(dirty) persist(o.no);
+  });
+  await saveConfigToDb();
+  clearTimeout(_persistTimer);
+  try{ await saveOrdersToDb(); }catch(e){ console.warn(e); }
+  refreshOpenItemSelectors(from, to);
+  renderItemPrices();
+  alert(`품목명을 '${to}'(으)로 바꿨어요.\n발주 품목 ${changed}건에 반영했습니다.`);
+}
+
+/** 열려 있는 발주·견적 입력칸의 품목 목록/선택값을 새 이름에 맞춤 */
+function refreshOpenItemSelectors(from, to){
+  const all=catalogItems();
+  document.querySelectorAll('#items-body .isel').forEach(sel=>{
+    const cur=sel.value===from?to:sel.value;
+    sel.innerHTML='<option></option>'+all.map(k=>`<option${k===cur?' selected':''}>${escHtml(k)}</option>`).join('');
+  });
+  quoteItemDatalistId();
+  document.querySelectorAll('#quote-items-body .q-isel').forEach(inp=>{
+    if(String(inp.value||'')===from) inp.value=to;
+  });
 }
 
 async function addItemPrice(){
@@ -2416,14 +2509,19 @@ async function addItemPrice(){
   document.getElementById('new-price-item').value='';
   document.getElementById('new-price-buy').value='';
   document.getElementById('new-price-sell').value='';
+  refreshOpenItemSelectors(item, item);
   renderItemPrices();
 }
 
 async function delItemPrice(item){
+  if(!item) return;
+  if(!confirm(`'${item}' 단가를 단가표에서 삭제할까요?\n(이미 저장된 발주 품목명은 그대로 둡니다)`)) return;
   delete ITEM_PRICES[item];
   if(MY.item_categories) delete MY.item_categories[item];
+  if(MY.item_specs) delete MY.item_specs[item];
   await deleteItemPrice(item);
   await saveConfigToDb();
+  refreshOpenItemSelectors(item, item);
   renderItemPrices();
 }
 
@@ -2619,8 +2717,8 @@ function stSel(val,cls){
 function addRow(it={}){
   const tr=document.createElement('tr');
   const bOpts=Object.keys(BUYERS).map(k=>`<option${k===it.buyer?' selected':''}>${k}</option>`).join('');
-  const allItems=[...new Set([...ITEMS, ...Object.keys(ITEM_PRICES)])].sort();
-  const iOpts=allItems.map(k=>`<option${k===it.item?' selected':''}>${k}</option>`).join('');
+  const allItems=catalogItems();
+  const iOpts=allItems.map(k=>`<option${k===it.item?' selected':''}>${escHtml(k)}</option>`).join('');
   const company=sellerCompany(it.seller);
   const site=sellerSite(it.seller);
   const companies=Object.keys(SELLERS).sort((a,b)=>a.localeCompare(b,'ko'));
@@ -2651,7 +2749,7 @@ function addRow(it={}){
   }
   document.getElementById('items-body').appendChild(tr);
 }
-function autoSpec(sel){const tr=sel.closest('tr'),s=SPECS[sel.value];if(s)tr.querySelector('.spin').value=s;}
+function autoSpec(sel){const tr=sel.closest('tr'),s=itemSpecOf(sel.value);if(s)tr.querySelector('.spin').value=s;}
 // 품목이 정해지면 등록된 매입/매출 단가를 자동으로 채움 (이미 값이 있으면 안 건드림, 업체는 무관하게 품목 기준)
 function autoBPrice(el){
   const tr=el.closest('tr');
@@ -3008,7 +3106,7 @@ function quoteItemDatalistId(){
     dl.id='quote-item-list';
     document.body.appendChild(dl);
   }
-  const allItems=[...new Set([...ITEMS, ...Object.keys(ITEM_PRICES||{})])].sort();
+  const allItems=catalogItems();
   dl.innerHTML=allItems.map(k=>`<option value="${escHtml(k)}"></option>`).join('');
   return 'quote-item-list';
 }
@@ -3028,7 +3126,7 @@ function addQuoteRow(it={}){
 }
 function autoQuoteSpec(el){
   const name=String(el.value||'').trim();
-  const tr=el.closest('tr'), s=SPECS[name];
+  const tr=el.closest('tr'), s=itemSpecOf(name);
   if(s){
     const specEl=tr.querySelector('.q-spec');
     if(specEl && (!specEl.value || specEl.dataset.auto==='1')){
