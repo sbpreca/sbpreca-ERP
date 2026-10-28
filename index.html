@@ -3121,6 +3121,90 @@ function resolveTsOrig(item, fallbackNo){
   }
   return stripTsRevSuffix(fallbackNo||'');
 }
+/** 같은 거래명세표 문서 가족인지 (현재번호·원번호·-Rn 무시 본번) */
+function sameTsDocFamily(item, seedNo, seedOrig){
+  const cur=String((item&&item.ts_no)||'').trim();
+  const orig=resolveTsOrig(item, cur);
+  const seed=String(seedNo||'').trim();
+  const seedO=stripTsRevSuffix(String(seedOrig||'')||seed);
+  const seedBase=stripTsRevSuffix(seed);
+  if(!seed && !seedO) return false;
+  if(seed && cur===seed) return true;
+  if(seedO && (cur===seedO || orig===seedO)) return true;
+  if(seedBase && (stripTsRevSuffix(cur)===seedBase || orig===seedBase)) return true;
+  return false;
+}
+function toDeliverRow(o, item, item_idx){
+  return {...item, seller:item.seller||'', order_no:o.no, order_date:o.date, item_idx};
+}
+/**
+ * 거래명세표 수정용: 화면 필터(deliverRows)가 아니라 전체 발주에서
+ * 같은 문서번호 가족(+ 동일 매출처·출하일의 미부여 형제)을 모은다.
+ */
+function collectItemsForTsEdit(seed){
+  if(!seed) return [];
+  const seedNo=String(seed.ts_no||'').trim();
+  const seedOrig=resolveTsOrig(seed, seedNo);
+  const co=sellerCompany(seed.seller);
+  const ship=seed.ship||'';
+  const out=[];
+  const seen=new Set();
+  const add=(o,item,item_idx)=>{
+    const key=o.no+'#'+item_idx;
+    if(seen.has(key)) return;
+    seen.add(key);
+    out.push(toDeliverRow(o,item,item_idx));
+  };
+  if(seedNo || seedOrig){
+    orders.forEach(o=>{
+      (o.items||[]).forEach((item,item_idx)=>{
+        if(!(+item.samt>0)) return;
+        if(co && sellerCompany(item.seller)!==co) return;
+        if(sameTsDocFamily(item, seedNo, seedOrig)) add(o,item,item_idx);
+      });
+    });
+  }
+  // 문서번호가 한쪽 품목에만 있거나 아예 없으면: 같은 매출처·출하일 형제 보강
+  // (이미 다른 명세 번호가 있는 품목은 제외)
+  if(co && ship && out.length<=1){
+    orders.forEach(o=>{
+      (o.items||[]).forEach((item,item_idx)=>{
+        if(!(+item.samt>0)) return;
+        if(sellerCompany(item.seller)!==co) return;
+        if((item.ship||'')!==ship) return;
+        const cur=String(item.ts_no||'').trim();
+        if(cur && (seedNo||seedOrig) && !sameTsDocFamily(item, seedNo, seedOrig)) return;
+        add(o,item,item_idx);
+      });
+    });
+  }
+  if(!out.length){
+    // seed가 deliverRows 복사본이면 order_no/item_idx로 재구성
+    const o=orders.find(x=>x.no===seed.order_no);
+    if(o && o.items && o.items[seed.item_idx]) return [toDeliverRow(o,o.items[seed.item_idx],seed.item_idx)];
+    return [seed];
+  }
+  return out;
+}
+/** 재발행·신규: 같은 매출처·출하일 묶음 (전체 발주 기준) */
+function collectItemsForTsShipGroup(seed, {requireEmptyTsNo=false}={}){
+  if(!seed) return [];
+  const co=sellerCompany(seed.seller);
+  const ship=seed.ship||'';
+  const status=seed.status||'';
+  const out=[];
+  orders.forEach(o=>{
+    (o.items||[]).forEach((item,item_idx)=>{
+      if(!(+item.samt>0)) return;
+      if(sellerCompany(item.seller)!==co) return;
+      if((item.ship||'')!==ship) return;
+      if(status && (item.status||'')!==status) return;
+      if(requireEmptyTsNo && String(item.ts_no||'').trim()) return;
+      out.push(toDeliverRow(o,item,item_idx));
+    });
+  });
+  return out.length?out:[seed];
+}
 /** 목록용: 원번호 위, 수정번호(-Rn) 아래 */
 function tsNoStackHtml(cur, orig){
   const c=String(cur||'').trim();
@@ -3260,11 +3344,13 @@ function persistTsNosFromOverlay(){
       }
     });
     const co=sellerCompany(company)||company;
+    const familySeedNos=[];
     metaItems.forEach(it=>{
       if(co && sellerCompany(it.seller)!==co) return;
       const o=orders.find(x=>x.no===it.order_no);
       if(!o || !o.items || !o.items[it.item_idx]) return;
       const tgt=o.items[it.item_idx];
+      familySeedNos.push(String(tgt.ts_no||'').trim(), String(tgt.ts_orig||'').trim());
       const orig=origFromDom || resolveTsOrig(tgt, no) || stripTsRevSuffix(no);
       tgt.ts_no=no;
       tgt.ts_orig=orig;
@@ -3277,6 +3363,29 @@ function persistTsNosFromOverlay(){
       if(overlayContact) tgt.deliver_contact=overlayContact;
       touched.add(o.no);
     });
+    // 같은 문서 가족의 다른 품목에도 동일 번호 반영 (한쪽만 갱신되던 문제 방지)
+    const bases=[...new Set([
+      stripTsRevSuffix(no),
+      stripTsRevSuffix(origFromDom||''),
+      ...familySeedNos.map(stripTsRevSuffix)
+    ].filter(Boolean))];
+    if(co && bases.length){
+      orders.forEach(o=>{
+        (o.items||[]).forEach(item=>{
+          if(!(+item.samt>0)) return;
+          if(sellerCompany(item.seller)!==co) return;
+          const cur=String(item.ts_no||'').trim();
+          const orig=resolveTsOrig(item, cur);
+          const hit=bases.some(b=>cur===b || stripTsRevSuffix(cur)===b || orig===b || sameTsDocFamily(item, no, origFromDom||b));
+          if(!hit) return;
+          item.ts_no=no;
+          item.ts_orig=origFromDom || stripTsRevSuffix(no);
+          if(overlayAddr) item.deliver_addr=overlayAddr;
+          if(overlayContact) item.deliver_contact=overlayContact;
+          touched.add(o.no);
+        });
+      });
+    }
   });
   touched.forEach(n=>persist(n));
 }
@@ -3924,17 +4033,14 @@ async function quickTS(idx, mode){
   const isEdit=m==='edit';
   const isReissue=m==='reissue';
   let items;
-  if(isEdit && hasTsNo){
-    const sameNo=deliverRows.filter(x=>String(x.ts_no||'').trim()===String(r.ts_no).trim()&&(x.samt||0)>0);
-    items=sameNo.length?sameNo:[r];
-  }else if(isEdit){
-    // 납품완료인데 ts_no 없음 → 해당 행만, 기존 번호 입력 유도
-    items=[r];
+  if(isEdit){
+    // 화면 필터와 무관하게 같은 명세 문서의 전체 품목을 모은다
+    items=collectItemsForTsEdit(r);
   }else if(isReissue){
-    const sameGroup=deliverRows.filter(x=>sellerCompany(x.seller)===sellerCompany(r.seller)&&x.ship===r.ship&&x.status===r.status&&(x.samt||0)>0);
+    const sameGroup=collectItemsForTsShipGroup(r);
     items=sameGroup.length>1&&confirm(`같은 출하일(${r.ship||'-'}) ${sellerCompany(r.seller)} 납품 ${sameGroup.length}건을 함께 재발행할까요?`)?sameGroup:[r];
   }else{
-    const sameGroup=deliverRows.filter(x=>sellerCompany(x.seller)===sellerCompany(r.seller)&&x.ship===r.ship&&x.status===r.status&&!String(x.ts_no||'').trim()&&(x.samt||0)>0);
+    const sameGroup=collectItemsForTsShipGroup(r, {requireEmptyTsNo:true});
     items=sameGroup.length>1&&confirm(`같은 출하일(${r.ship||'-'}) ${sellerCompany(r.seller)} 납품 ${sameGroup.length}건을 함께 발행할까요?`)?sameGroup:[r];
   }
   const tradeDate=promptTsTradeDate(r.ship||today);
