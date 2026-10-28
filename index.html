@@ -1562,6 +1562,92 @@ function saveOrdersToDb(){
 function cloneOrder(o){
   return o?JSON.parse(JSON.stringify(o)):null;
 }
+/** order_items에 ts_no 등 컬럼이 있는지 한 번만 확인 */
+let _orderItemTsCols=null;
+async function orderItemsSupportTsCols(){
+  if(_orderItemTsCols!=null) return _orderItemTsCols;
+  try{
+    const {error}=await sb.from('order_items').select('ts_no').limit(1);
+    _orderItemTsCols=!error;
+  }catch(e){
+    _orderItemTsCols=false;
+  }
+  return _orderItemTsCols;
+}
+function orderItemToDbRow(it, orderId, idx, withTs){
+  const row={
+    order_id:orderId, buyer:it.buyer||'', item:it.item||'', spec:it.spec||'',
+    bqty:it.bqty||0, bprice:it.bprice||0, bamt:it.bamt||0,
+    seller:it.seller||'', sqty:it.sqty||0, sprice:it.sprice||0, samt:it.samt||0,
+    ship:it.ship||null, status:it.status||'미납품',
+    closing_sell_exclude:it.closing_sell_exclude||false,
+    closing_month_override:it.closing_month_override||null,
+    sort_order:idx
+  };
+  if(withTs){
+    row.ts_no=it.ts_no||null;
+    row.ts_orig=it.ts_orig||null;
+    row.deliver_label=it.deliver_label||null;
+    row.deliver_addr=it.deliver_addr||null;
+    row.deliver_contact=it.deliver_contact||null;
+  }
+  return row;
+}
+/** 품목 문서번호 보존 키 (발주번호+품목 지문) — DB 컬럼 없을 때 company_config에 저장 */
+function itemDocKey(orderNo, item){
+  const it=item||{};
+  return [
+    orderNo||'',
+    it.buyer||'',
+    it.item||'',
+    it.spec||'',
+    it.ship||'',
+    sellerCompany(it.seller)||'',
+    it.sqty||'',
+    it.sprice||''
+  ].join('\t');
+}
+function ensureTsItemDocs(){
+  if(!MY.ts_item_docs || typeof MY.ts_item_docs!=='object') MY.ts_item_docs={};
+}
+let _tsDocConfigTimer=null;
+function scheduleSaveTsItemDocs(){
+  clearTimeout(_tsDocConfigTimer);
+  _tsDocConfigTimer=setTimeout(()=>{
+    saveConfigToDb().catch(e=>console.warn('ts_item_docs save', e));
+  }, 400);
+}
+function rememberTsItemDoc(orderNo, item, tsNo, tsOrig){
+  const no=String(tsNo||'').trim();
+  if(!no || !orderNo || !item) return;
+  ensureTsItemDocs();
+  MY.ts_item_docs[itemDocKey(orderNo, item)]={
+    ts_no:no,
+    ts_orig:stripTsRevSuffix(String(tsOrig||'')||no),
+    order_no:orderNo,
+    at:new Date().toISOString()
+  };
+}
+/** company_config에 보관된 명세 번호를 품목에 복원 */
+function hydrateTsNosFromConfig(){
+  ensureTsItemDocs();
+  const docs=MY.ts_item_docs||{};
+  if(!Object.keys(docs).length) return 0;
+  let n=0;
+  orders.forEach(o=>{
+    (o.items||[]).forEach(item=>{
+      const hit=docs[itemDocKey(o.no, item)];
+      if(!hit || !hit.ts_no) return;
+      const cur=String(item.ts_no||'').trim();
+      if(cur && cur===hit.ts_no) return;
+      if(cur && !sameTsDocFamily(item, hit.ts_no, hit.ts_orig)) return;
+      item.ts_no=hit.ts_no;
+      item.ts_orig=hit.ts_orig||stripTsRevSuffix(hit.ts_no);
+      n++;
+    });
+  });
+  return n;
+}
 /** 옛·새 품목이 섞인 경우: id가 큰(최근 저장) 행을 sort_order별로 우선 */
 function normalizeDbItems(rawItems){
   const latest=[];
@@ -1607,12 +1693,8 @@ async function saveDirtyOrdersNow(){
       for(const o of snapshot){
         const orderId=noToId[o.no];
         if(!orderId) throw new Error('발주 번호를 저장하지 못했어요: '+o.no);
-        const itemRows=(o.items||[]).map((it,idx)=>({
-          order_id:orderId, buyer:it.buyer||'', item:it.item||'', spec:it.spec||'',
-          bqty:it.bqty||0, bprice:it.bprice||0, bamt:it.bamt||0,
-          seller:it.seller||'', sqty:it.sqty||0, sprice:it.sprice||0, samt:it.samt||0,
-          ship:it.ship||null, status:it.status||'미납품', closing_sell_exclude:it.closing_sell_exclude||false, closing_month_override:it.closing_month_override||null, sort_order:idx
-        }));
+        const supportTs=await orderItemsSupportTsCols();
+        const itemRows=(o.items||[]).map((it,idx)=>orderItemToDbRow(it, orderId, idx, supportTs));
         // 전체 교체: 기존 삭제 → 신규 삽입. 삽입 실패 시 백업으로 복구
         const {data:oldRows, error:oldErr}=await sb.from('order_items').select('*').eq('order_id', orderId);
         if(oldErr) throw oldErr;
@@ -1621,6 +1703,16 @@ async function saveDirtyOrdersNow(){
         if(itemRows.length){
           const {error:e3}=await sb.from('order_items').insert(itemRows);
           if(e3){
+            // ts_no 등 새 컬럼이 아직 없으면 기본 컬럼만으로 재시도 (번호는 company_config에 보존)
+            if(supportTs && /ts_no|deliver_|column/i.test(String(e3.message||e3.code||''))){
+              _orderItemTsCols=false;
+              const basic=itemRows.map(r=>{
+                const {ts_no,ts_orig,deliver_label,deliver_addr,deliver_contact,...rest}=r;
+                return rest;
+              });
+              const {error:e4}=await sb.from('order_items').insert(basic);
+              if(!e4) continue;
+            }
             console.error('저장 실패 - 이전 품목 복구 시도:', e3);
             if(oldRows&&oldRows.length){
               const restore=oldRows.map(r=>{
@@ -1662,7 +1754,9 @@ async function loadOrdersFromDb(){
       buyer:it.buyer, item:it.item, spec:it.spec,
       bqty:it.bqty, bprice:it.bprice, bamt:it.bamt,
       seller:it.seller, sqty:it.sqty, sprice:it.sprice, samt:it.samt,
-      ship:it.ship, status:it.status, closing_sell_exclude:it.closing_sell_exclude||false, closing_month_override:it.closing_month_override||''
+      ship:it.ship, status:it.status, closing_sell_exclude:it.closing_sell_exclude||false, closing_month_override:it.closing_month_override||'',
+      ts_no:it.ts_no||'', ts_orig:it.ts_orig||'',
+      deliver_label:it.deliver_label||'', deliver_addr:it.deliver_addr||'', deliver_contact:it.deliver_contact||''
     }));
     return {
       no:o.no, date:o.date, note:o.note||'', manager:o.manager||'이은진',
@@ -1897,6 +1991,7 @@ async function loadConfigFromDb(){
   if(!cfg.doc_seq.ts||typeof cfg.doc_seq.ts!=='object') cfg.doc_seq.ts={};
   if(!cfg.doc_seq.quote||typeof cfg.doc_seq.quote!=='object') cfg.doc_seq.quote={};
   if(!cfg.doc_mail||typeof cfg.doc_mail!=='object') cfg.doc_mail={};
+  if(!cfg.ts_item_docs||typeof cfg.ts_item_docs!=='object') cfg.ts_item_docs={};
   if(!cfg.quote_pay) cfg.quote_pay=DEFAULT_CFG.quote_pay;
   if(!cfg.quote_valid) cfg.quote_valid=DEFAULT_CFG.quote_valid;
   if(!cfg.quote_note) cfg.quote_note=DEFAULT_CFG.quote_note;
@@ -2000,6 +2095,8 @@ async function loadAll(){
     // await seedSampleOrdersIfEmpty();
     orders = await loadOrdersFromDb();
     rememberLoadedOrders();
+    hydrateTsNosFromConfig();
+    backfillTsNosInOrders();
     closingState = await loadClosingStateFromDb();
     const pl = await loadPlItemsFromDb();
     sgaData = pl.sga;
@@ -3296,18 +3393,126 @@ function resolveDisplayTsNo(row){
   if(!best) return {ts_no:'', ts_orig:'', inherited:false};
   return {ts_no:best, ts_orig:stripTsRevSuffix(best), inherited:true};
 }
+/** 메일 발송 로그에서 거래일 기준 명세 번호 복구 */
+function findTsNoFromMailLog(tradeDate){
+  ensureDocMailLog();
+  const ymd=tsDateKey(tradeDate);
+  if(!ymd) return '';
+  const hits=Object.keys(MY.doc_mail||{})
+    .map(k=>String(k).trim())
+    .filter(k=>{
+      if(!/^TS-/i.test(k)) return false;
+      const p=parseDocNoParts('ts', k);
+      return p && p.ymd===ymd;
+    });
+  if(!hits.length) return '';
+  hits.sort((a,b)=>tsRevNumber(b)-tsRevNumber(a)||b.localeCompare(a));
+  return hits[0];
+}
+/**
+ * 품목(및 같은 매출처·출하일 형제)에 거래명세 번호를 즉시 저장.
+ * order_no/item_idx가 있으면 원본 orders에도 반영.
+ */
+function stampTsNoOnItems(items, tsNo, opts={}){
+  const no=String(tsNo||'').trim();
+  if(!no || !items || !items.length) return 0;
+  const orig=stripTsRevSuffix(String(opts.origNo||'')||no);
+  const touched=new Set();
+  let n=0;
+  const applyOne=(item, o)=>{
+    if(!item) return;
+    item.ts_no=no;
+    item.ts_orig=orig;
+    n++;
+    if(o){
+      touched.add(o.no);
+      rememberTsItemDoc(o.no, item, no, orig);
+    }
+  };
+  (items||[]).forEach(it=>{
+    applyOne(it);
+    if(it.order_no==null || it.item_idx==null) return;
+    const o=orders.find(x=>x.no===it.order_no);
+    if(!o || !o.items || !o.items[it.item_idx]) return;
+    applyOne(o.items[it.item_idx], o);
+    rememberTsItemDoc(it.order_no, it, no, orig);
+  });
+  // 같은 매출처·출하일·공급가 있는 형제에도 동일 번호 (다른 명세 번호 제외)
+  const keys=new Set();
+  (items||[]).forEach(it=>{
+    const co=sellerCompany(it.seller);
+    const ship=it.ship||'';
+    if(co&&ship) keys.add(co+'|'+ship);
+  });
+  keys.forEach(key=>{
+    const [co,ship]=key.split('|');
+    orders.forEach(o=>{
+      (o.items||[]).forEach(item=>{
+        if(!(+item.samt>0)) return;
+        if(sellerCompany(item.seller)!==co) return;
+        if((item.ship||'')!==ship) return;
+        const cur=String(item.ts_no||'').trim();
+        if(cur && !sameTsDocFamily(item, no, orig)) return;
+        item.ts_no=no;
+        item.ts_orig=orig;
+        n++;
+        touched.add(o.no);
+        rememberTsItemDoc(o.no, item, no, orig);
+      });
+    });
+  });
+  touched.forEach(noKey=>persist(noKey));
+  scheduleSaveTsItemDocs();
+  return n;
+}
+/** 부분 저장된 명세 번호를 같은 매출처·출하일 형제에 채움 */
+function backfillTsNosInOrders(){
+  const groups={};
+  orders.forEach(o=>{
+    (o.items||[]).forEach((item,item_idx)=>{
+      if(!(+item.samt>0)) return;
+      const co=sellerCompany(item.seller);
+      const ship=item.ship||'';
+      if(!co||!ship) return;
+      const k=co+'|'+ship;
+      (groups[k]=groups[k]||[]).push({o,item,item_idx});
+    });
+  });
+  let changed=0;
+  Object.values(groups).forEach(list=>{
+    const withNo=list.filter(x=>String(x.item.ts_no||'').trim());
+    if(!withNo.length) return;
+    const best=pickTsReuseNo(withNo.map(x=>x.item));
+    if(!best) return;
+    const orig=resolveTsOrig(withNo.find(x=>x.item.ts_orig||x.item.ts_no).item, best);
+    list.forEach(({o,item})=>{
+      const cur=String(item.ts_no||'').trim();
+      if(cur && !sameTsDocFamily(item, best, orig)) return;
+      if(cur===best && stripTsRevSuffix(item.ts_orig||'')===stripTsRevSuffix(orig||best)) return;
+      item.ts_no=best;
+      item.ts_orig=stripTsRevSuffix(orig||best);
+      rememberTsItemDoc(o.no, item, best, item.ts_orig);
+      changed++;
+      persist(o.no);
+    });
+  });
+  if(changed) scheduleSaveTsItemDocs();
+  return changed;
+}
 /**
  * 문서번호 확인 프롬프트.
- * isEdit/reuseNo: 기존 번호로 수정 모드 (새 채번 제안 안 함)
- * ※ 여기서는 채번 DB에 저장하지 않음 — 프린트/메일 발송 시에만 확정
+ * isEdit/reuseNo: 기존 번호로 수정 모드
+ * 확인한 번호는 호출측에서 품목에 바로 저장한다.
  */
 async function confirmTsDocNo(tradeDate, opts={}){
   const ymd=tsDateKey(tradeDate);
   const isEdit=!!opts.isEdit;
-  const reuseNo=String(opts.reuseNo||'').trim();
+  let reuseNo=String(opts.reuseNo||'').trim();
+  if(isEdit && !reuseNo){
+    reuseNo=findTsNoFromMailLog(tradeDate)||'';
+  }
   const origNo=stripTsRevSuffix(String(opts.origNo||reuseNo||'').trim());
-  // 수정: 기존 번호가 있으면 -R 제안(현재 발급번호는 안내에 표시). 없으면 빈칸(새 채번 금지).
-  // 신규·재발행: 다음 순번
+  // 수정: 기존 번호가 있으면 -R 제안. 없으면 메일로그 복구 후에도 없을 때만 빈칸.
   let suggested;
   if(isEdit){
     suggested=reuseNo?nextTsRevNo(reuseNo):'';
@@ -3320,23 +3525,21 @@ async function confirmTsDocNo(tradeDate, opts={}){
       tip=`수정 문서번호를 확인해주세요\n현재 발급번호: ${reuseNo}`+
         (origNo && origNo!==reuseNo ? `\n원번호: ${origNo}` : '')+
         `\n제안(수정본): ${suggested}`+
-        `\n※ 다시 입력할 필요 없이 확인만 하면 됩니다.`+
-        `\n※ 닫기만 하면 확정되지 않습니다. 프린트/메일 발송 시 저장됩니다.`;
+        `\n※ 확인하면 이 번호가 품목에 저장됩니다.`+
+        `\n※ 공유 채번 확정은 프린트/메일 발송 시입니다.`;
     }else{
-      tip='이미 발급된 문서번호가 이 품목들에 저장되어 있지 않아요.\n'+
-        '기존 번호(예: TS-YYMMDD-순번)를 입력해주세요.\n'+
-        '※ 납품현황·발주목록의 문서번호 칸을 확인하세요.\n'+
-        '※ 닫기만 하면 확정되지 않습니다. 프린트/메일 발송 시 저장됩니다.';
+      tip='품목에 저장된 문서번호가 없어요.\n'+
+        '기존에 쓴 번호(예: TS-YYMMDD-순번)를 입력해주세요.\n'+
+        '※ 확인하면 해당 번호가 이 품목들에 저장됩니다.';
     }
   }else{
-    tip='문서번호를 확인/수정해주세요\n※ 닫기만 하면 번호가 채번되지 않습니다. 프린트/메일 발송 시 저장됩니다.';
+    tip='문서번호를 확인/수정해주세요\n※ 확인하면 품목에 바로 저장됩니다.\n※ 공유 채번 확정은 프린트/메일 발송 시입니다.';
   }
   const userDocNo=prompt(tip, suggested);
   if(userDocNo===null) return null;
   const finalNo=String(userDocNo).trim();
   if(!finalNo){ alert('문서번호를 입력해주세요'); return null; }
   if(!parseDocNoParts('ts', finalNo) && !parseTsDocSeq(finalNo, ymd)){
-    // 형식만 안내 — 저장은 finalize 때
     if(!confirm(`문서번호 형식을 인식하지 못했어요 (권장: TS-YYMMDD-순번 또는 …-Rn).\n그래도 "${finalNo}" 로 진행할까요?`)) return null;
   }
   return finalNo;
@@ -3416,21 +3619,29 @@ function persistTsNosFromOverlay(){
       if(overlayContact) tgt.deliver_contact=overlayContact;
       touched.add(o.no);
     });
-    // 같은 문서 가족의 다른 품목에도 동일 번호 반영 (한쪽만 갱신되던 문제 방지)
+    // 같은 문서 가족 + 같은 출하일 형제(번호 없음)에도 동일 번호 반영
     const bases=[...new Set([
       stripTsRevSuffix(no),
       stripTsRevSuffix(origFromDom||''),
       ...familySeedNos.map(stripTsRevSuffix)
     ].filter(Boolean))];
-    if(co && bases.length){
+    const ships=new Set(
+      metaItems
+        .filter(it=>!co || sellerCompany(it.seller)===co)
+        .map(it=>String(it.ship||'').trim())
+        .filter(Boolean)
+    );
+    if(co && (bases.length || ships.size)){
       orders.forEach(o=>{
         (o.items||[]).forEach(item=>{
           if(!(+item.samt>0)) return;
           if(sellerCompany(item.seller)!==co) return;
           const cur=String(item.ts_no||'').trim();
           const orig=resolveTsOrig(item, cur);
-          const hit=bases.some(b=>cur===b || stripTsRevSuffix(cur)===b || orig===b || sameTsDocFamily(item, no, origFromDom||b));
-          if(!hit) return;
+          const familyHit=bases.some(b=>cur===b || stripTsRevSuffix(cur)===b || orig===b || sameTsDocFamily(item, no, origFromDom||b));
+          const shipHit=!cur && ships.has(String(item.ship||'').trim());
+          if(!familyHit && !shipHit) return;
+          if(cur && !familyHit) return;
           item.ts_no=no;
           item.ts_orig=origFromDom || stripTsRevSuffix(no);
           if(overlayAddr) item.deliver_addr=overlayAddr;
@@ -3450,9 +3661,11 @@ async function printDocOverlay(){
   window.print();
 }
 async function closeDocOverlay(){
-  // 거래명세표는 닫기만으로 채번하지 않음 (미저장 이탈 시 다음 번호가 건너뛰지 않게)
+  // 거래명세표: 닫아도 품목 ts_no는 저장 (공유 채번 doc_seq만 프린트/메일에서 확정)
   const kind=currentDocKind();
-  if(kind && kind!=='ts'){
+  if(kind==='ts'){
+    try{ persistTsNosFromOverlay(); }catch(e){ console.warn(e); }
+  }else if(kind){
     try{ await syncOverlayDocSeq(); }catch(e){ console.warn(e); }
   }
   document.getElementById('overlay').style.display='none';
@@ -3966,6 +4179,7 @@ async function buildTS(selectedItems, issueDate){
     const tsOrig=isEdit
       ? (resolveTsOrig(its.find(i=>i.ts_orig||i.ts_no)||its[0], reuseNo) || stripTsRevSuffix(userDocNo))
       : stripTsRevSuffix(tsNo);
+    stampTsNoOnItems(its, tsNo, {origNo:tsOrig});
     html+=tsPageHtml({
       company, seller:its[0]&&its[0].seller||seller, contact:contactMap[seller],
       addr:addrMap[seller],
@@ -4063,6 +4277,7 @@ async function showTSfromDeliver(){
     const tsOrig=isEdit
       ? (resolveTsOrig(its.find(i=>i.ts_orig||i.ts_no)||its[0], reuseNo) || stripTsRevSuffix(userDocNo))
       : stripTsRevSuffix(tsNo);
+    stampTsNoOnItems(its, tsNo, {origNo:tsOrig});
     html+=tsPageHtml({
       company, seller:its[0]&&its[0].seller||seller, contact:contactMap[company],
       addr:addrMap[company],
@@ -4071,13 +4286,12 @@ async function showTSfromDeliver(){
   });
   setDocMailMeta('ts', Object.keys(groups).map(k=>({name:sellerCompany(k), role:'seller'})), checked);
   openDocOverlay(html);
-  // 명세표 PDF만 생성. 납품완료(매입·매출 인식)는 상태 칸에서 따로 바꾼다. 채번·ts_no는 프린트/메일 시에만.
 }
 
 /**
  * 납품현황 단건 거래명세표
  * mode: 'edit' 기존 번호로 수정 | 'reissue' 새 번호로 재발행 | 'new' 최초 명세서
- * ※ 채번·ts_no 저장은 프린트/메일(finalizeTsIssue) 시에만
+ * ※ 문서번호는 확인 시 품목(+설정)에 저장. 공유 채번은 프린트/메일 때 확정.
  */
 async function quickTS(idx, mode){
   const r=deliverRows[idx];if(!r)return;
@@ -4131,7 +4345,8 @@ async function quickTS(idx, mode){
       addrMap[company]=def.addr||'';
     }
   }
-  // edit: 묶음 안 기존 번호 우선 표시 후 -R 제안 / reissue·new: 다음 순번 (채번은 finalize 때)
+  // edit: 묶음 안 기존 번호 우선 표시 후 -R 제안 / reissue·new: 다음 순번
+  // 확인한 번호는 품목에 즉시 저장 (공유 채번만 프린트/메일 때 확정)
   const reuseNo=isEdit?pickTsReuseNo(items, r.ts_no):'';
   const origHint=isEdit?resolveTsOrig(items.find(i=>i.ts_orig||i.ts_no)||r, reuseNo):'';
   const userDocNo=await confirmTsDocNo(tradeDate, {isEdit, reuseNo, origNo:origHint});
@@ -4144,6 +4359,7 @@ async function quickTS(idx, mode){
     const tsOrig=isEdit
       ? (resolveTsOrig(its.find(i=>i.ts_orig||i.ts_no)||its[0], reuseNo) || stripTsRevSuffix(userDocNo))
       : stripTsRevSuffix(tsNo);
+    stampTsNoOnItems(its, tsNo, {origNo:isEdit?(origHint||tsOrig):tsOrig});
     html+=tsPageHtml({
       company, seller:its[0]&&its[0].seller||seller, contact:contactMap[company],
       addr:addrMap[company],
@@ -4156,6 +4372,7 @@ async function quickTS(idx, mode){
 }
 
 function renderDeliver(){
+  backfillTsNosInOrders();
   const dm=document.getElementById('dl-month').value;
   const ds=document.getElementById('dl-seller').value;
   const dst=document.getElementById('dl-status').value;
