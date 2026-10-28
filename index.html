@@ -137,10 +137,12 @@ input[readonly]{background:#f5f5f5;color:#999}
 #doc-content{padding:0}
 
 /* A4 고정 페이지 (화면에서도 한 장 크기로 보이게) */
-.a4-page{width:794px;height:1123px;min-height:1123px;padding:20mm 10mm;font-family:'맑은 고딕','Malgun Gothic','Apple SD Gothic Neo',sans-serif;color:#111;position:relative;display:flex;flex-direction:column;box-sizing:border-box;overflow:hidden;--doc-line:1px solid #111;--doc-frame:2px solid #111}
+/* 문서 선: 바깥·안쪽 동일 굵기. 표는 칸마다 4면 border를 주지 않고(겹침→굵어 보임 방지)
+   오른쪽·아래만 그리고 바깥 테두리는 table/박스에서 한 번만 그림 */
+.a4-page{width:794px;height:1123px;min-height:1123px;padding:20mm 10mm;font-family:'맑은 고딕','Malgun Gothic','Apple SD Gothic Neo',sans-serif;color:#111;position:relative;display:flex;flex-direction:column;box-sizing:border-box;overflow:hidden;--doc-line:1px solid #111;--doc-frame:1px solid #111}
 .a4-page+.a4-page{border-top:3px dashed #ccc}
 
-/* 발주서 서식 — 바깥 2px, 안쪽 칸 1px */
+/* 발주서·견적서 서식 */
 .po-title-band{background:#1f3864;color:#fff;text-align:center;font-size:26px;font-weight:700;letter-spacing:14px;padding:20px 0;margin-bottom:2px}
 .po-no{text-align:right;font-size:12px;color:#333;margin-bottom:18px;padding:4px 2px}
 .po-meta{display:grid;grid-template-columns:1fr 1fr;border:var(--doc-frame);margin-bottom:14px;align-items:stretch}
@@ -150,13 +152,15 @@ input[readonly]{background:#f5f5f5;color:#999}
 .po-row:last-child{border-bottom:none}
 .po-key{background:#f0f0f0;padding:6px 10px;width:82px;min-width:82px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:11px;color:#333;font-weight:700;border-right:var(--doc-line)}
 .po-val{padding:6px 10px;display:flex;align-items:center;flex:1;font-size:12px}
-.po-tbl{width:100%;border-collapse:collapse;border-spacing:0;font-size:12px;margin-bottom:12px;flex:0 0 auto;border:var(--doc-frame)}
-.po-tbl th,.po-tbl td{padding:0 8px;border:var(--doc-line);text-align:center;vertical-align:middle;height:42px;box-sizing:border-box}
+.po-tbl{width:100%;border-collapse:separate;border-spacing:0;font-size:12px;margin-bottom:12px;flex:0 0 auto;border:var(--doc-frame)}
+.po-tbl th,.po-tbl td{padding:0 8px;border:0;border-right:var(--doc-line);border-bottom:var(--doc-line);text-align:center;vertical-align:middle;height:42px;box-sizing:border-box}
+.po-tbl tr>*:last-child{border-right:none}
+.po-tbl tr:last-child>*{border-bottom:none}
 .po-tbl th{background:#1f3864;color:#fff;padding:8px 8px;font-size:11px;font-weight:600}
 .po-tbl td.l{text-align:left}
 .po-tbl td.r{text-align:right}
 .po-tbl tr.empty-row td{height:42px;color:#ddd;background:#fff}
-.po-tbl tfoot td{background:#1f3864;color:#fff;font-weight:700;padding:8px 8px;border:var(--doc-line)}
+.po-tbl tfoot td{background:#1f3864;color:#fff;font-weight:700;padding:8px 8px}
 .po-foot{border:var(--doc-frame);margin-top:auto;margin-bottom:12px}
 .po-foot-row{display:flex;min-height:42px;border-bottom:var(--doc-line)}
 .po-foot-row:last-child{border-bottom:none}
@@ -190,7 +194,7 @@ input[readonly]{background:#f5f5f5;color:#999}
 .mail-panel label{font-size:12px;color:#555;display:flex;align-items:center;gap:6px}
 .mail-panel select,.mail-panel input{border:1px solid #ddd;border-radius:4px;padding:5px 8px;font-size:12px;background:#fff}
 .mail-panel .mail-hint{font-size:11px;color:#64748b;width:100%}
-/* 거래명세표 — 바깥 테두리 2px, 안쪽 칸선 1px (안쪽이 더 굵어 보이지 않게) */
+/* 거래명세표 — 바깥·안쪽 동일 1px, 표 선은 한 면만 그려 겹침 방지 */
 .ts-meta{display:grid;grid-template-columns:1fr 1fr;border:var(--doc-frame);margin-bottom:12px}
 .ts-side+.ts-side{border-left:var(--doc-line)}
 .ts-side-hd{background:#222;color:#fff;padding:6px 10px;font-size:12px;font-weight:700;letter-spacing:1px;text-align:left}
@@ -205,27 +209,31 @@ input[readonly]{background:#f5f5f5;color:#999}
 .ts-amt-box{border:var(--doc-frame);padding:8px 14px;margin-bottom:12px;display:flex;gap:16px;align-items:center}
 .ts-amt-lbl{font-size:12px;color:#111;font-weight:700;min-width:36px}
 .ts-amt-val{font-size:18px;font-weight:700;color:#111}
-.ts-tbl{width:100%;border-collapse:collapse;border-spacing:0;font-size:12px;margin-bottom:10px;border:var(--doc-frame)}
-.ts-tbl th,.ts-tbl td{padding:0 8px;border:var(--doc-line);text-align:center;vertical-align:middle;height:42px;box-sizing:border-box;color:#111}
+.ts-tbl{width:100%;border-collapse:separate;border-spacing:0;font-size:12px;margin-bottom:10px;border:var(--doc-frame)}
+.ts-tbl th,.ts-tbl td{padding:0 8px;border:0;border-right:var(--doc-line);border-bottom:var(--doc-line);text-align:center;vertical-align:middle;height:42px;box-sizing:border-box;color:#111}
+.ts-tbl tr>*:last-child{border-right:none}
+.ts-tbl tr:last-child>*{border-bottom:none}
 .ts-tbl th{background:#222;color:#fff;padding:8px 8px;font-size:11px;font-weight:600}
 .ts-tbl td.l{text-align:left}
 .ts-tbl td.r{text-align:right}
 .ts-tbl tr.empty-row td{height:42px;color:#111;background:#fff}
-.ts-tbl tfoot td{background:#f0f0f0;font-weight:700;padding:8px 8px;color:#111;border:var(--doc-line)}
+.ts-tbl tfoot td{background:#f0f0f0;font-weight:700;padding:8px 8px;color:#111}
 .ts-bank{font-size:12px;color:#111;padding:8px 0;border-top:var(--doc-frame);display:flex;justify-content:space-between;align-items:center;margin-top:8px}
 
 /* 연간 현황 보고서 (가로 A4) */
-.report-page{width:1120px;padding:14mm 16mm;margin:0 auto;font-family:'맑은 고딕','Malgun Gothic','Apple SD Gothic Neo',sans-serif;color:#111;box-sizing:border-box}
+.report-page{width:1120px;padding:14mm 16mm;margin:0 auto;font-family:'맑은 고딕','Malgun Gothic','Apple SD Gothic Neo',sans-serif;color:#111;box-sizing:border-box;--doc-line:1px solid #111;--doc-frame:1px solid #111}
 .report-title{text-align:center;font-size:21px;font-weight:700;margin-bottom:4px}
 .report-sub{text-align:center;font-size:12px;color:#666;margin-bottom:22px}
-.report-section-title{font-size:14px;font-weight:700;margin:26px 0 8px;padding-bottom:6px;border-bottom:2px solid #222}
-.report-tbl{width:100%;border-collapse:collapse;font-size:10.5px}
-.report-tbl th{background:#222;color:#fff;padding:5px 3px;border:1px solid #222;text-align:center;font-weight:600;white-space:nowrap}
-.report-tbl td{padding:4px 3px;border:1px solid #ccc;text-align:right;white-space:nowrap;color:#111}
+.report-section-title{font-size:14px;font-weight:700;margin:26px 0 8px;padding-bottom:6px;border-bottom:1px solid #222}
+.report-tbl{width:100%;border-collapse:separate;border-spacing:0;font-size:10.5px;border:1px solid #222}
+.report-tbl th,.report-tbl td{border:0;border-right:1px solid #ccc;border-bottom:1px solid #ccc;padding:4px 3px;text-align:right;white-space:nowrap;color:#111;box-sizing:border-box}
+.report-tbl th{background:#222;color:#fff;padding:5px 3px;border-right-color:#222;border-bottom-color:#222;text-align:center;font-weight:600}
+.report-tbl tr>*:last-child{border-right:none}
+.report-tbl tr:last-child>*{border-bottom:none}
 .report-tbl td.l{text-align:left}
 .report-tbl tr.grp-head td{background:#f0f0f0;font-weight:700;text-align:left}
 .report-tbl tr.grp-sub td{background:#f7f7f7;font-weight:700}
-.report-tbl tr.grand td{background:#222;color:#fff;font-weight:700}
+.report-tbl tr.grand td{background:#222;color:#fff;font-weight:700;border-right-color:#222;border-bottom-color:#222}
 .report-tbl tr{page-break-inside:avoid}
 
 #page-annual .section-box{overflow-x:auto}
@@ -254,6 +262,8 @@ input[readonly]{background:#f5f5f5;color:#999}
   .a4-page:last-child{page-break-after:auto}
   .a4-page+.a4-page{border-top:none!important}
   .ts-contact-input,.ts-addr-input,.doc-inline-input,.ts-no-input{border:none!important;background:transparent!important;padding:0!important;box-shadow:none!important;outline:none!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  /* PDF/인쇄에서도 collapse 이중선이 생기지 않게 separate 유지 */
+  .po-tbl,.ts-tbl,.report-tbl{border-collapse:separate!important;border-spacing:0!important}
   @page{size:A4 portrait;margin:0}
 }
 </style>
