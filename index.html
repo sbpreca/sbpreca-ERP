@@ -467,7 +467,7 @@ input[readonly]{background:#f5f5f5;color:#999}
           <th style="width:100px">출하일</th>
           <th style="width:74px" class="c">납품상태</th>
           <th style="width:48px" class="c">분할</th>
-          <th style="width:60px" class="c">명세</th>
+          <th style="width:108px" class="c">명세</th>
         </tr></thead>
         <tbody id="deliver-body"></tbody>
       </table>
@@ -3681,21 +3681,36 @@ function splitItem(idx){
   persist(o.no);renderDeliver();
 }
 
-async function quickTS(idx){
-  // 해당 항목 거래명세표: 기존 ts_no가 있으면 수정, 없으면 신규 발행
+/**
+ * 납품현황 단건 거래명세표
+ * mode: 'edit' 기존 번호로 수정 | 'reissue' 새 번호로 재발행 | 'new' 최초 명세서
+ * ※ 채번·ts_no 저장은 프린트/메일(finalizeTsIssue) 시에만
+ */
+async function quickTS(idx, mode){
   const r=deliverRows[idx];if(!r)return;
   if(!r.samt){alert('공급가액이 없는 항목은 거래명세표를 발행할 수 없어요');return;}
   const today=new Date().toISOString().slice(0,10);
   const hasTsNo=!!String(r.ts_no||'').trim();
-  const isEdit=hasTsNo || r.status==='납품완료';
+  let m=mode;
+  if(m!=='edit' && m!=='reissue' && m!=='new'){
+    // 하위 호환: 인자 없으면 기존 번호 있으면 수정, 납품완료면 수정, 아니면 신규
+    m=hasTsNo || r.status==='납품완료'?'edit':'new';
+  }
+  const isEdit=m==='edit';
+  const isReissue=m==='reissue';
   let items;
-  if(hasTsNo){
+  if(isEdit && hasTsNo){
     const sameNo=deliverRows.filter(x=>String(x.ts_no||'').trim()===String(r.ts_no).trim()&&(x.samt||0)>0);
     items=sameNo.length?sameNo:[r];
+  }else if(isEdit){
+    // 납품완료인데 ts_no 없음 → 해당 행만, 기존 번호 입력 유도
+    items=[r];
+  }else if(isReissue){
+    const sameGroup=deliverRows.filter(x=>sellerCompany(x.seller)===sellerCompany(r.seller)&&x.ship===r.ship&&x.status===r.status&&(x.samt||0)>0);
+    items=sameGroup.length>1&&confirm(`같은 출하일(${r.ship||'-'}) ${sellerCompany(r.seller)} 납품 ${sameGroup.length}건을 함께 재발행할까요?`)?sameGroup:[r];
   }else{
     const sameGroup=deliverRows.filter(x=>sellerCompany(x.seller)===sellerCompany(r.seller)&&x.ship===r.ship&&x.status===r.status&&!String(x.ts_no||'').trim()&&(x.samt||0)>0);
-    const verb=isEdit?'함께 수정':'함께 발행';
-    items=sameGroup.length>1&&confirm(`같은 출하일(${r.ship||'-'}) ${sellerCompany(r.seller)} 납품 ${sameGroup.length}건을 ${verb}할까요?`)?sameGroup:[r];
+    items=sameGroup.length>1&&confirm(`같은 출하일(${r.ship||'-'}) ${sellerCompany(r.seller)} 납품 ${sameGroup.length}건을 함께 발행할까요?`)?sameGroup:[r];
   }
   const tradeDate=promptTsTradeDate(r.ship||today);
   if(tradeDate===null)return;
@@ -3709,15 +3724,21 @@ async function quickTS(idx){
     if(c===null) return;
     contactMap[company]=c;
   }
-  const userDocNo=await confirmTsDocNo(tradeDate, {isEdit, reuseNo:r.ts_no||''});
+  // edit: 기존 번호 재사용 / reissue·new: 다음 순번 제안 (채번은 finalize 때)
+  const reuseNo=isEdit?String(r.ts_no||'').trim():'';
+  const userDocNo=await confirmTsDocNo(tradeDate, {isEdit, reuseNo});
   if(userDocNo===null)return;
   const dy=tradeDate.slice(0,4),dm=tradeDate.slice(5,7),dd=tradeDate.slice(8,10);
   let html='';
   Object.entries(groups).forEach(([seller,its],gIdx)=>{
     const company=sellerCompany(seller);
-    const existing=[...new Set(its.map(i=>String(i.ts_no||'').trim()).filter(Boolean))];
-    const tsNo=existing.length===1?existing[0]
-      :(Object.keys(groups).length===1?userDocNo:`${userDocNo}-${gIdx+1}`);
+    let tsNo;
+    if(isEdit){
+      const existing=[...new Set(its.map(i=>String(i.ts_no||'').trim()).filter(Boolean))];
+      tsNo=existing.length===1?existing[0]:userDocNo;
+    }else{
+      tsNo=Object.keys(groups).length===1?userDocNo:`${userDocNo}-${gIdx+1}`;
+    }
     html+=tsPageHtml({
       company, seller:its[0]&&its[0].seller||seller, contact:contactMap[company],
       its, dy, dm, dd, tsNo,
@@ -3793,7 +3814,18 @@ function renderDeliver(){
           <option${!isPend?' selected':''}>납품완료</option>
         </select></td>
         <td class="c">${isPend?`<button class="btn" style="font-size:11px;padding:3px 8px" onclick="splitItem(${idx})">분할</button>`:'　'}</td>
-        <td class="c">${r.samt>0?`<button class="btn btn-ts" style="font-size:11px;padding:3px 8px" onclick="quickTS(${idx})" title="${String(r.ts_no||'').trim()?('문서번호 '+escHtml(String(r.ts_no).trim())):'신규 발행'}">${String(r.ts_no||'').trim()?'수정':(isPend?'명세서':'수정')}</button>`:'　'}</td>
+        <td class="c">${(()=>{
+          if(!(r.samt>0)) return '　';
+          const tsNo=String(r.ts_no||'').trim();
+          const btn=(label,mode,title,extra='')=>`<button class="btn btn-ts" style="font-size:11px;padding:3px 6px;margin:1px${extra}" onclick="quickTS(${idx},'${mode}')" title="${escHtml(title)}">${label}</button>`;
+          // 기존 번호 있거나 납품완료 → 수정 + 재발행 둘 다
+          if(tsNo || !isPend){
+            const editTip=tsNo?(`기존 번호 ${tsNo} 로 수정`):'기존 문서번호로 수정 (없으면 입력)';
+            return `${btn('수정','edit',editTip)}${btn('재발행','reissue','새 문서번호로 재발행',';margin-left:2px')}`;
+          }
+          // 미납품·번호 없음 → 최초 명세서만
+          return btn('명세서','new','신규 발행');
+        })()}</td>
       </tr>`;
     }).join('')
     :'<tr><td colspan="13" style="text-align:center;color:#bbb;padding:2rem">납품 내역이 없어요</td></tr>';
