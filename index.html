@@ -6390,7 +6390,21 @@ async function renderPL(){
   // 영업외
   const otherKey=pm||'all';
   if(!otherData[otherKey]) otherData[otherKey]=[];
-  const otherList=otherData[otherKey]||[];
+  let otherList=otherData[otherKey]||[];
+  if(!pm){
+    // 전체: 월별(+전체 칸에 직접 넣은) 영업외손익을 계정·구분별로 합산한다. 판관비 합산과 같은 방식
+    const om=new Map();
+    Object.keys(otherData).filter(k=>/^\d{4}-\d{2}$/.test(k)||k==='all').forEach(k=>{
+      (otherData[k]||[]).forEach(it=>{
+        const nm=String(it.name||'').trim();
+        if(!nm) return;
+        const mk=(it.type||'')+'|'+nm;
+        const prev=om.get(mk);
+        om.set(mk,{name:nm, type:it.type, amt:(prev?prev.amt:0)+(+it.amt||0)});
+      });
+    });
+    otherList=[...om.values()].filter(i=>i.amt).sort((a,b)=>(a.type===b.type?0:(a.type==='inc'?-1:1))||a.name.localeCompare(b.name,'ko'));
+  }
   const otherInc=otherList.filter(i=>i.type==='inc').reduce((s,i)=>s+(+i.amt||0),0);
   const otherExp=otherList.filter(i=>i.type==='exp').reduce((s,i)=>s+(+i.amt||0),0);
   const preIncome=opIncome+otherInc-otherExp;
@@ -7614,7 +7628,7 @@ async function applyTxToPL(){
   (sgaData[prev]||[]).forEach(i=>{ const n=String(i.name||'').trim(); if(n && +i.amt) priorNames.add(n); });
   aggregateSgaFromBank(prev).forEach(i=>priorNames.add(i.name));
   const missing=[...priorNames].filter(n=>!bankSga.has(n)).sort((a,b)=>a.localeCompare(b,'ko'));
-  let msg=`${ym} 손익계산서의 판관비/영업외손익을 지금 분류된 내역으로 덮어쓸까요?\n\n· 공제(과세) 판관비는 부가세 제외(÷1.1)한 공급가액으로 넣어요\n· 급여·보험료·세금과공과·기업업무추진비·500원 지급수수료(이체수수료)는 출금액 그대로예요\n· 기존 수동 입력값은 사라져요`;
+  let msg=`${ym} 손익계산서의 판관비/영업외손익을 지금 분류된 내역으로 덮어쓸까요?\n\n· 공제(과세) 판관비는 부가세 제외(÷1.1)한 공급가액으로 넣어요\n· 급여·보험료·세금과공과·기업업무추진비·500원 지급수수료(이체수수료)는 출금액 그대로예요\n· 기존 수동 입력값(판관비)은 사라져요\n· 영업외손익은 이번 분류에 없는 기존 항목을 그대로 남겨요`;
   if(missing.length){
     msg+=`\n\n⚠ 지난달에는 있었는데 이번 달 지출분류에 없는 계정: ${missing.join(', ')}\n이 계정들은 손익에서 빠집니다. 은행 내역을 더 올린 뒤 반영하는 편이 안전해요.`;
   }
@@ -7656,7 +7670,9 @@ async function applyTxToPL(){
     persistVat();
   }
   sgaData[ym]=sgaList;
-  otherData[ym]=otherList;
+  // 영업외손익: 이번에 분류된 계정은 새 값으로 바꾸고, 이번 분류에 없는 기존 계정(예: 통장 내역에 안 잡히는 이자)은 그대로 둔다
+  const keptOther=(otherData[ym]||[]).filter(old=>!otherList.some(n=>n.name===old.name && n.type===old.type));
+  otherData[ym]=[...otherList, ...keptOther];
   markAnnualPlMonth(ym);
   persistSga(); persistOther();
   alert('손익계산서에 반영했어요.\n공제 항목은 공급가액(부가세 제외) 기준입니다.\n손익계산서 탭에서 확인해보세요.');
