@@ -6693,7 +6693,6 @@ function renderAnnual(){
   const showQty=showItem;
   const cols=annualVisibleCols();
   const colCount=1+(showItem?1:0)+1+cols.length+(showQty?1:0);
-  let gidSeq=0;
 
   function buildSection(category, buyerOrSellerKey, amtKey){
     const acc={};
@@ -6787,46 +6786,17 @@ function renderAnnual(){
     });
     return row;
   }
-  function renderPartyGroups(rows, category){
-    const parentOf=p=>sellerCompany(p);
-    const parents=[...new Set(rows.map(r=>parentOf(r.party)))];
-    return parents.map(parent=>{
-      const allRows=rows.filter(r=>parentOf(r.party)===parent);
-      const cat=allRows[0].cat;
-      const material=cat==='원부자재';
-      const multi=material && (allRows.length>1 || new Set(allRows.map(r=>r.party)).size>1);
-      if(!multi){
-        return allRows.map(r=>{
-          const itemCell=showItem?`<td>${material?(r.item||'-'):'-'}</td>`:'';
-          return `<tr>
-            <td style="font-weight:600;padding:8px 10px">${r.party}</td>
-            ${itemCell}
-            <td class="an-cat">${r.cat}</td>
-            ${moneyCells(r, true)}
-          </tr>`;
-        }).join('');
-      }
-      const groupId='ag'+(gidSeq++);
-      const sum=sumRows(allRows);
-      sum.cat='원부자재';
-      const itemCell=showItem?'<td style="color:#888;font-size:11px">품목별</td>':'';
-      const header=`<tr style="cursor:pointer;background:#f4f7fb" onclick="toggleAnnualGroup('${groupId}')">
-        <td style="font-weight:700;padding:8px 10px;color:#1F4E79"><span id="${groupId}-arrow" style="margin-right:6px;font-size:11px">▸</span>${parent}</td>
+  // 원부자재는 업체 합계(접이식 그룹) 없이 품목 행만 나열
+  function renderPartyGroups(rows){
+    return rows.map(r=>{
+      const material=r.cat==='원부자재';
+      const itemCell=showItem?`<td>${material?(r.item||'-'):'-'}</td>`:'';
+      return `<tr>
+        <td style="font-weight:600;padding:8px 10px">${r.party}</td>
         ${itemCell}
-        <td class="an-cat">${cat}</td>
-        ${moneyCells(sum, true)}
+        <td class="an-cat">${r.cat}</td>
+        ${moneyCells(r, true)}
       </tr>`;
-      const details=allRows.map(r=>{
-        const label=r.party.includes('_')?r.party.split('_').slice(1).join('_'):(r.item||r.party);
-        const itemCell2=showItem?`<td style="padding-left:16px">${r.item||label}</td>`:'';
-        return `<tr class="${groupId}-row" style="display:none;background:#f8fafc">
-          <td style="padding-left:22px;font-size:12px;color:#333">└ ${label}</td>
-          ${itemCell2}
-          <td class="an-cat">-</td>
-          ${moneyCells(r, true)}
-        </tr>`;
-      }).join('');
-      return header+details;
     }).join('');
   }
 
@@ -6865,11 +6835,11 @@ function renderAnnual(){
         const grp=rows.filter(r=>r.cat===cat);
         if(!grp.length) return '';
         return `<tr style="background:#f8f8f8"><td colspan="${colCount}" style="padding:6px 12px;font-size:11px;font-weight:700;color:#555">${cat}</td></tr>`
-          +renderPartyGroups(grp, category)
+          +renderPartyGroups(grp)
           +subtotalRow(grp, cat+' 소계');
       }).join('');
     }else{
-      body.innerHTML=renderPartyGroups(rows, category);
+      body.innerHTML=renderPartyGroups(rows);
     }
     document.getElementById(footId).innerHTML=subtotalRow(rows, (curTab==='all'?'전체':curTab)+' 합계', 'tot');
   }
