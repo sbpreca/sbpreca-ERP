@@ -6336,16 +6336,35 @@ async function renderPL(){
     return sellMonthOf(i)===pm;
   });
   const all=allBuy; // 기존 코드 호환용 (판관비 등 다른 곳에서 참조하지 않음, 매입 계산에만 사용)
-  const salesRaw=allSell.reduce((s,i)=>s+i.samt,0); // 납품완료 공급가액, 정산월 또는 출하월
-  const purchasesRaw=allBuy.reduce((s,i)=>s+i.bamt,0); // 발주 데이터 기준 당기매입액 (자동, 납품일 그대로)
+  // 2026년 1~5월은 발주 데이터가 없어 연간현황에 입력된 월별 매출·매입을 쓴다 (연간 탭과 같은 기준)
+  const manualSum=(category)=>annualManual.filter(r=>r.category===category).reduce((acc,r)=>{
+    const pi=parseManualItem(r.item);
+    if(!pi.month || !annualUsesManual(r.year, pi.month)) return acc;
+    const mk=String(r.year)+'-'+String(pi.month).padStart(2,'0');
+    if(pm && mk!==pm) return acc;
+    return acc+(+r.amount||0);
+  },0);
+  const manualSales=manualSum('매출'), manualBuy=manualSum('매입');
+  const salesRaw=allSell.reduce((s,i)=>s+i.samt,0)+manualSales; // 납품완료 공급가액(정산월 또는 출하월) + 1~5월 연간현황 입력분
+  const purchasesRaw=allBuy.reduce((s,i)=>s+i.bamt,0)+manualBuy; // 납품일 기준 당기매입액 + 1~5월 연간현황 입력분
     const salesAdj=0;
   const sales=salesRaw;
   const purchaseAdj=0;
   const purchases=purchasesRaw;
   const invKey=pm||'all';
   if(!inventoryData[invKey]) inventoryData[invKey]=[{name:'기초재고',amt:0},{name:'기말재고',amt:0}];
-  const beginInv=(inventoryData[invKey].find(i=>i.name==='기초재고')||{amt:0}).amt||0;
-  const endInv=(inventoryData[invKey].find(i=>i.name==='기말재고')||{amt:0}).amt||0;
+  const invOf=(k,n)=>((inventoryData[k]||[]).find(i=>i.name===n)||{amt:0}).amt||0;
+  let beginInv=invOf(invKey,'기초재고'), endInv=invOf(invKey,'기말재고');
+  let invDerived=false;
+  if(!pm){
+    // 전체: 월별 재고에서 계산한다 (기초 = 첫 달 기초, 기말 = 기초 + 월별 증감 합) → 월별 매출원가 합과 같아진다
+    const invMonths=Object.keys(inventoryData).filter(k=>/^\d{4}-\d{2}$/.test(k)).sort();
+    if(invMonths.length){
+      beginInv=invOf(invMonths[0],'기초재고');
+      endInv=beginInv+invMonths.reduce((acc,k)=>acc+invOf(k,'기말재고')-invOf(k,'기초재고'),0);
+      invDerived=true;
+    }
+  }
   const cogs=beginInv+purchases-endInv; // 매출원가 = 기초재고 + 당기매입 - 기말재고
   const gross=sales-cogs;
 
@@ -6425,16 +6444,16 @@ async function renderPL(){
 
   document.getElementById('pl-body').innerHTML=
     plRow('① 매출액',sales,'total')+
-    `<tr style="background:#fafafa"><td style="padding:6px 12px;padding-left:24px;font-size:12px;color:#666">납품기준 매출액(자동)</td><td class="r" style="padding:6px 12px;font-size:12px;color:#666">${fmtW(salesRaw)}</td></tr>`+
+    `<tr style="background:#fafafa"><td style="padding:6px 12px;padding-left:24px;font-size:12px;color:#666">${manualSales?'연간현황 입력 포함 매출액(자동)':'납품기준 매출액(자동)'}</td><td class="r" style="padding:6px 12px;font-size:12px;color:#666">${fmtW(salesRaw)}</td></tr>`+
     ``+
     plRow('② 매출원가',cogs,'')+
     `<tr style="background:#fafafa"><td style="padding:6px 12px;padding-left:24px;font-size:12px;color:#666">기초재고액</td><td class="r" style="padding:3px 12px">
-      <input type="number" value="${beginInv}" style="width:120px;text-align:right;border:1px solid #ddd;border-radius:4px;padding:4px 8px;font-size:12px"
+      <input type="number" value="${beginInv}" ${invDerived?'readonly title="월별 재고에서 계산된 값이에요"':''} style="width:120px;text-align:right;border:1px solid #ddd;border-radius:4px;padding:4px 8px;font-size:12px"
         onchange="saveInventory('${invKey}','기초재고',this.value)">
     </td></tr>`+
     `<tr style="background:#fafafa"><td style="padding:6px 12px;padding-left:24px;font-size:12px;color:#666">${pm?'당월매입액':'당기매입액'}</td><td class="r" style="padding:6px 12px;font-size:12px;color:#666">${fmtW(purchases)}</td></tr>`+
     `<tr style="background:#fafafa"><td style="padding:6px 12px;padding-left:24px;font-size:12px;color:#666">기말재고액</td><td class="r" style="padding:3px 12px">
-      <input type="number" value="${endInv}" style="width:120px;text-align:right;border:1px solid #ddd;border-radius:4px;padding:4px 8px;font-size:12px"
+      <input type="number" value="${endInv}" ${invDerived?'readonly title="월별 재고에서 계산된 값이에요"':''} style="width:120px;text-align:right;border:1px solid #ddd;border-radius:4px;padding:4px 8px;font-size:12px"
         onchange="saveInventory('${invKey}','기말재고',this.value)">
     </td></tr>`+
     plRow('③ 매출총이익',gross,'total')+
