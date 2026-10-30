@@ -1272,7 +1272,7 @@ function siteOptionsHtml(company, selected, extraManualLabel){
     html+=`<option value="${escHtml(s.name)}"${s.name===selected?' selected':''}>${escHtml(s.name)}</option>`;
   });
   if(extraManualLabel && !sites.some(s=>s.name===extraManualLabel)){
-    html+=`<option value="${escHtml(extraManualLabel)}"${selected===extraManualLabel?' selected':''}>${escHtml(extraManualLabel)} (직접입력)</option>`;
+    html+=`<option value="${escHtml(extraManualLabel)}"${selected===extraManualLabel?' selected':''}>${escHtml(extraManualLabel)}</option>`;
   }
   html+=`<option value="${MANUAL_SITE_VALUE}">직접 입력…</option>`;
   return html;
@@ -1309,7 +1309,7 @@ function applyManualDeliverOnRow(tr, man){
   if(!opt){
     opt=document.createElement('option');
     opt.value=label;
-    opt.textContent=label+' (직접입력)';
+    opt.textContent=label;
     // "직접 입력…" 앞에 삽입
     const manualOpt=[...siteSel.options].find(o=>o.value===MANUAL_SITE_VALUE);
     siteSel.insertBefore(opt, manualOpt||null);
@@ -2958,7 +2958,7 @@ function buildPOHtml(order){
       <td class="r">${fmt(r.bprice)}</td>
       <td class="r">${fmt(r.bamt)}</td>
       <td>${r.ship?String(r.ship).replace(/-/g,'.'):'　'}</td>
-      <td class="l"></td>
+      <td class="l"><input class="doc-inline-input"></td>
     </tr>`).join('');
     const blank=emptyRows(its.length, Math.max(FIXED_ROWS, its.length), 8, 'empty-row');
     html+=`<div class="a4-page">
@@ -2979,7 +2979,7 @@ function buildPOHtml(order){
         </div>
       </div>
       <table class="po-tbl">
-        <thead><tr><th style="width:34px">NO</th><th>품목</th><th style="width:80px">규격</th><th style="width:54px">수량</th><th style="width:90px">단가(원)</th><th style="width:100px">금액(원)</th><th style="width:90px">출하일자</th><th style="width:80px">비고</th></tr></thead>
+        <thead><tr><th style="width:34px">NO</th><th style="width:127px">품목</th><th style="width:143px">규격</th><th style="width:54px">수량</th><th style="width:90px">단가(원)</th><th style="width:100px">금액(원)</th><th style="width:90px">출하일자</th><th style="width:80px">비고</th></tr></thead>
         <tbody>${dataRows}${blank}</tbody>
         <tfoot><tr><td colspan="5" style="text-align:right;padding:8px">합　계</td><td class="r">${fmt(sub)}</td><td colspan="2"></td></tr></tfoot>
       </table>
@@ -2989,7 +2989,6 @@ function buildPOHtml(order){
         <div class="po-foot-row"><span class="po-foot-key">담 당 자</span><span class="po-foot-val"><input class="doc-inline-input" value="${escHtml(formatDocContact(di.contact||'')||'')}" placeholder="담당자" title="클릭해서 수정"></span></div>
         ${note?`<div class="po-foot-row"><span class="po-foot-key">특기사항</span><span class="po-foot-val">${escHtml(note)}</span></div>`:''}
       </div>
-      <div class="po-note">※ COA 메일 송부 요청 드립니다.</div>
     </div>`;
   });
   return {html, groups, items};
@@ -4172,7 +4171,7 @@ function tsPageHtml({company, seller, contact, addr, its, dy, dm, dd, tsNo, tsOr
     <td class="r">${fmt(r.sprice)}</td>
     <td class="r">${fmt(r.samt)}</td>
     <td class="r">${fmt(Math.round((r.samt||0)*0.1))}</td>
-    <td></td>
+    <td class="l"><input class="doc-inline-input"></td>
   </tr>`;
   }).join('');
   const blank=`<tr class="empty-row"><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>`.repeat(Math.max(0,FIXED_ROWS-its.length));
@@ -4216,7 +4215,7 @@ function tsPageHtml({company, seller, contact, addr, its, dy, dm, dd, tsNo, tsOr
       <span style="font-size:11px;color:#888">(공급가액 ${fmt(totS)} + 부가세 ${fmt(totV)})</span>
     </div>
     <table class="ts-tbl">
-      <thead><tr><th style="width:60px">일자</th><th>품명</th><th style="width:80px">규격</th><th style="width:50px">수량</th><th style="width:90px">단가</th><th style="width:100px">공급가액</th><th style="width:90px">부가세</th><th style="width:70px">비고</th></tr></thead>
+      <thead><tr><th style="width:60px">일자</th><th style="width:119px">품명</th><th style="width:139px">규격</th><th style="width:50px">수량</th><th style="width:90px">단가</th><th style="width:100px">공급가액</th><th style="width:90px">부가세</th><th style="width:70px">비고</th></tr></thead>
       <tbody>${dataRows}${blank}</tbody>
       <tfoot><tr>
         <td>합계</td><td colspan="2"></td>
@@ -6892,7 +6891,7 @@ function renderAnnual(){
       const headQty=sameUnit?{...sum, unit:units[0]}:{...sum, ttlq:0};
       const head=`<tr data-gid="${gid}" data-pkey="${escHtml(pkey)}" onclick="toggleAnnualPartyRow(this)" style="cursor:pointer;background:#fafafa">
           <td style="font-weight:600;padding:8px 10px"><span class="an-arrow" id="${gid}-arrow">${open?'▾':'▸'}</span>${escHtml(g.label)}</td>
-          ${showItem?`<td style="color:#888">${g.kind==='item'?'(업체 합계)':'(그룹 합계)'}</td>`:''}
+          ${showItem?'<td></td>':''}
           <td class="an-cat">${g.cat}</td>
           ${moneyCells(headQty, sameUnit)}
         </tr>`;
