@@ -6741,7 +6741,8 @@ function renderAnnual(){
         if(!monthKey || monthKey.slice(0,4)!==curY) return;
         const mo=+monthKey.slice(5,7);
         if(mo<1||mo>12||annualUsesManual(curY, mo)) return;
-        const rawParty=i[buyerOrSellerKey];
+        // 매출처·매입처가 비어 있어도 금액이 있으면 '(미지정)'으로 모아 보여준다 (예전에는 말없이 빠져서 손익계산서 탭과 합계가 어긋났음)
+        const rawParty=i[buyerOrSellerKey] || ((+i[amtKey]||0)!==0 ? '(미지정)' : '');
         if(!rawParty) return;
         // 매출: 회사 단위로 통합 (덕산네오룩스_PBN Crucible→덕산네오룩스, 신세기→신세기전력)
         const party=category==='매출'?sellerCompany(rawParty):rawParty;
