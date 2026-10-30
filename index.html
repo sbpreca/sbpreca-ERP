@@ -451,6 +451,7 @@ input[readonly]{background:#f5f5f5;color:#999}
         <option value="미납품">미납품</option>
         <option value="납품완료">납품완료</option>
       </select>
+      <button class="btn btn-po" style="margin-left:auto" onclick="printDeliverByCompany()">업체별 출력</button>
     </div>
     <div class="metrics" id="dl-metrics"></div>
     <div id="ts-action-bar" class="ts-action-bar">
@@ -499,8 +500,7 @@ input[readonly]{background:#f5f5f5;color:#999}
       </div>
       <input type="hidden" id="cl-tab" value="all">
       <button class="btn btn-po" onclick="printClosingReport()">보고서 PDF</button>
-      <button class="btn btn-po" onclick="printClosingByCompany()">업체별 출력</button>
-      <button class="btn" style="margin-left:auto" onclick="exportClosingExcel()">📥 엑셀 다운로드</button>
+            <button class="btn" style="margin-left:auto" onclick="exportClosingExcel()">📥 엑셀 다운로드</button>
     </div>
     <div class="metrics" id="cl-metrics"></div>
     <div class="section-box" style="margin-bottom:14px">
@@ -7916,12 +7916,15 @@ function printClosingReport(){
   document.getElementById('overlay').style.display='block';
 }
 
-function printClosingByCompany(){
-  renderClosing();
-  if(!_closingCache) return;
-  const {cm,bm,sm,stKey}=_closingCache;
+let _companyPrintMonth='';
+// 납품현황 탭의 '업체별 출력': 납품현황에서 고른 월(납품일 기준)의 납품 내역을 업체별로 출력
+function printDeliverByCompany(){
+  openCompanyPrint(document.getElementById('dl-month').value||'');
+}
+function openCompanyPrint(cm){
+  _companyPrintMonth=cm||'';
 
-  // 업체 목록 수집: 납품현황과 같은 기준 (그 달 납품일에 납품완료된 품목, 마감제외 표시 건은 제외)
+  // 업체 목록 수집: 그 달 납품일에 납품완료된 품목 (마감제외 표시 건은 제외)
   const _cmap=new Map();
   orders.forEach(o=>(o.items||[]).forEach(it=>{
     if(!isDeliveredItem(it) || it.closing_sell_exclude) return;
@@ -7941,7 +7944,7 @@ function printClosingByCompany(){
   modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center';
   modal.innerHTML = `
     <div style="background:#fff;border-radius:12px;padding:24px;width:400px;max-height:80vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.2)">
-      <div style="font-size:16px;font-weight:700;margin-bottom:12px">업체 선택하여 출력</div>
+      <div style="font-size:16px;font-weight:700;margin-bottom:12px">업체 선택하여 출력 · ${cm||'전체 월'}</div>
       <input id="cl-company-search" placeholder="업체명 검색..." style="width:100%;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:13px;margin-bottom:12px;box-sizing:border-box"
         oninput="filterCompanyList()">
       <div style="font-size:12px;color:#888;margin-bottom:8px">
@@ -7954,7 +7957,7 @@ function printClosingByCompany(){
             <span style="font-size:13px">${c.name}</span>
             <span style="font-size:11px;color:#888;margin-left:auto">${c.type==='buy'?'매입':'매출'}</span>
           </label>`).join('')}
-        <div id="cl-company-empty" style="color:#bbb;font-size:13px;text-align:center;padding:12px">업체명을 검색하세요</div>
+        <div id="cl-company-empty" style="color:#bbb;font-size:13px;text-align:center;padding:12px">${allCompanies.length?'업체명을 검색하세요':'이 달에 납품완료된 내역이 없어요'}</div>
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end">
         <button onclick="document.getElementById('cl-company-select-modal').remove()" 
@@ -7964,7 +7967,6 @@ function printClosingByCompany(){
       </div>
     </div>`;
   document.body.appendChild(modal);
-  return; // 실제 출력은 doPrintClosingByCompany에서
 }
 
 function filterCompanyList(){
@@ -7991,13 +7993,31 @@ function doPrintClosingByCompany(){
   const selected = [...modal.querySelectorAll('.cl-company-cb:checked')].map(cb=>({name:cb.dataset.name,type:cb.dataset.type}));
   if(!selected.length){ alert('업체를 선택해주세요'); return; }
   modal.remove();
-  if(!_closingCache) return;
-  const {cm,bm,sm,stKey}=_closingCache;
-  _doPrintClosingByCompany(cm, selected, bm, sm, stKey);
+  _doPrintClosingByCompany(_companyPrintMonth, selected);
 }
 
-function _doPrintClosingByCompany(cm, selected, bm, sm, stKey){
+// 선급금(매입처)·선수금(매출처) 차감액: 마감현황과 같은 계산
+function closingAdvanceDeduct(name, type, cm){
+  try{
+    if(type==='buy'){
+      _purchaseParts=buildPurchaseParts();
+      _buyAdvanceApplied=allocatePurchaseAdvances(_purchaseParts);
+      return +purchaseAdvanceOf(name, cm).deduct||0;
+    }
+    const months=cm?[cm]:[...new Set(orders.flatMap(o=>o.items).filter(i=>sellerCompany(i.seller)===name && sellMonthOf(i)).map(i=>sellMonthOf(i)))];
+    const used=new Set();
+    let deduct=0;
+    months.forEach(mo=>{
+      const due=closingState[`${mo}_sell_${name}_date`]||computeDueDate(name, mo)||'';
+      deduct+=priorReceipts(name, mo, due, used).deduct;
+    });
+    return deduct;
+  }catch(e){ console.warn('차감액 계산 실패', e); return 0; }
+}
+
+function _doPrintClosingByCompany(cm, selected){
   const today=new Date().toISOString().slice(0,10).replace(/-/g,'.');
+  const stKey=(type,name,field)=>`${cm||'all'}_${type}_${name}_${field}`;
 
   // 납품현황과 같은 기준: 그 달 납품일(ship)에 납품완료된 품목을 줄 단위로. 마감제외 표시 건은 뺀다 (정산월 재지정은 무시)
   function deliveryLines(name, type){
@@ -8021,8 +8041,7 @@ function _doPrintClosingByCompany(cm, selected, bm, sm, stKey){
     const lines=deliveryLines(name, type);
     const supply=lines.reduce((s,l)=>s+l.amt,0);
     const vat=Math.round(supply*0.1);
-    const v=(type==='buy'?bm:sm)[name]||{};
-    const adv=+v.advance||0;
+    const adv=closingAdvanceDeduct(name, type, cm);
     const net=supply+vat-adv;
     const due=closingState[stKey(type,name,'date')]||computeDueDate(name,cm);
     const tax=closingState[stKey(type,name,'tax')]||'미발급';
