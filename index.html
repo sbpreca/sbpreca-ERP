@@ -887,7 +887,6 @@ input[readonly]{background:#f5f5f5;color:#999}
 
     <div class="section-box">
       <div class="section-title">매출총이익 · 영업이익</div>
-      <p id="an-profit-note" style="margin:0 12px 8px;font-size:12px;color:#888"></p>
       <table class="data-tbl">
         <thead id="an-gross-head"></thead>
         <tbody id="an-gross-body"></tbody>
@@ -6615,6 +6614,15 @@ function parseManualItem(item){
 }
 function manualStoreItem(base, month){ return `${base||''}::m${month}`; }
 const annualOpenQ={1:false,2:false,3:false,4:false};
+const annualOpenParties=new Set(); // 펼쳐 둔 원부자재 업체 (분기 열을 열고 닫아도 유지)
+function toggleAnnualPartyRow(tr){
+  const gid=tr.dataset.gid, key=tr.dataset.pkey;
+  const wasOpen=annualOpenParties.has(key);
+  if(wasOpen) annualOpenParties.delete(key); else annualOpenParties.add(key);
+  document.querySelectorAll('.'+gid+'-row').forEach(r=>{ r.style.display=wasOpen?'none':'table-row'; });
+  const arrow=document.getElementById(gid+'-arrow');
+  if(arrow) arrow.textContent=wasOpen?'▸':'▾';
+}
 function toggleAnnualQuarter(q){
   annualOpenQ[q]=!annualOpenQ[q];
   renderAnnual();
@@ -6820,17 +6828,50 @@ function renderAnnual(){
     });
     return row;
   }
-  // 원부자재는 업체 합계(접이식 그룹) 없이 품목 행만 나열
-  function renderPartyGroups(rows){
-    return rows.map(r=>{
-      const material=r.cat==='원부자재';
-      const itemCell=showItem?`<td>${material?(r.item||'-'):'-'}</td>`:'';
-      return `<tr>
-        <td style="font-weight:600;padding:8px 10px">${r.party}</td>
-        ${itemCell}
-        <td class="an-cat">${r.cat}</td>
-        ${moneyCells(r, true)}
-      </tr>`;
+  // 원부자재는 업체 줄(합계)을 누르면 품목별 집계가 펼쳐진다. 품목이 하나뿐인 업체와 조명 등 다른 분류는 한 줄로 표시
+  let _grpSeq=0;
+  function renderPartyGroups(rows, tableKey){
+    const parts=[];
+    const byParty=new Map();
+    rows.forEach(r=>{
+      if(r.cat!=='원부자재'){ parts.push({flat:r}); return; }
+      if(!byParty.has(r.party)){
+        const g={party:r.party, items:[]};
+        byParty.set(r.party,g);
+        parts.push({group:g});
+      }
+      byParty.get(r.party).items.push(r);
+    });
+    return parts.map(p=>{
+      if(p.flat || p.group.items.length<2){
+        const r=p.flat||p.group.items[0];
+        const material=r.cat==='원부자재';
+        const itemCell=showItem?`<td>${material?(r.item||'-'):'-'}</td>`:'';
+        return `<tr>
+          <td style="font-weight:600;padding:8px 10px">${r.party}</td>
+          ${itemCell}
+          <td class="an-cat">${r.cat}</td>
+          ${moneyCells(r, true)}
+        </tr>`;
+      }
+      const g=p.group;
+      const gid='ang'+(tableKey==='매출'?'s':'b')+(_grpSeq++);
+      const pkey=tableKey+'|'+g.party;
+      const open=annualOpenParties.has(pkey);
+      const sum=sumRows(g.items);
+      const head=`<tr data-gid="${gid}" data-pkey="${escHtml(pkey)}" onclick="toggleAnnualPartyRow(this)" style="cursor:pointer;background:#fafafa">
+          <td style="font-weight:600;padding:8px 10px"><span class="an-arrow" id="${gid}-arrow">${open?'▾':'▸'}</span>${escHtml(g.party)}</td>
+          ${showItem?'<td style="color:#888">(업체 합계)</td>':''}
+          <td class="an-cat">원부자재</td>
+          ${moneyCells({...sum, ttlq:0}, false)}
+        </tr>`;
+      const kids=g.items.map(r=>`<tr class="${gid}-row" style="display:${open?'table-row':'none'};background:#fbfbfb">
+          <td style="padding:6px 10px 6px 28px;color:#888;font-size:12px">└</td>
+          ${showItem?`<td>${r.item||'-'}</td>`:''}
+          <td class="an-cat"></td>
+          ${moneyCells(r, true)}
+        </tr>`).join('');
+      return head+kids;
     }).join('');
   }
 
@@ -6869,11 +6910,11 @@ function renderAnnual(){
         const grp=rows.filter(r=>r.cat===cat);
         if(!grp.length) return '';
         return `<tr style="background:#f8f8f8"><td colspan="${colCount}" style="padding:6px 12px;font-size:11px;font-weight:700;color:#555">${cat}</td></tr>`
-          +renderPartyGroups(grp)
+          +renderPartyGroups(grp, category)
           +subtotalRow(grp, cat+' 소계');
       }).join('');
     }else{
-      body.innerHTML=renderPartyGroups(rows);
+      body.innerHTML=renderPartyGroups(rows, category);
     }
     document.getElementById(footId).innerHTML=subtotalRow(rows, (curTab==='all'?'전체':curTab)+' 합계', 'tot');
   }
@@ -6925,9 +6966,6 @@ function renderAnnual(){
     +(showOp&&op.ttl!=null?`
     <div class="metric"><div class="metric-lbl">${curY}년 영업이익</div><div class="metric-val ${op.ttl>=0?'g':'b'}">${fmtW(op.ttl)}</div></div>
     <div class="metric"><div class="metric-lbl">영업이익률</div><div class="metric-val">${opSales?(op.ttl/opSales*100).toFixed(1):0}%</div></div>`:'');
-  document.getElementById('an-profit-note').textContent=showOp
-    ? '매출원가는 기초재고 + 매입 − 기말재고(손익계산서 탭에 입력한 재고)이고, 매출총이익은 매출 − 매출원가, 영업이익은 거기서 손익계산서의 판관비를 뺀 금액입니다. 손익계산서 탭과 월별·분기별로 같아요. 판관비가 저장되지 않은 달은 영업이익을 비워 두고, 세전이익은 영업외손익을 넣는 단계에서 추가합니다.'
-    : '영업이익은 회사 전체 손익이라 전체 탭에서 봅니다.';
 
   function grossCells(row){
     return cols.map(c=>{
@@ -8172,7 +8210,6 @@ function printAnnualReport(){
         <tr class="grand"><td class="l">영업이익</td>${readyTds(op)}</tr>`:''}
       </tbody>
     </table>
-    ${curTab==='all'&&op?`<div style="font-size:10px;color:#666;margin-top:6px">※ 매출원가 = 기초재고 + 매입 − 기말재고, 매출총이익 = 매출 − 매출원가, 영업이익 = 매출총이익 − 판관비 (판관비가 저장된 달만 합산). 손익계산서 탭과 같은 기준입니다.</div>`:''}
   </div>`;
   document.getElementById('doc-content').innerHTML=html;
   document.getElementById('dynamic-page-style').textContent='@media print{ @page{ size:A4 landscape; margin:8mm; } }';
