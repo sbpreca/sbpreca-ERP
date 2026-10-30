@@ -6614,7 +6614,29 @@ function parseManualItem(item){
 }
 function manualStoreItem(base, month){ return `${base||''}::m${month}`; }
 const annualOpenQ={1:false,2:false,3:false,4:false};
-const annualOpenParties=new Set(); // 펼쳐 둔 원부자재 업체 (분기 열을 열고 닫아도 유지)
+// 연간 탭 원부자재 수량 단위: 품목이 getter면 Pcs, Crystal이면 PK, 나노신소재·씨에프씨테라메이트·테크피아는 kg, 그 외는 개
+function annualUnit(party, item){
+  const it=String(item||'').toLowerCase();
+  if(/getter|게터/.test(it)) return 'Pcs';
+  if(/crystal|크리스탈/.test(it)) return 'PK';
+  if(/나노신소재|씨에프씨|cfc|테크피아/i.test(String(party||''))) return 'kg';
+  return '개';
+}
+// 연간 탭 조명 매출처 그룹 (그룹 이름 → 회사 이름들)
+const ANNUAL_LIGHT_GROUPS={
+  '동우':['동우','건국전력','건국','성우이앤엠','성우','신우이앤씨','신우'],
+  '대덕전자':['대덕전자','성화전설','성화','신세기전력','신세기','세현이앤티','세현','오성전기'],
+  'SK':['SK','탑이앤씨','탑','SG E&C']
+};
+function annualLightGroup(party){
+  const norm=x=>String(x||'').replace(/\s+/g,'').toUpperCase();
+  const p=norm(party);
+  for(const [g,names] of Object.entries(ANNUAL_LIGHT_GROUPS)){
+    if(names.some(n=>norm(n)===p)) return g;
+  }
+  return '';
+}
+const annualOpenParties=new Set(); // 펼쳐 둔 원부자재 업체·조명 그룹 (분기 열을 열고 닫아도 유지)
 function toggleAnnualPartyRow(tr){
   const gid=tr.dataset.gid, key=tr.dataset.pkey;
   const wasOpen=annualOpenParties.has(key);
@@ -6738,10 +6760,11 @@ function renderAnnual(){
   function buildSection(category, buyerOrSellerKey, amtKey){
     const acc={};
     function ensure(party, item){
-      const cat=partyCategory(category, party);
+      const grp=category==='매출'?annualLightGroup(party):'';
+      const cat=grp?'조명':partyCategory(category, party);
       const base=cat==='원부자재'?(item||''):'';
       const key=annualRowKey(category,party,base);
-      if(!acc[key]) acc[key]={key,party,item:base,cat,m:{},qty:{},qq:{},qqty:{},ttl:0,ttlq:0};
+      if(!acc[key]) acc[key]={key,party,item:base,cat,group:grp,unit:cat==='원부자재'?annualUnit(party,base):'',m:{},qty:{},qq:{},qqty:{},ttl:0,ttlq:0};
       return acc[key];
     }
     function add(row, mo, amt, qty){
@@ -6784,7 +6807,7 @@ function renderAnnual(){
         row.ttlq+=qty;
       }
     });
-    return Object.values(acc).filter(r=>r.ttl!==0).sort((a,b)=>(a.party+a.item).localeCompare(b.party+b.item));
+    return Object.values(acc).filter(r=>r.ttl!==0).sort((a,b)=>((a.group||a.party)+'\u0001'+a.party+a.item).localeCompare((b.group||b.party)+'\u0001'+b.party+b.item,'ko'));
   }
 
   const sellRowsAll=buildSection('매출','seller','samt');
@@ -6793,7 +6816,7 @@ function renderAnnual(){
   const buyRows=curTab==='all'?buyRowsAll:buyRowsAll.filter(r=>r.cat===curTab);
 
   function qtyHtml(r, qty){
-    return (showQty && qty) ? `<div class="an-qty">${fmt(qty)}개</div>` : '';
+    return (showQty && qty) ? `<div class="an-qty">${fmt(qty)}${r.unit||'개'}</div>` : '';
   }
   function moneyCells(row, withQty){
     const body=cols.map(c=>{
@@ -6810,7 +6833,7 @@ function renderAnnual(){
       return `<td class="r an-total">${fmt(row.ttl)}</td>`;
     }).join('');
     if(!showQty) return body;
-    return body+`<td class="r">${row.ttlq?fmt(row.ttlq)+'개':'-'}</td>`;
+    return body+`<td class="r">${row.ttlq?fmt(row.ttlq)+(row.unit||'개'):'-'}</td>`;
   }
   function sumRows(rows){
     const row={party:'',item:'',cat:'',m:{},qty:{},qq:{},qqty:{},ttl:0,ttlq:0};
@@ -6828,22 +6851,26 @@ function renderAnnual(){
     });
     return row;
   }
-  // 원부자재는 업체 줄(합계)을 누르면 품목별 집계가 펼쳐진다. 품목이 하나뿐인 업체와 조명 등 다른 분류는 한 줄로 표시
+  // 접이식 표시: 원부자재는 업체 줄(합계)을 누르면 품목별로, 조명 매출처 그룹(동우·대덕전자·SK)은 그룹 줄을 누르면 회사별로 펼쳐진다
+  // 품목이 하나뿐인 원부자재 업체와 그룹에 속하지 않는 조명 업체는 한 줄로 표시
   let _grpSeq=0;
   function renderPartyGroups(rows, tableKey){
     const parts=[];
-    const byParty=new Map();
+    const byKey=new Map();
     rows.forEach(r=>{
-      if(r.cat!=='원부자재'){ parts.push({flat:r}); return; }
-      if(!byParty.has(r.party)){
-        const g={party:r.party, items:[]};
-        byParty.set(r.party,g);
+      let gk='', kind='';
+      if(r.group){ gk='G|'+r.group; kind='party'; }
+      else if(r.cat==='원부자재'){ gk='P|'+r.party; kind='item'; }
+      if(!gk){ parts.push({flat:r}); return; }
+      if(!byKey.has(gk)){
+        const g={kind, label:r.group||r.party, cat:r.cat, items:[]};
+        byKey.set(gk,g);
         parts.push({group:g});
       }
-      byParty.get(r.party).items.push(r);
+      byKey.get(gk).items.push(r);
     });
     return parts.map(p=>{
-      if(p.flat || p.group.items.length<2){
+      if(p.flat || (p.group.kind==='item' && p.group.items.length<2)){
         const r=p.flat||p.group.items[0];
         const material=r.cat==='원부자재';
         const itemCell=showItem?`<td>${material?(r.item||'-'):'-'}</td>`:'';
@@ -6856,18 +6883,22 @@ function renderAnnual(){
       }
       const g=p.group;
       const gid='ang'+(tableKey==='매출'?'s':'b')+(_grpSeq++);
-      const pkey=tableKey+'|'+g.party;
+      const pkey=tableKey+'|'+g.kind+'|'+g.label;
       const open=annualOpenParties.has(pkey);
       const sum=sumRows(g.items);
+      // 수량은 품목의 단위가 모두 같을 때만 업체 줄에 합계로 보여준다
+      const units=[...new Set(g.items.map(r=>r.unit).filter(Boolean))];
+      const sameUnit=g.kind==='item' && units.length===1;
+      const headQty=sameUnit?{...sum, unit:units[0]}:{...sum, ttlq:0};
       const head=`<tr data-gid="${gid}" data-pkey="${escHtml(pkey)}" onclick="toggleAnnualPartyRow(this)" style="cursor:pointer;background:#fafafa">
-          <td style="font-weight:600;padding:8px 10px"><span class="an-arrow" id="${gid}-arrow">${open?'▾':'▸'}</span>${escHtml(g.party)}</td>
-          ${showItem?'<td style="color:#888">(업체 합계)</td>':''}
-          <td class="an-cat">원부자재</td>
-          ${moneyCells({...sum, ttlq:0}, false)}
+          <td style="font-weight:600;padding:8px 10px"><span class="an-arrow" id="${gid}-arrow">${open?'▾':'▸'}</span>${escHtml(g.label)}</td>
+          ${showItem?`<td style="color:#888">${g.kind==='item'?'(업체 합계)':'(그룹 합계)'}</td>`:''}
+          <td class="an-cat">${g.cat}</td>
+          ${moneyCells(headQty, sameUnit)}
         </tr>`;
       const kids=g.items.map(r=>`<tr class="${gid}-row" style="display:${open?'table-row':'none'};background:#fbfbfb">
-          <td style="padding:6px 10px 6px 28px;color:#888;font-size:12px">└</td>
-          ${showItem?`<td>${r.item||'-'}</td>`:''}
+          <td style="padding:6px 10px 6px 28px;color:#888;font-size:12px">└ ${g.kind==='party'?escHtml(r.party):''}</td>
+          ${showItem?`<td>${g.kind==='item'?(r.item||'-'):'-'}</td>`:''}
           <td class="an-cat"></td>
           ${moneyCells(r, true)}
         </tr>`).join('');
@@ -6880,7 +6911,7 @@ function renderAnnual(){
     const span=1+(showItem?1:0)+1;
     return `<tr class="${cls||''}" style="background:${cls==='tot'?'':'#f0f0f0'}">
       <td colspan="${span}" style="padding:8px 10px;font-weight:600">${label}</td>
-      ${moneyCells(sum, true)}
+      ${moneyCells({...sum, ttlq:0}, false)}
     </tr>`;
   }
 
