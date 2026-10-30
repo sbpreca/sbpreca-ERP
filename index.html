@@ -6619,7 +6619,7 @@ function annualUnit(party, item){
   if(/getter|게터/.test(it)) return 'Pcs';
   if(/crystal|크리스탈/.test(it)) return 'PK';
   if(/나노신소재|씨에프씨|cfc|테크피아/i.test(String(party||''))) return 'kg';
-  return '개';
+  return 'EA';
 }
 // 연간 탭 조명 매출처 그룹 (그룹 이름 → 회사 이름들)
 const ANNUAL_LIGHT_GROUPS={
@@ -6815,7 +6815,7 @@ function renderAnnual(){
   const buyRows=curTab==='all'?buyRowsAll:buyRowsAll.filter(r=>r.cat===curTab);
 
   function qtyHtml(r, qty){
-    return (showQty && qty) ? `<div class="an-qty">${fmt(qty)}${r.unit||'개'}</div>` : '';
+    return (showQty && qty) ? `<div class="an-qty">${fmt(qty)}${r.unit||'EA'}</div>` : '';
   }
   function moneyCells(row, withQty){
     const body=cols.map(c=>{
@@ -6832,7 +6832,7 @@ function renderAnnual(){
       return `<td class="r an-total">${fmt(row.ttl)}</td>`;
     }).join('');
     if(!showQty) return body;
-    return body+`<td class="r">${row.ttlq?fmt(row.ttlq)+(row.unit||'개'):'-'}</td>`;
+    return body+`<td class="r">${row.ttlq?fmt(row.ttlq)+(row.unit||'EA'):'-'}</td>`;
   }
   function sumRows(rows){
     const row={party:'',item:'',cat:'',m:{},qty:{},qq:{},qqty:{},ttl:0,ttlq:0};
@@ -7921,11 +7921,16 @@ function printClosingByCompany(){
   if(!_closingCache) return;
   const {cm,bm,sm,stKey}=_closingCache;
 
-  // 업체 목록 수집
-  const allCompanies = [
-    ...Object.keys(bm).map(n=>({name:n, type:'buy'})),
-    ...Object.keys(sm).map(n=>({name:n, type:'sell'})),
-  ];
+  // 업체 목록 수집: 납품현황과 같은 기준 (그 달 납품일에 납품완료된 품목, 마감제외 표시 건은 제외)
+  const _cmap=new Map();
+  orders.forEach(o=>(o.items||[]).forEach(it=>{
+    if(!isDeliveredItem(it) || it.closing_sell_exclude) return;
+    if(cm && !(it.ship && ym(it.ship)===cm)) return;
+    if(it.buyer) _cmap.set('buy|'+it.buyer, {name:it.buyer, type:'buy'});
+    const sc=sellerCompany(it.seller);
+    if(sc) _cmap.set('sell|'+sc, {name:sc, type:'sell'});
+  }));
+  const allCompanies=[..._cmap.values()].sort((a,b)=>a.name.localeCompare(b.name,'ko'));
 
   // 검색 선택 팝업
   const existing = document.getElementById('cl-company-select-modal');
@@ -7988,77 +7993,88 @@ function doPrintClosingByCompany(){
   modal.remove();
   if(!_closingCache) return;
   const {cm,bm,sm,stKey}=_closingCache;
-  
-  // 선택된 업체만 출력 (기존 로직 활용)
-  const selectedBm = {};
-  const selectedSm = {};
-  selected.forEach(s=>{ if(s.type==='buy') selectedBm[s.name]=bm[s.name]; else selectedSm[s.name]=sm[s.name]; });
-
-  // 아래 기존 출력 로직을 selectedBm/selectedSm으로 대체
-  const bm_orig = bm, sm_orig = sm;
-  Object.assign(bm, {}); Object.keys(bm).forEach(k=>delete bm[k]); Object.assign(bm, selectedBm);
-  Object.assign(sm, {}); Object.keys(sm).forEach(k=>delete sm[k]); Object.assign(sm, selectedSm);
-  _doPrintClosingByCompany(cm, bm, sm, stKey);
-  Object.assign(bm, {}); Object.keys(bm).forEach(k=>delete bm[k]); Object.assign(bm, bm_orig);
-  Object.assign(sm, {}); Object.keys(sm).forEach(k=>delete sm[k]); Object.assign(sm, sm_orig);
+  _doPrintClosingByCompany(cm, selected, bm, sm, stKey);
 }
 
-function _doPrintClosingByCompany(cm, bm, sm, stKey){
+function _doPrintClosingByCompany(cm, selected, bm, sm, stKey){
   const today=new Date().toISOString().slice(0,10).replace(/-/g,'.');
 
-  function companyPage(name, v, type){
-    const vat=Math.round(v.amt*0.1);
+  // 납품현황과 같은 기준: 그 달 납품일(ship)에 납품완료된 품목을 줄 단위로. 마감제외 표시 건은 뺀다 (정산월 재지정은 무시)
+  function deliveryLines(name, type){
+    const lines=[];
+    orders.forEach(o=>(o.items||[]).forEach(it=>{
+      if(!isDeliveredItem(it) || it.closing_sell_exclude) return;
+      if(cm && !(it.ship && ym(it.ship)===cm)) return;
+      if(type==='buy'){
+        if(it.buyer!==name) return;
+        lines.push({d:it.ship, item:it.item, spec:it.spec, qty:+it.bqty||0, price:+it.bprice||0, amt:+it.bamt||0});
+      }else{
+        if(sellerCompany(it.seller)!==name) return;
+        lines.push({d:it.ship, item:it.item, spec:it.spec, qty:+it.sqty||0, price:+it.sprice||0, amt:+it.samt||0});
+      }
+    }));
+    return lines.filter(l=>l.amt!==0||l.qty!==0)
+      .sort((a,b)=>String(a.d||'').localeCompare(String(b.d||''))||String(a.item||'').localeCompare(String(b.item||''),'ko'));
+  }
+
+  function companyPage(name, type){
+    const lines=deliveryLines(name, type);
+    const supply=lines.reduce((s,l)=>s+l.amt,0);
+    const vat=Math.round(supply*0.1);
+    const v=(type==='buy'?bm:sm)[name]||{};
+    const adv=+v.advance||0;
+    const net=supply+vat-adv;
     const due=closingState[stKey(type,name,'date')]||computeDueDate(name,cm);
     const tax=closingState[stKey(type,name,'tax')]||'미발급';
     const done=closingState[stKey(type,name,'done')]||'미완료';
     const label=type==='buy'?'매입처':'매출처';
     const dateLabel=type==='buy'?'출금예정일':'입금예정일';
     const amtLabel=type==='buy'?'결제예정액':'청구예정액';
+    const advLabel=type==='buy'?'선급금 차감':'선수금 차감';
 
-    // 품목별 상세
-    const itemRows=Object.entries(v.items||{}).map(([item,iv])=>{
-      const itemVat=Math.round((iv.samt||iv.bamt||0)*0.1);
-      const itemAmt=iv.samt||iv.bamt||0;
-      return `<tr>
-        <td class="l" style="padding-left:20px">└ ${item}</td>
-        <td>${fmt(itemAmt)}</td><td>${fmt(itemVat)}</td><td>${fmt(itemAmt+itemVat)}</td>
-        <td colspan="3"></td>
-      </tr>`;
-    }).join('');
+    const rows=lines.length?lines.map(l=>`<tr>
+        <td>${l.d?String(l.d).replace(/-/g,'.'):''}</td>
+        <td class="l">${escHtml(l.item||'')}</td>
+        <td class="l">${escHtml(l.spec||'')}</td>
+        <td>${fmt(l.qty)}</td><td>${fmt(l.price)}</td><td>${fmt(l.amt)}</td>
+      </tr>`).join('')
+      :`<tr><td colspan="6" style="color:#999;padding:14px">해당 월 납품 내역이 없어요</td></tr>`;
 
     return `<div class="report-page" style="width:794px;page-break-after:always">
       <div class="report-title">${MY.name}</div>
       <div class="report-sub">마감 기간: ${cm||'전체'}　|　출력일: ${today}</div>
-      <div class="report-section-title">${label} 마감 확인서</div>
+      <div class="report-section-title">${label} 마감 확인서 · ${escHtml(name)}</div>
       <table class="report-tbl">
         <thead><tr>
-          <th>구분</th><th>공급가액</th><th>부가세(10%)</th><th>${amtLabel}</th>
+          <th style="width:80px">납품일자</th><th>품목</th><th style="width:110px">규격</th>
+          <th style="width:60px">수량</th><th style="width:80px">단가</th><th style="width:100px">공급가액</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <table class="report-tbl" style="margin-top:14px">
+        <thead><tr>
+          <th>구분</th><th>공급가액</th><th>부가세(10%)</th>${adv?`<th>${advLabel}</th>`:''}<th>${amtLabel}</th>
           <th>${dateLabel}</th><th>계산서</th><th>처리완료</th>
         </tr></thead>
         <tbody>
-          <tr class="grp-head"><td colspan="7">${name}</td></tr>
-          ${itemRows}
           <tr class="grand">
-            <td class="l" style="font-weight:700">${name} 합계</td>
-            <td>${fmt(v.amt)}</td><td>${fmt(vat)}</td><td>${fmt(v.payNet!=null?v.payNet:(v.amt+vat))}</td>
+            <td class="l" style="font-weight:700">${escHtml(name)} 합계</td>
+            <td>${fmt(supply)}</td><td>${fmt(vat)}</td>${adv?`<td>-${fmt(adv)}</td>`:''}<td>${fmt(net)}</td>
             <td>${due||'-'}</td><td>${tax}</td><td>${done}</td>
           </tr>
         </tbody>
       </table>
       <div style="margin-top:30px;font-size:12px;color:#555">
         <p>위와 같이 마감 내역을 확인합니다.</p>
-        <div style="margin-top:40px;display:flex;justify-content:space-between">
-          
-        </div>
       </div>
     </div>`;
   }
 
-  // 매입처 + 매출처 업체별 페이지 생성
+  // 매입처 먼저, 그다음 매출처 순서로 업체별 페이지 생성
   const pages=[
-    ...Object.entries(bm).filter(([,v])=>v.amt>0).map(([name,v])=>companyPage(name,v,'buy')),
-    ...Object.entries(sm).filter(([,v])=>v.amt>0).map(([name,v])=>companyPage(name,v,'sell'))
-  ].join('');
+    ...selected.filter(x=>x.type==='buy'),
+    ...selected.filter(x=>x.type==='sell')
+  ].map(x=>companyPage(x.name,x.type)).join('');
 
   document.getElementById('doc-content').innerHTML=pages;
   document.getElementById('dynamic-page-style').textContent='';
