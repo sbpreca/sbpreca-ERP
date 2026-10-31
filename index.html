@@ -8016,8 +8016,6 @@ function closingAdvanceDeduct(name, type, cm){
 }
 
 function _doPrintClosingByCompany(cm, selected){
-  const today=new Date().toISOString().slice(0,10).replace(/-/g,'.');
-  const stKey=(type,name,field)=>`${cm||'all'}_${type}_${name}_${field}`;
 
   // 납품현황과 같은 기준: 그 달 납품일(ship)에 납품완료된 품목을 줄 단위로. 마감제외 표시 건은 뺀다 (정산월 재지정은 무시)
   function deliveryLines(name, type){
@@ -8043,44 +8041,39 @@ function _doPrintClosingByCompany(cm, selected){
     const vat=Math.round(supply*0.1);
     const adv=closingAdvanceDeduct(name, type, cm);
     const net=supply+vat-adv;
-    const due=closingState[stKey(type,name,'date')]||computeDueDate(name,cm);
-    const tax=closingState[stKey(type,name,'tax')]||'미발급';
-    const done=closingState[stKey(type,name,'done')]||'미완료';
     const label=type==='buy'?'매입처':'매출처';
-    const dateLabel=type==='buy'?'출금예정일':'입금예정일';
     const amtLabel=type==='buy'?'결제예정액':'청구예정액';
     const advLabel=type==='buy'?'선급금 차감':'선수금 차감';
 
-    const rows=lines.length?lines.map(l=>`<tr>
-        <td>${l.d?String(l.d).replace(/-/g,'.'):''}</td>
+    const rows=lines.length?lines.map(l=>{
+      const lv=Math.round(l.amt*0.1);
+      return `<tr>
+        <td style="text-align:center">${l.d?String(l.d).replace(/-/g,'.'):''}</td>
         <td class="l">${escHtml(l.item||'')}</td>
         <td class="l">${escHtml(l.spec||'')}</td>
-        <td>${fmt(l.qty)}</td><td>${fmt(l.price)}</td><td>${fmt(l.amt)}</td>
-      </tr>`).join('')
-      :`<tr><td colspan="6" style="color:#999;padding:14px">해당 월 납품 내역이 없어요</td></tr>`;
+        <td>${fmt(l.qty)}</td><td>${fmt(l.price)}</td><td>${fmt(l.amt)}</td><td>${fmt(lv)}</td><td>${fmt(l.amt+lv)}</td>
+      </tr>`;
+    }).join('')
+      :`<tr><td colspan="8" style="color:#999;padding:14px">해당 월 납품 내역이 없어요</td></tr>`;
 
     return `<div class="report-page" style="width:794px;page-break-after:always">
       <div class="report-title">${MY.name}</div>
-      <div class="report-sub">마감 기간: ${cm||'전체'}　|　출력일: ${today}</div>
+      <div class="report-sub">마감 기간: ${cm||'전체'}</div>
       <div class="report-section-title">${label} 마감 확인서 · ${escHtml(name)}</div>
       <table class="report-tbl">
         <thead><tr>
-          <th style="width:80px">납품일자</th><th>품목</th><th style="width:110px">규격</th>
-          <th style="width:60px">수량</th><th style="width:80px">단가</th><th style="width:100px">공급가액</th>
-        </tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-      <table class="report-tbl" style="margin-top:14px">
-        <thead><tr>
-          <th>구분</th><th>공급가액</th><th>부가세(10%)</th>${adv?`<th>${advLabel}</th>`:''}<th>${amtLabel}</th>
-          <th>${dateLabel}</th><th>계산서</th><th>처리완료</th>
+          <th style="width:76px">납품일자</th><th>품목</th><th style="width:100px">규격</th>
+          <th style="width:50px">수량</th><th style="width:70px">단가</th>
+          <th style="width:88px">공급가액</th><th style="width:72px">부가세</th><th style="width:90px">합계금액</th>
         </tr></thead>
         <tbody>
+          ${rows}
           <tr class="grand">
-            <td class="l" style="font-weight:700">${escHtml(name)} 합계</td>
-            <td>${fmt(supply)}</td><td>${fmt(vat)}</td>${adv?`<td>-${fmt(adv)}</td>`:''}<td>${fmt(net)}</td>
-            <td>${due||'-'}</td><td>${tax}</td><td>${done}</td>
+            <td class="l" colspan="5" style="font-weight:700">${escHtml(name)} 합계</td>
+            <td>${fmt(supply)}</td><td>${fmt(vat)}</td><td>${fmt(supply+vat)}</td>
           </tr>
+          ${adv?`<tr><td class="l" colspan="7">${advLabel}</td><td>-${fmt(adv)}</td></tr>
+          <tr class="grp-sub"><td class="l" colspan="7">${amtLabel}</td><td>${fmt(net)}</td></tr>`:''}
         </tbody>
       </table>
       <div style="margin-top:30px;font-size:12px;color:#555">
