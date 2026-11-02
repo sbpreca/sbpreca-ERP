@@ -4627,7 +4627,7 @@ function renderList(){
       </div>
       <div class="card-btns">
         <button class="btn" style="font-size:12px;padding:5px 12px" onclick="loadOrder('${o.no}')">수정</button>
-        <button class="btn btn-po" style="font-size:12px;padding:5px 12px" onclick="loadAndDoc('${o.no}')">발주서 PDF</button>
+        <button class="btn btn-po" style="font-size:12px;padding:5px 12px" onclick="loadAndDoc('${o.no}')" title="저장된 발주서 보기">발주서 PDF</button>
         <button class="btn" style="font-size:12px;padding:5px 12px;background:#f0fdf4;border-color:#86efac;color:#166534" onclick="copyOrder('${o.no}')">복사</button>
         <button class="btn" style="font-size:12px;padding:5px 12px;color:#dc2626;border-color:#fecaca" onclick="deleteOrder('${o.no}')">삭제</button>
       </div>
@@ -4636,7 +4636,8 @@ function renderList(){
 
 }
 async function loadAndDoc(no){
-  // 수정 화면이 같은 발주를 열고 있으면 폼 내용(방금 수정분)을 PDF에 우선 사용
+  // 목록「발주서 PDF」: 저장된 발주서를 바로 보여 준다.
+  // 번호/배송지 확인 프롬프트와 수정 화면(loadOrder)으로 보내지 않는다. (발행·수정은 입력 화면의「발주서 PDF」)
   let formSnap=null;
   const formNo=String((document.getElementById('f-no')||{}).value||'').trim();
   if(formNo===no && getRows().length){
@@ -4644,7 +4645,6 @@ async function loadAndDoc(no){
   }
   clearTimeout(_persistTimer);
   try{ await saveOrdersToDb(); }catch(e){ console.warn(e); }
-  // 목록에서 연 경우: DB를 다시 읽어 옛 품목 잔존분을 제거한 최신본 사용
   let order=formSnap?cloneOrder(formSnap):null;
   if(!formSnap && !_dirtyOrderNos.has(no)){
     const fresh=await refreshOrderFromDb(no);
@@ -4652,56 +4652,10 @@ async function loadAndDoc(no){
   }
   if(!order) order=cloneOrder(orders.find(x=>x.no===no));
   if(!order){alert('발주를 찾을 수 없어요');return;}
-  const noRaw=prompt('발주 번호를 확인/수정해주세요', order.no);
-  if(noRaw===null)return;
-  const finalNo=String(noRaw).trim()||order.no;
-  // 프롬프트에서 번호를 바꿨으면 실제 발주번호로 저장 (PDF에만 잠깐 바꾸던 문제 수정)
-  if(finalNo!==order.no){
-    const fromNo=order.no;
-    renameOrderInMemory(fromNo, finalNo);
-    order.no=finalNo;
-    const idx=orders.findIndex(x=>x.no===finalNo);
-    if(idx>=0) orders[idx]=cloneOrder(order); else orders.push(cloneOrder(order));
-    _formSourceNo=finalNo;
-    persist(finalNo);
-    clearTimeout(_persistTimer);
-    try{ await saveOrdersToDb(); }catch(e){ console.warn(e); }
-  }else{
-    order.no=finalNo;
-  }
-  // 매입처 그룹별 배송지 직접입력 옵션
-  const byBuyer={};
-  (order.items||[]).forEach(i=>{if(i&&i.buyer)(byBuyer[i.buyer]=byBuyer[i.buyer]||[]).push(i);});
-  for(const [,its] of Object.entries(byBuyer)){
-    const sample=its.find(i=>i.seller||i.deliver_addr||i.deliver_label)||its[0]||{};
-    const def=resolveDeliverInfo(sample.seller||'', sample);
-    const overridden=promptDeliverOverrideIfWanted(def.company||sellerCompany(sample.seller||''), def);
-    its.forEach(i=>{
-      i.deliver_label=overridden.label||'';
-      i.deliver_addr=overridden.addr||'';
-      i.deliver_contact=overridden.contact||'';
-      if(overridden.label && def.company){
-        i.seller=encodeSeller(def.company, overridden.label);
-      }
-    });
-  }
-  const live=orders.find(o=>o.no===order.no);
-  if(live&&Array.isArray(live.items)){
-    order.items.forEach((it,idx)=>{
-      const tgt=live.items[idx];
-      if(!tgt) return;
-      tgt.deliver_label=it.deliver_label||'';
-      tgt.deliver_addr=it.deliver_addr||'';
-      tgt.deliver_contact=it.deliver_contact||'';
-      if(it.seller) tgt.seller=it.seller;
-    });
-    persist(order.no);
-  }
   const built=buildPOHtml(order);
   if(!built.html){alert('발주서에 넣을 품목이 없어요 (매입처를 확인해주세요)');return;}
   setDocMailMeta('po', Object.keys(built.groups).map(name=>({name, role:'buyer'})), built.items);
   openDocOverlay(built.html);
-  loadOrder(finalNo);
 }
 
 // ── 납품현황으로 이동 (발주번호 필터) ──
