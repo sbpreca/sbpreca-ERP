@@ -162,8 +162,8 @@ input[readonly]{background:#f5f5f5;color:#999}
 .po-tbl tfoot td{background:#1f3864;color:#fff;font-weight:700;padding:8px 8px}
 .po-tbl td.doc-fit,.ts-tbl td.doc-fit{overflow:hidden}
 .doc-fit-text{display:block;width:100%;line-height:1.15;white-space:normal;word-break:break-all}
-.po-tbl td.doc-memo,.ts-tbl td.doc-memo{padding:2px 4px;overflow:hidden;text-align:left;vertical-align:middle}
-.doc-memo-input{display:block;width:100%;height:100%;min-height:36px;max-height:38px;border:none;background:transparent;resize:none;font-family:inherit;font-size:12px;line-height:1.15;color:#111;padding:1px 2px;margin:0;box-sizing:border-box;overflow:hidden;white-space:pre-wrap;word-break:break-all;text-align:left}
+.po-tbl td.doc-memo,.ts-tbl td.doc-memo{padding:2px 4px;overflow:hidden;text-align:center;vertical-align:middle}
+.doc-memo-input{display:block;width:100%;height:100%;min-height:36px;max-height:38px;border:none;background:transparent;resize:none;font-family:inherit;font-size:12px;line-height:1.15;color:#111;padding:1px 2px;margin:0;box-sizing:border-box;overflow:hidden;white-space:pre-wrap;word-break:break-all;text-align:center}
 .doc-memo-input:hover{background:#fffde7}
 .doc-memo-input:focus{background:#fff9c4;outline:none}
 .po-foot{border:var(--doc-frame);margin-top:12px;margin-bottom:0;display:flex;flex-direction:column;flex:1 1 auto;min-height:0;box-sizing:border-box}
@@ -3038,6 +3038,8 @@ function docMemoHtml(text){
 function fitDocMemoCell(el){
   if(!el) return;
   el.style.fontSize='12px';
+  el.style.paddingTop='1px';
+  el.style.paddingBottom='1px';
   const td=el.parentElement;
   if(!td) return;
   const maxH=Math.max(12, td.clientHeight-2);
@@ -3047,6 +3049,12 @@ function fitDocMemoCell(el){
     size=Math.round((size-0.5)*10)/10;
     el.style.fontSize=size+'px';
     guard++;
+  }
+  // 내용이 칸보다 짧으면 위·아래 패딩으로 세로 가운데 맞춤
+  const contentH=el.scrollHeight;
+  if(contentH>0 && contentH<maxH-1){
+    el.style.paddingTop=Math.max(1, Math.floor((maxH-contentH)/2))+'px';
+    el.style.paddingBottom='1px';
   }
 }
 /** 품목·규격·비고가 칸 높이를 넘으면 글씨를 줄여 칸 안에 맞춘다 */
@@ -4102,7 +4110,7 @@ async function buildDocPdfBase64(){
       const div=document.createElement('div');
       div.textContent=inp.value||'';
       const fs=inp.style.fontSize||'12px';
-      div.style.cssText=`white-space:pre-wrap;word-break:break-all;font-size:${fs};line-height:1.15;width:100%;height:100%;overflow:hidden`;
+      div.style.cssText=`white-space:pre-wrap;word-break:break-all;font-size:${fs};line-height:1.15;width:100%;height:100%;overflow:hidden;text-align:center;display:flex;align-items:center;justify-content:center`;
       inp.replaceWith(div);
     });
     host.appendChild(clone);
