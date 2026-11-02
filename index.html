@@ -221,6 +221,9 @@ input[readonly]{background:#f5f5f5;color:#999}
 .ts-contact-input,.ts-addr-input,.doc-inline-input{border:none;background:transparent;width:100%;font:inherit;font-size:12px;color:#111;padding:0;margin:0;border-radius:3px;box-sizing:border-box;outline:1px solid transparent;outline-offset:2px}
 .ts-contact-input:hover,.ts-addr-input:hover,.doc-inline-input:hover{background:#fffde7;outline-color:#fde68a}
 .ts-contact-input:focus,.ts-addr-input:focus,.doc-inline-input:focus{background:#fff9c4;outline-color:#f59e0b}
+/* 서류 입력칸: 비어 있을 때 placeholder 안내문이 인쇄·화면에 보이지 않게 */
+.doc-inline-input::placeholder,.ts-contact-input::placeholder,.ts-addr-input::placeholder,
+.doc-note-input::placeholder,.doc-memo-input::placeholder{color:transparent;opacity:0}
 .ts-amt-box{border:var(--doc-frame);padding:8px 14px;margin-bottom:12px;display:flex;gap:16px;align-items:center;box-sizing:border-box}
 .ts-amt-lbl{font-size:12px;color:#111;font-weight:700;min-width:36px}
 .ts-amt-val{font-size:18px;font-weight:700;color:#111}
@@ -1324,17 +1327,28 @@ function onSellerCompanyChange(sel){
   autoSPrice(sel);
 }
 /** 품목(또는 등록정보)에서 납품지 주소·담당자 해석 */
+/** 서류에 그대로 보이면 안 되는 안내·기본 문구 */
+function isDocGuideText(s){
+  const t=String(s||'').replace(/\u3000/g,' ').trim();
+  if(!t) return true;
+  return /^(직접\s*입력|납품\s*주소|납품처|납품장소|담당자(\s*입력)?|주소(\s*입력)?|특기사항을\s*입력하세요|유효기간|지불조건)$/i.test(t);
+}
+function docFieldText(s){
+  const t=String(s||'').replace(/\u3000/g,' ').trim();
+  return isDocGuideText(t)?'':t;
+}
 function resolveDeliverInfo(rawSeller, item){
   const company=sellerCompany(rawSeller||'');
   const siteName=sellerSite(rawSeller||'');
   const site=findDeliverySite(company, siteName);
   const si=sellerInfo(rawSeller||company);
   const it=item||{};
+  const rawLabel=String(it.deliver_label||siteName||'').trim();
   return {
     company,
-    label:String(it.deliver_label||siteName||'').trim(),
-    addr:String(it.deliver_addr!=null && it.deliver_addr!==''?it.deliver_addr:((site&&site.addr)||si.addr||'')).trim(),
-    contact:String(it.deliver_contact!=null && it.deliver_contact!==''?it.deliver_contact:((site&&site.contact)||si.contact||'')).trim()
+    label:docFieldText(rawLabel),
+    addr:docFieldText(String(it.deliver_addr!=null && it.deliver_addr!==''?it.deliver_addr:((site&&site.addr)||si.addr||'')).trim()),
+    contact:docFieldText(String(it.deliver_contact!=null && it.deliver_contact!==''?it.deliver_contact:((site&&site.contact)||si.contact||'')).trim())
   };
 }
 /** 발행 시 배송지 직접입력 여부 확인 */
@@ -3037,7 +3051,7 @@ function docFitHtml(text, align){
   return `<td class="${cls}"><span class="doc-fit-text">${escHtml(text||'')}</span></td>`;
 }
 function docMemoHtml(text){
-  return `<td class="doc-memo"><div class="doc-memo-wrap"><textarea class="doc-memo-input" title="줄바꿈해서 입력" oninput="fitDocMemoCell(this)">${escHtml(text||'')}</textarea></div></td>`;
+  return `<td class="doc-memo"><div class="doc-memo-wrap"><textarea class="doc-memo-input" oninput="fitDocMemoCell(this)">${escHtml(text||'')}</textarea></div></td>`;
 }
 function fitDocMemoCell(el){
   if(!el) return;
@@ -3206,7 +3220,7 @@ function buildPOHtml(order){
       <div class="po-meta">
         <div class="po-side">
           <div class="po-row"><span class="po-key">수 신 처</span><span class="po-val">${escHtml(buyer)}</span></div>
-          <div class="po-row"><span class="po-key">담 당 자</span><span class="po-val">${escHtml(formatDocContact(bi.contact||''))}</span></div>
+          <div class="po-row"><span class="po-key">담 당 자</span><span class="po-val">${escHtml(docFieldText(formatDocContact(bi.contact||'')))}</span></div>
           <div class="po-row"><span class="po-key">발 주 일</span><span class="po-val">${escHtml(String(date).replace(/-/g,'.'))}</span></div>
           <div class="po-row"><span class="po-key">　</span><span class="po-val">　</span></div>
         </div>
@@ -3223,10 +3237,10 @@ function buildPOHtml(order){
         <tfoot><tr><td colspan="5" style="text-align:right;padding:8px">합　계</td><td class="r">${fmt(sub)}</td><td colspan="2"></td></tr></tfoot>
       </table>
       <div class="po-foot">
-        <div class="po-foot-row"><span class="po-foot-key">납 품 처</span><span class="po-foot-val"><input class="doc-inline-input" value="${escHtml(deliverDisp||'')}" placeholder="납품처" title="클릭해서 수정"></span></div>
-        <div class="po-foot-row"><span class="po-foot-key">소 재 지</span><span class="po-foot-val"><input class="doc-inline-input" value="${escHtml(di.addr||'')}" placeholder="납품 주소" title="클릭해서 수정"></span></div>
-        <div class="po-foot-row"><span class="po-foot-key">담 당 자</span><span class="po-foot-val"><input class="doc-inline-input" value="${escHtml(formatDocContact(di.contact||'')||'')}" placeholder="담당자" title="클릭해서 수정"></span></div>
-        <div class="po-foot-row po-foot-note"><span class="po-foot-key">특기사항</span><span class="po-foot-val"><textarea class="doc-note-input" title="줄바꿈해서 입력">${escHtml(note)}</textarea></span></div>
+        <div class="po-foot-row"><span class="po-foot-key">납 품 처</span><span class="po-foot-val"><input class="doc-inline-input" value="${escHtml(docFieldText(deliverDisp))}"></span></div>
+        <div class="po-foot-row"><span class="po-foot-key">소 재 지</span><span class="po-foot-val"><input class="doc-inline-input" value="${escHtml(docFieldText(di.addr))}"></span></div>
+        <div class="po-foot-row"><span class="po-foot-key">담 당 자</span><span class="po-foot-val"><input class="doc-inline-input" value="${escHtml(docFieldText(formatDocContact(di.contact||'')))}"></span></div>
+        <div class="po-foot-row po-foot-note"><span class="po-foot-key">특기사항</span><span class="po-foot-val"><textarea class="doc-note-input">${escHtml(note)}</textarea></span></div>
       </div>
     </div>`;
   });
@@ -3335,7 +3349,7 @@ function buildQuotePageHtml({finalNo, customer, contact, contactInfo, date, vali
     ${docMemoHtml(r.memo||'')}
   </tr>`).join('');
   const blank=emptyRows(items.length, Math.max(FIXED_ROWS, items.length), 8, 'empty-row');
-  const deliverVal=deliver||si.addr||'';
+  const deliverVal=docFieldText(deliver||si.addr||'');
   return `<div class="a4-page quote-page">
     <div class="quote-title-band">견 적 서</div>
     <div class="quote-no">No. ${escHtml(finalNo)}</div>
@@ -3344,7 +3358,7 @@ function buildQuotePageHtml({finalNo, customer, contact, contactInfo, date, vali
         <div class="po-row"><span class="po-key">수 신 처</span><span class="po-val">${escHtml(customer)}</span></div>
         <div class="po-row"><span class="po-key">담 당 자</span><span class="po-val">${escHtml(formatDocContact(contact))}${contactInfo?'　'+escHtml(contactInfo):''}</span></div>
         <div class="po-row"><span class="po-key">견 적 일</span><span class="po-val">${escHtml(String(date).replace(/-/g,'.'))}</span></div>
-        <div class="po-row"><span class="po-key">유효기간</span><span class="po-val"><input class="doc-inline-input" value="${escHtml(valid||'')}" placeholder="유효기간" title="클릭해서 수정"></span></div>
+        <div class="po-row"><span class="po-key">유효기간</span><span class="po-val"><input class="doc-inline-input" value="${escHtml(docFieldText(valid))}"></span></div>
       </div>
       <div class="po-side">
         <div class="po-row"><span class="po-key">상 호</span><span class="po-val">${escHtml(MY.name)}</span></div>
@@ -3360,13 +3374,13 @@ function buildQuotePageHtml({finalNo, customer, contact, contactInfo, date, vali
       <tfoot><tr><td colspan="5" style="text-align:right;padding:8px">합　계</td><td class="r">${fmt(sub)}</td><td colspan="2"></td></tr></tfoot>
     </table>
     <div class="quote-foot">
-      <div class="po-foot-row"><span class="po-foot-key">지불조건</span><span class="po-foot-val"><input class="doc-inline-input" value="${escHtml(pay||'')}" placeholder="지불조건" title="클릭해서 수정"></span></div>
-      <div class="po-foot-row"><span class="po-foot-key">납품장소</span><span class="po-foot-val"><input class="doc-inline-input" value="${escHtml(deliverVal||'')}" placeholder="납품장소" title="클릭해서 수정"></span></div>
-      <div class="po-foot-row"><span class="po-foot-key">유효기간</span><span class="po-foot-val"><input class="doc-inline-input" value="${escHtml(valid||'')}" placeholder="유효기간" title="클릭해서 수정"></span></div>
+      <div class="po-foot-row"><span class="po-foot-key">지불조건</span><span class="po-foot-val"><input class="doc-inline-input" value="${escHtml(docFieldText(pay))}"></span></div>
+      <div class="po-foot-row"><span class="po-foot-key">납품장소</span><span class="po-foot-val"><input class="doc-inline-input" value="${escHtml(docFieldText(deliverVal))}"></span></div>
+      <div class="po-foot-row"><span class="po-foot-key">유효기간</span><span class="po-foot-val"><input class="doc-inline-input" value="${escHtml(docFieldText(valid))}"></span></div>
       ${MY.bank?`<div class="po-foot-row"><span class="po-foot-key">입금계좌</span><span class="po-foot-val">${escHtml(MY.bank)}</span></div>`:''}
     </div>
     <div class="quote-note">
-      <textarea class="doc-note-input" title="줄바꿈해서 입력">${escHtml(note||'')}</textarea>
+      <textarea class="doc-note-input">${escHtml(note||'')}</textarea>
       <div class="quote-sign">담당자 : ${escHtml(manager)}${mgrInfo.tel?' / '+escHtml(mgrInfo.tel):''}${mgrInfo.email?' / '+escHtml(mgrInfo.email):''}</div>
     </div>
   </div>`;
@@ -4378,8 +4392,8 @@ function tsPageHtml({company, seller, contact, addr, its, dy, dm, dd, tsNo, tsOr
         <div class="ts-row"><span class="ts-key">사업자
 등록번호</span><span class="ts-val">${si.biz||'　'}</span></div>
         <div class="ts-row"><span class="ts-key">상　호</span><span class="ts-val">${company}</span></div>
-        <div class="ts-row"><span class="ts-key">담 당 자</span><span class="ts-val"><input class="ts-contact-input" data-company="${escHtml(company)}" data-site="${escHtml(siteName)}" value="${escHtml(contactText==='　'?'':contactText)}" placeholder="담당자 입력" title="클릭해서 수정"></span></div>
-        <div class="ts-row"><span class="ts-key">사업장주소</span><span class="ts-val"><input class="ts-addr-input" value="${escHtml(addrText||'')}" placeholder="주소 입력" title="클릭해서 수정"></span></div>
+        <div class="ts-row"><span class="ts-key">담 당 자</span><span class="ts-val"><input class="ts-contact-input" data-company="${escHtml(company)}" data-site="${escHtml(siteName)}" value="${escHtml(docFieldText(contactText==='　'?'':contactText))}"></span></div>
+        <div class="ts-row"><span class="ts-key">사업장주소</span><span class="ts-val"><input class="ts-addr-input" value="${escHtml(docFieldText(addrText))}"></span></div>
         <div class="ts-row"><span class="ts-key">업　태</span><span class="ts-val">${si.btype||'　'}</span></div>
       </div>
       <div class="ts-side">
@@ -4411,7 +4425,7 @@ function tsPageHtml({company, seller, contact, addr, its, dy, dm, dd, tsNo, tsOr
     </table>
     <div class="ts-note">
       <div class="ts-note-key">특기사항</div>
-      <textarea class="doc-note-input" title="줄바꿈해서 입력" placeholder="특기사항을 입력하세요"></textarea>
+      <textarea class="doc-note-input"></textarea>
     </div>
     <div class="ts-bank">
       <span>${MY.bank}</span>
