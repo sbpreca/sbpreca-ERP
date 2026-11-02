@@ -1002,6 +1002,7 @@ input[readonly]{background:#f5f5f5;color:#999}
 <div id="overlay">
   <div id="doc-frame">
     <div class="doc-btns">
+      <button id="doc-save-btn" class="doc-close" style="display:none;color:#111;border-color:#111;font-weight:600" onclick="saveDocOverlay()">저장</button>
       <button class="doc-print" onclick="printDocOverlay()">프린트 / PDF 저장</button>
       <button id="mail-open-btn" class="doc-close" style="display:none;color:#0f766e;border-color:#99f6e4" onclick="toggleMailPanel()">메일 보내기</button>
       <label id="mail-sent-wrap" class="mail-sent-wrap" title="발송하면 자동으로 체크됩니다. 직접 고쳐도 됩니다.">
@@ -1012,6 +1013,7 @@ input[readonly]{background:#f5f5f5;color:#999}
       <button class="doc-close" onclick="closeDocOverlay()">닫기</button>
       <button id="ts-save-contact-btn" class="doc-close" style="display:none;color:#1d4ed8;border-color:#bfdbfe" onclick="saveTsContactsToSettings()">담당자 설정 저장</button>
       <span id="ts-edit-hint" style="display:none;font-size:11px;color:#b45309;align-self:center;margin-left:8px">담당자·주소·납품처 입력칸에서 바로 수정할 수 있어요</span>
+      <span id="doc-save-msg" style="display:none;font-size:11px;color:#166534;align-self:center;margin-left:8px"></span>
       <span style="font-size:11px;color:#999;align-self:center;margin-left:8px">※ A4 용지로 인쇄해주세요</span>
     </div>
     <div id="mail-panel" class="mail-panel">
@@ -1344,11 +1346,14 @@ function resolveDeliverInfo(rawSeller, item){
   const si=sellerInfo(rawSeller||company);
   const it=item||{};
   const rawLabel=String(it.deliver_label||siteName||'').trim();
+  // null/undefined = 미설정 → 등록 배송지 사용. '' = 사용자가 비운 값 → 그대로 비움
+  const addrRaw=it.deliver_addr!=null?it.deliver_addr:((site&&site.addr)||si.addr||'');
+  const contactRaw=it.deliver_contact!=null?it.deliver_contact:((site&&site.contact)||si.contact||'');
   return {
     company,
     label:docFieldText(rawLabel),
-    addr:docFieldText(String(it.deliver_addr!=null && it.deliver_addr!==''?it.deliver_addr:((site&&site.addr)||si.addr||'')).trim()),
-    contact:docFieldText(String(it.deliver_contact!=null && it.deliver_contact!==''?it.deliver_contact:((site&&site.contact)||si.contact||'')).trim())
+    addr:docFieldText(String(addrRaw).trim()),
+    contact:docFieldText(String(contactRaw).trim())
   };
 }
 /** 발행 시 배송지 직접입력 여부 확인 */
@@ -1586,9 +1591,10 @@ function orderItemToDbRow(it, orderId, idx, withTs){
   if(withTs){
     row.ts_no=it.ts_no||null;
     row.ts_orig=it.ts_orig||null;
-    row.deliver_label=it.deliver_label||null;
-    row.deliver_addr=it.deliver_addr||null;
-    row.deliver_contact=it.deliver_contact||null;
+    // 빈 문자열('')은 의도적 공란으로 보존. null만 미설정.
+    row.deliver_label=it.deliver_label!=null?String(it.deliver_label):null;
+    row.deliver_addr=it.deliver_addr!=null?String(it.deliver_addr):null;
+    row.deliver_contact=it.deliver_contact!=null?String(it.deliver_contact):null;
   }
   return row;
 }
@@ -1720,9 +1726,10 @@ function persistPoFromOverlay(){
     else { company=deliverDisp; label=''; }
     const buyerItems=(o.items||[]).filter(it=>!buyer || it.buyer===buyer);
     buyerItems.forEach(it=>{
+      // 오버레이에서 고친 값은 공란('')도 그대로 저장 (등록 배송지로 되돌리지 않음)
       it.deliver_addr=addr;
       it.deliver_contact=contact;
-      if(label || company) it.deliver_label=label;
+      it.deliver_label=label;
       if(company){
         const site=label || sellerSite(it.seller||'') || '';
         it.seller=encodeSeller(company, site);
@@ -1853,7 +1860,10 @@ async function loadOrdersFromDb(){
       seller:it.seller, sqty:it.sqty, sprice:it.sprice, samt:it.samt,
       ship:it.ship, status:it.status, closing_sell_exclude:it.closing_sell_exclude||false, closing_month_override:it.closing_month_override||'',
       ts_no:it.ts_no||'', ts_orig:it.ts_orig||'',
-      deliver_label:it.deliver_label||'', deliver_addr:it.deliver_addr||'', deliver_contact:it.deliver_contact||''
+      // null=미설정(등록지 폴백), ''=의도적 공란 — ||'' 로 합치지 않음
+      deliver_label:it.deliver_label!=null?it.deliver_label:null,
+      deliver_addr:it.deliver_addr!=null?it.deliver_addr:null,
+      deliver_contact:it.deliver_contact!=null?it.deliver_contact:null
     }));
     return {
       no:o.no, date:o.date, note:o.note||'', manager:o.manager||'이은진',
@@ -2840,7 +2850,8 @@ function addRow(it={}){
   const companies=Object.keys(SELLERS).sort((a,b)=>a.localeCompare(b,'ko'));
   const sOpts=companies.map(k=>`<option${k===company?' selected':''}>${k}</option>`).join('');
   const sites=getDeliverySites(company);
-  const hasManual=!!(String(it.deliver_addr||'').trim()||String(it.deliver_contact||'').trim()||String(it.deliver_label||'').trim());
+  // null=미설정. ''(빈 문자열)도 서류에서 비운 납품정보로 취급
+  const hasManual=it.deliver_addr!=null||it.deliver_contact!=null||!!String(it.deliver_label||'').trim();
   const extraLabel=hasManual?(it.deliver_label||site||'직접입력'):'';
   const selectedSite=extraLabel||site||(sites.length===1?sites[0].name:'');
   tr.innerHTML=`
@@ -2859,8 +2870,8 @@ function addRow(it={}){
     <td style="text-align:center">${stSel(it.status||'미납품','status')}</td>
     <td><button class="del-btn" onclick="this.closest('tr').remove();calcS()">×</button></td>`;
   if(hasManual){
-    tr.dataset.deliverAddr=it.deliver_addr||'';
-    tr.dataset.deliverContact=it.deliver_contact||'';
+    tr.dataset.deliverAddr=it.deliver_addr!=null?String(it.deliver_addr):'';
+    tr.dataset.deliverContact=it.deliver_contact!=null?String(it.deliver_contact):'';
     tr.dataset.deliverLabel=it.deliver_label||site||'직접입력';
   }
   document.getElementById('items-body').appendChild(tr);
@@ -2916,9 +2927,9 @@ function getRows(){
       bprice:+tr.querySelector('.bp').value||0,
       bamt:(+tr.querySelector('.bq').value||0)*(+tr.querySelector('.bp').value||0),
       seller:encodeSeller(company, site),
-      deliver_addr:tr.dataset.deliverAddr||'',
-      deliver_contact:tr.dataset.deliverContact||'',
-      deliver_label:manualLabel||'',
+      deliver_addr:('deliverAddr' in tr.dataset)?tr.dataset.deliverAddr:null,
+      deliver_contact:('deliverContact' in tr.dataset)?tr.dataset.deliverContact:null,
+      deliver_label:manualLabel||(('deliverLabel' in tr.dataset)?tr.dataset.deliverLabel:null),
       sqty:+tr.querySelector('.sq').value||0,
       sprice:+tr.querySelector('.sp2').value||0,
       samt:(+tr.querySelector('.sq').value||0)*(+tr.querySelector('.sp2').value||0),
@@ -2958,9 +2969,9 @@ function commitFormOrder(){
       ...it,
       ship: it.ship||'',
       status: it.status||'미납품',
-      deliver_addr: it.deliver_addr||'',
-      deliver_contact: it.deliver_contact||'',
-      deliver_label: it.deliver_label||'',
+      deliver_addr: it.deliver_addr!=null?it.deliver_addr:((prev&&prev.deliver_addr!=null)?prev.deliver_addr:null),
+      deliver_contact: it.deliver_contact!=null?it.deliver_contact:((prev&&prev.deliver_contact!=null)?prev.deliver_contact:null),
+      deliver_label: it.deliver_label!=null?it.deliver_label:((prev&&prev.deliver_label!=null)?prev.deliver_label:null),
       memo: (it.memo!=null&&it.memo!=='')?it.memo:((prev&&prev.memo)||''),
       ts_no: (prev&&prev.ts_no)||'',
       ts_orig: (prev&&prev.ts_orig)||'',
@@ -3198,7 +3209,7 @@ function buildPOHtml(order){
     const sub=its.reduce((s,i)=>s+(+i.bamt||0),0);
     // 매입처가 하나면 발급번호 그대로. 여러 장이면 -01, -02 구분
     const poNo=buyerCount===1?docBase:`${docBase}-${String(idx+1).padStart(2,'0')}`;
-    const sample=its.find(i=>i.seller||i.deliver_addr||i.deliver_label)||its[0]||{};
+    const sample=its.find(i=>i.seller||i.deliver_addr!=null||i.deliver_label!=null)||its[0]||{};
     const di=resolveDeliverInfo(sample.seller||'', sample);
     const deliverName=di.company||'';
     const deliverLabel=di.label||'';
@@ -3258,13 +3269,13 @@ async function showPO(){
   const byBuyer={};
   (order.items||[]).forEach(i=>{if(i&&i.buyer)(byBuyer[i.buyer]=byBuyer[i.buyer]||[]).push(i);});
   for(const [,its] of Object.entries(byBuyer)){
-    const sample=its.find(i=>i.seller||i.deliver_addr||i.deliver_label)||its[0]||{};
+    const sample=its.find(i=>i.seller||i.deliver_addr!=null||i.deliver_label!=null)||its[0]||{};
     const def=resolveDeliverInfo(sample.seller||'', sample);
     const overridden=promptDeliverOverrideIfWanted(def.company||sellerCompany(sample.seller||''), def);
     its.forEach(i=>{
-      i.deliver_label=overridden.label||'';
-      i.deliver_addr=overridden.addr||'';
-      i.deliver_contact=overridden.contact||'';
+      i.deliver_label=overridden.label!=null?overridden.label:'';
+      i.deliver_addr=overridden.addr!=null?overridden.addr:'';
+      i.deliver_contact=overridden.contact!=null?overridden.contact:'';
       if(overridden.label && def.company){
         i.seller=encodeSeller(def.company, overridden.label);
       }
@@ -3275,9 +3286,9 @@ async function showPO(){
     order.items.forEach((it,idx)=>{
       const tgt=live.items[idx];
       if(!tgt) return;
-      tgt.deliver_label=it.deliver_label||'';
-      tgt.deliver_addr=it.deliver_addr||'';
-      tgt.deliver_contact=it.deliver_contact||'';
+      tgt.deliver_label=it.deliver_label!=null?it.deliver_label:null;
+      tgt.deliver_addr=it.deliver_addr!=null?it.deliver_addr:null;
+      tgt.deliver_contact=it.deliver_contact!=null?it.deliver_contact:null;
       if(it.seller) tgt.seller=it.seller;
     });
   }
@@ -3922,6 +3933,33 @@ function persistTsNosFromOverlay(){
   });
   touched.forEach(n=>persist(n));
 }
+/** 서류 오버레이 전용 저장 (인쇄/PDF와 별개) */
+async function saveDocOverlay(){
+  const kind=currentDocKind();
+  const msg=document.getElementById('doc-save-msg');
+  const btn=document.getElementById('doc-save-btn');
+  if(msg){ msg.style.display='inline'; msg.textContent='저장 중...'; msg.style.color='#166534'; }
+  if(btn) btn.disabled=true;
+  try{
+    if(kind==='ts'){
+      try{ persistTsNosFromOverlay(); }catch(e){ console.warn(e); }
+    }else if(kind==='po'){
+      persistPoFromOverlay();
+    }
+    clearTimeout(_persistTimer);
+    await saveOrdersToDb();
+    showSyncStatus('저장됨');
+    if(msg){ msg.textContent='저장됨'; msg.style.color='#166534'; }
+    setTimeout(()=>{ if(msg && msg.textContent==='저장됨'){ msg.textContent=''; msg.style.display='none'; } }, 2000);
+  }catch(e){
+    console.warn(e);
+    showSyncStatus('저장 실패', true);
+    if(msg){ msg.textContent='저장 실패'; msg.style.color='#b91c1c'; }
+    alert('저장에 실패했어요. 다시 시도해주세요.');
+  }finally{
+    if(btn) btn.disabled=false;
+  }
+}
 async function printDocOverlay(){
   try{
     if(currentDocKind()==='ts') await finalizeTsIssue();
@@ -4304,6 +4342,11 @@ function openDocOverlay(html, opts){
     if(btn) btn.style.display='none';
   }
   const kind=currentDocKind();
+  const saveBtn=document.getElementById('doc-save-btn');
+  const saveMsg=document.getElementById('doc-save-msg');
+  // 발주서·거래명세: 인쇄와 별도로 내용 저장
+  if(saveBtn) saveBtn.style.display=(kind==='po'||kind==='ts')?'':'none';
+  if(saveMsg){ saveMsg.textContent=''; saveMsg.style.display='none'; }
   const mailBtn=document.getElementById('mail-open-btn');
   const mailPanel=document.getElementById('mail-panel');
   if(mailPanel) mailPanel.classList.remove('on');
