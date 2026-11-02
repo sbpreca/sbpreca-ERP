@@ -161,8 +161,12 @@ input[readonly]{background:#f5f5f5;color:#999}
 .po-tbl td.r{text-align:right}
 .po-tbl tr.empty-row td{height:42px;color:#ddd;background:#fff}
 .po-tbl tfoot td{background:#1f3864;color:#fff;font-weight:700;padding:8px 8px}
-.po-tbl td.doc-fit,.ts-tbl td.doc-fit{overflow:hidden;white-space:nowrap}
-.doc-fit-text{display:inline-block;vertical-align:middle;line-height:1.2;white-space:nowrap}
+.po-tbl td.doc-fit,.ts-tbl td.doc-fit{overflow:hidden}
+.doc-fit-text{display:block;width:100%;line-height:1.15;white-space:normal;word-break:break-all}
+.po-tbl td.doc-memo,.ts-tbl td.doc-memo{padding:2px 4px;overflow:hidden;text-align:left;vertical-align:middle}
+.doc-memo-input{display:block;width:100%;height:100%;min-height:36px;max-height:38px;border:none;background:transparent;resize:none;font-family:inherit;font-size:12px;line-height:1.15;color:#111;padding:1px 2px;margin:0;box-sizing:border-box;overflow:hidden;white-space:pre-wrap;word-break:break-all;text-align:left}
+.doc-memo-input:hover{background:#fffde7}
+.doc-memo-input:focus{background:#fff9c4;outline:none}
 .po-foot{border:var(--doc-frame);margin-top:12px;margin-bottom:0;display:flex;flex-direction:column;flex:1 1 auto;min-height:0}
 .po-foot-row{display:flex;min-height:42px;border-bottom:var(--doc-line);flex:0 0 auto}
 .po-foot-row:last-child{border-bottom:none}
@@ -274,7 +278,7 @@ input[readonly]{background:#f5f5f5;color:#999}
   .a4-page.quote-page{padding-top:28mm!important}
   .a4-page:last-child{page-break-after:auto}
   .a4-page+.a4-page{border-top:none!important}
-  .ts-contact-input,.ts-addr-input,.doc-inline-input,.ts-no-input,.doc-note-input{border:none!important;background:transparent!important;box-shadow:none!important;outline:none!important;overflow:hidden!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .ts-contact-input,.ts-addr-input,.doc-inline-input,.ts-no-input,.doc-note-input,.doc-memo-input{border:none!important;background:transparent!important;box-shadow:none!important;outline:none!important;overflow:hidden!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
   .ts-contact-input,.ts-addr-input,.doc-inline-input,.ts-no-input{padding:0!important}
   /* PDF/인쇄에서도 collapse 이중선이 생기지 않게 separate 유지 */
   .po-tbl,.ts-tbl,.report-tbl{border-collapse:separate!important;border-spacing:0!important}
@@ -2928,7 +2932,24 @@ function docFitHtml(text, align){
   const cls=align?`doc-fit ${align}`:'doc-fit';
   return `<td class="${cls}"><span class="doc-fit-text">${escHtml(text||'')}</span></td>`;
 }
-/** 품목·규격이 칸 높이를 넘으면 글씨를 줄여 칸 안에 맞춘다 */
+function docMemoHtml(text){
+  return `<td class="doc-memo"><textarea class="doc-memo-input" title="줄바꿈해서 입력" oninput="fitDocMemoCell(this)">${escHtml(text||'')}</textarea></td>`;
+}
+function fitDocMemoCell(el){
+  if(!el) return;
+  el.style.fontSize='12px';
+  const td=el.parentElement;
+  if(!td) return;
+  const maxH=Math.max(12, td.clientHeight-2);
+  el.style.height=maxH+'px';
+  let size=12, guard=0;
+  while(size>6 && el.scrollHeight>maxH && guard<24){
+    size=Math.round((size-0.5)*10)/10;
+    el.style.fontSize=size+'px';
+    guard++;
+  }
+}
+/** 품목·규격·비고가 칸 높이를 넘으면 글씨를 줄여 칸 안에 맞춘다 */
 function fitDocOverflowCells(){
   document.querySelectorAll('#doc-content td.doc-fit .doc-fit-text').forEach(el=>{
     const text=(el.textContent||'').replace(/\u3000/g,'').trim();
@@ -2949,6 +2970,7 @@ function fitDocOverflowCells(){
       guard++;
     }
   });
+  document.querySelectorAll('#doc-content td.doc-memo .doc-memo-input').forEach(fitDocMemoCell);
 }
 
 /* ── 발주서: 매입처별, A4 고정, 날인란 없음 ── */
@@ -2983,7 +3005,7 @@ function buildPOHtml(order){
       <td class="r">${fmt(r.bprice)}</td>
       <td class="r">${fmt(r.bamt)}</td>
       <td>${r.ship?String(r.ship).replace(/-/g,'.'):'　'}</td>
-      <td class="l"><input class="doc-inline-input"></td>
+      ${docMemoHtml('')}
     </tr>`).join('');
     const blank=emptyRows(its.length, Math.max(FIXED_ROWS, its.length), 8, 'empty-row');
     html+=`<div class="a4-page">
@@ -3004,7 +3026,7 @@ function buildPOHtml(order){
         </div>
       </div>
       <table class="po-tbl">
-        <thead><tr><th style="width:34px">NO</th><th style="width:127px">품목</th><th style="width:143px">규격</th><th style="width:54px">수량</th><th style="width:90px">단가(원)</th><th style="width:100px">금액(원)</th><th style="width:90px">출하일자</th><th style="width:80px">비고</th></tr></thead>
+        <thead><tr><th style="width:34px">NO</th><th style="width:127px">품목</th><th style="width:143px">규격</th><th style="width:54px">수량</th><th style="width:72px">단가(원)</th><th style="width:82px">금액(원)</th><th style="width:70px">출하일자</th><th style="width:136px">비고</th></tr></thead>
         <tbody>${dataRows}${blank}</tbody>
         <tfoot><tr><td colspan="5" style="text-align:right;padding:8px">합　계</td><td class="r">${fmt(sub)}</td><td colspan="2"></td></tr></tfoot>
       </table>
@@ -3119,7 +3141,7 @@ function buildQuotePageHtml({finalNo, customer, contact, contactInfo, date, vali
     <td class="r">${fmt(r.price)}</td>
     <td class="r">${fmt(r.amt)}</td>
     <td>${r.due?String(r.due).replace(/-/g,'.'):'　'}</td>
-    <td class="l">${escHtml(r.memo||'')}</td>
+    ${docMemoHtml(r.memo||'')}
   </tr>`).join('');
   const blank=emptyRows(items.length, Math.max(FIXED_ROWS, items.length), 8, 'empty-row');
   const deliverVal=deliver||si.addr||'';
@@ -3142,7 +3164,7 @@ function buildQuotePageHtml({finalNo, customer, contact, contactInfo, date, vali
     </div>
     <div class="quote-lead"><span>아래와 같이 견적 드립니다.</span><span class="vat-hint">(부가가치세 별도)</span></div>
     <table class="po-tbl">
-      <thead><tr><th style="width:34px">NO</th><th style="width:127px">품목</th><th style="width:143px">규격</th><th style="width:54px">수량</th><th style="width:90px">단가(원)</th><th style="width:100px">금액(원)</th><th style="width:90px">납기일</th><th style="width:80px">비고</th></tr></thead>
+      <thead><tr><th style="width:34px">NO</th><th style="width:127px">품목</th><th style="width:143px">규격</th><th style="width:54px">수량</th><th style="width:72px">단가(원)</th><th style="width:82px">금액(원)</th><th style="width:70px">납기일</th><th style="width:136px">비고</th></tr></thead>
       <tbody>${dataRows}${blank}</tbody>
       <tfoot><tr><td colspan="5" style="text-align:right;padding:8px">합　계</td><td class="r">${fmt(sub)}</td><td colspan="2"></td></tr></tfoot>
     </table>
@@ -3961,6 +3983,13 @@ async function buildDocPdfBase64(){
       div.style.cssText='white-space:pre-wrap;font-size:12px;line-height:1.55;width:100%;height:100%';
       inp.replaceWith(div);
     });
+    clone.querySelectorAll('textarea.doc-memo-input').forEach(inp=>{
+      const div=document.createElement('div');
+      div.textContent=inp.value||'';
+      const fs=inp.style.fontSize||'12px';
+      div.style.cssText=`white-space:pre-wrap;word-break:break-all;font-size:${fs};line-height:1.15;width:100%;height:100%;overflow:hidden`;
+      inp.replaceWith(div);
+    });
     host.appendChild(clone);
   });
   document.body.appendChild(host);
@@ -4115,7 +4144,7 @@ function tsPageHtml({company, seller, contact, addr, its, dy, dm, dd, tsNo, tsOr
     <td class="r">${fmt(r.sprice)}</td>
     <td class="r">${fmt(r.samt)}</td>
     <td class="r">${fmt(Math.round((r.samt||0)*0.1))}</td>
-    <td class="l"><input class="doc-inline-input"></td>
+    ${docMemoHtml('')}
   </tr>`;
   }).join('');
   const blank=`<tr class="empty-row"><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>`.repeat(Math.max(0,FIXED_ROWS-its.length));
@@ -4159,7 +4188,7 @@ function tsPageHtml({company, seller, contact, addr, its, dy, dm, dd, tsNo, tsOr
       <span style="font-size:11px;color:#888">(공급가액 ${fmt(totS)} + 부가세 ${fmt(totV)})</span>
     </div>
     <table class="ts-tbl">
-      <thead><tr><th style="width:60px">일자</th><th style="width:119px">품명</th><th style="width:139px">규격</th><th style="width:50px">수량</th><th style="width:90px">단가</th><th style="width:100px">공급가액</th><th style="width:90px">부가세</th><th style="width:70px">비고</th></tr></thead>
+      <thead><tr><th style="width:52px">일자</th><th style="width:119px">품명</th><th style="width:139px">규격</th><th style="width:50px">수량</th><th style="width:72px">단가</th><th style="width:82px">공급가액</th><th style="width:70px">부가세</th><th style="width:134px">비고</th></tr></thead>
       <tbody>${dataRows}${blank}</tbody>
       <tfoot><tr>
         <td>합계</td><td colspan="2"></td>
