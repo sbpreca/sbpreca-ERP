@@ -1631,6 +1631,104 @@ function hydrateTsNosFromConfig(){
   });
   return n;
 }
+/** 발주서 비고(품목 memo) — order_items 컬럼이 없어 company_config에 보관 */
+function ensurePoItemMemos(){
+  if(!MY.po_item_memos || typeof MY.po_item_memos!=='object') MY.po_item_memos={};
+}
+let _poMemoConfigTimer=null;
+function scheduleSavePoItemMemos(){
+  clearTimeout(_poMemoConfigTimer);
+  _poMemoConfigTimer=setTimeout(()=>{
+    saveConfigToDb().catch(e=>console.warn('po_item_memos save', e));
+  }, 400);
+}
+function rememberPoItemMemo(orderNo, item, memo){
+  if(!orderNo || !item) return;
+  ensurePoItemMemos();
+  const key=itemDocKey(orderNo, item);
+  const m=String(memo||'');
+  if(!String(m).trim()) delete MY.po_item_memos[key];
+  else MY.po_item_memos[key]={memo:m, order_no:orderNo, at:new Date().toISOString()};
+}
+function hydratePoMemosFromConfig(){
+  ensurePoItemMemos();
+  const docs=MY.po_item_memos||{};
+  if(!Object.keys(docs).length) return 0;
+  let n=0;
+  orders.forEach(o=>{
+    (o.items||[]).forEach(item=>{
+      const hit=docs[itemDocKey(o.no, item)];
+      if(!hit) return;
+      const memo=hit.memo!=null?String(hit.memo):'';
+      if((item.memo||'')===memo) return;
+      item.memo=memo;
+      n++;
+    });
+  });
+  return n;
+}
+/** 발주서 오버레이에서 고친 특기사항·납품정보·비고를 발주에 반영 */
+function persistPoFromOverlay(){
+  const pages=[...document.querySelectorAll('#doc-content .a4-page[data-po-order]')];
+  if(!pages.length) return;
+  const touched=new Set();
+  let memoChanged=false;
+  pages.forEach(page=>{
+    const orderNo=String(page.dataset.poOrder||'').trim();
+    const buyer=String(page.dataset.poBuyer||'').trim();
+    if(!orderNo) return;
+    const o=orders.find(x=>x.no===orderNo);
+    if(!o) return;
+    const noteEl=page.querySelector('.po-foot-note .doc-note-input')||page.querySelector('textarea.doc-note-input');
+    if(noteEl){
+      o.note=noteEl.value||'';
+      const formNo=String((document.getElementById('f-no')||{}).value||'').trim();
+      if(formNo===orderNo || _formSourceNo===orderNo){
+        const fNote=document.getElementById('f-note');
+        if(fNote) fNote.value=o.note;
+      }
+    }
+    let deliverDisp='', addr='', contact='';
+    page.querySelectorAll('.po-foot-row').forEach(row=>{
+      const key=((row.querySelector('.po-foot-key')||{}).textContent||'').replace(/\s+/g,'');
+      const inp=row.querySelector('input.doc-inline-input');
+      if(!inp) return;
+      if(key==='납품처') deliverDisp=(inp.value||'').trim();
+      if(key==='소재지') addr=(inp.value||'').trim();
+      if(key==='담당자') contact=(inp.value||'').trim();
+    });
+    let label='';
+    let company='';
+    const m=deliverDisp.match(/^(.*)\((.+)\)\s*$/);
+    if(m){ company=m[1].trim(); label=m[2].trim(); }
+    else { company=deliverDisp; label=''; }
+    const buyerItems=(o.items||[]).filter(it=>!buyer || it.buyer===buyer);
+    buyerItems.forEach(it=>{
+      it.deliver_addr=addr;
+      it.deliver_contact=contact;
+      if(label || company) it.deliver_label=label;
+      if(company){
+        const site=label || sellerSite(it.seller||'') || '';
+        it.seller=encodeSeller(company, site);
+      }
+    });
+    const memoRows=[...page.querySelectorAll('tbody tr[data-po-item-idx]')];
+    memoRows.forEach(tr=>{
+      const idx=+tr.dataset.poItemIdx;
+      const inp=tr.querySelector('textarea.doc-memo-input');
+      if(!inp || idx<0 || idx>=buyerItems.length) return;
+      const memo=inp.value||'';
+      if((buyerItems[idx].memo||'')!==memo){
+        buyerItems[idx].memo=memo;
+        rememberPoItemMemo(orderNo, buyerItems[idx], memo);
+        memoChanged=true;
+      }
+    });
+    touched.add(orderNo);
+  });
+  touched.forEach(n=>persist(n));
+  if(memoChanged) scheduleSavePoItemMemos();
+}
 /** 옛·새 품목이 섞인 경우: id가 큰(최근 저장) 행을 sort_order별로 우선 */
 function normalizeDbItems(rawItems){
   const latest=[];
@@ -2081,6 +2179,7 @@ async function loadAll(){
     orders = await loadOrdersFromDb();
     rememberLoadedOrders();
     hydrateTsNosFromConfig();
+    hydratePoMemosFromConfig();
     backfillTsNosInOrders();
     closingState = await loadClosingStateFromDb();
     const pl = await loadPlItemsFromDb();
@@ -2844,6 +2943,7 @@ function commitFormOrder(){
       deliver_addr: it.deliver_addr||'',
       deliver_contact: it.deliver_contact||'',
       deliver_label: it.deliver_label||'',
+      memo: (it.memo!=null&&it.memo!=='')?it.memo:((prev&&prev.memo)||''),
       ts_no: (prev&&prev.ts_no)||'',
       ts_orig: (prev&&prev.ts_orig)||'',
       closing_sell_exclude: (prev&&prev.closing_sell_exclude)||false,
@@ -2875,7 +2975,9 @@ async function refreshOrderFromDb(no){
     for(let i=orders.length-1;i>=0;i--){
       if(orders[i].no===no && orders[i]!==fresh) orders.splice(i,1);
     }
-    return fresh;
+    // DB에 없는 비고(memo)는 company_config에서 다시 채움
+    hydratePoMemosFromConfig();
+    return orders.find(o=>o.no===no)||fresh;
   }catch(e){
     console.warn(e);
     return null;
@@ -2995,7 +3097,7 @@ function buildPOHtml(order){
     const deliverName=di.company||'';
     const deliverLabel=di.label||'';
     const deliverDisp=deliverLabel?`${deliverName} (${deliverLabel})`:deliverName;
-    const dataRows=its.map((r,i)=>`<tr>
+    const dataRows=its.map((r,i)=>`<tr data-po-item-idx="${i}">
       <td>${i+1}</td>
       ${docFitHtml(r.item||'', 'l')}
       ${docFitHtml(r.spec||'')}
@@ -3003,10 +3105,10 @@ function buildPOHtml(order){
       <td class="r">${fmt(r.bprice)}</td>
       <td class="r">${fmt(r.bamt)}</td>
       <td>${r.ship?String(r.ship).replace(/-/g,'.'):'　'}</td>
-      ${docMemoHtml('')}
+      ${docMemoHtml(r.memo||'')}
     </tr>`).join('');
     const blank=emptyRows(its.length, Math.max(FIXED_ROWS, its.length), 8, 'empty-row');
-    html+=`<div class="a4-page">
+    html+=`<div class="a4-page" data-po-order="${escHtml(no)}" data-po-buyer="${escHtml(buyer)}">
       <div class="po-title-band">발 주 서</div>
       <div class="po-no">No. ${escHtml(poNo)}</div>
       <div class="po-meta">
@@ -3718,18 +3820,33 @@ function persistTsNosFromOverlay(){
 async function printDocOverlay(){
   try{
     if(currentDocKind()==='ts') await finalizeTsIssue();
-    else await syncOverlayDocSeq();
+    else{
+      if(currentDocKind()==='po') persistPoFromOverlay();
+      await syncOverlayDocSeq();
+    }
+    clearTimeout(_persistTimer);
+    await saveOrdersToDb();
   }catch(e){ console.warn(e); }
   window.print();
 }
 async function closeDocOverlay(){
   // 거래명세표: 닫아도 품목 ts_no는 저장 (공유 채번 doc_seq만 프린트/메일에서 확정)
+  // 발주서: 오버레이에서 고친 특기사항·납품정보·비고를 발주에 저장
   const kind=currentDocKind();
   if(kind==='ts'){
     try{ persistTsNosFromOverlay(); }catch(e){ console.warn(e); }
-  }else if(kind){
-    try{ await syncOverlayDocSeq(); }catch(e){ console.warn(e); }
+  }else{
+    if(kind==='po'){
+      try{ persistPoFromOverlay(); }catch(e){ console.warn(e); }
+    }
+    if(kind){
+      try{ await syncOverlayDocSeq(); }catch(e){ console.warn(e); }
+    }
   }
+  try{
+    clearTimeout(_persistTimer);
+    await saveOrdersToDb();
+  }catch(e){ console.warn(e); }
   document.getElementById('overlay').style.display='none';
   // 명세 저장 후 목록·납품현황의 문서번호 칸을 바로 갱신
   if(document.getElementById('page-deliver')?.classList.contains('on') && typeof renderDeliver==='function') renderDeliver();
@@ -4014,7 +4131,12 @@ async function buildDocPdfBase64(){
 async function sendDocMail(){
   try{
     if(currentDocKind()==='ts') await finalizeTsIssue();
-    else await syncOverlayDocSeq();
+    else{
+      if(currentDocKind()==='po') persistPoFromOverlay();
+      await syncOverlayDocSeq();
+    }
+    clearTimeout(_persistTimer);
+    await saveOrdersToDb();
   }catch(e){ console.warn(e); }
   const ctx=docMailContext();
   if(!ctx) return;
@@ -4071,7 +4193,12 @@ function openDocOverlay(html, opts){
   const hasInline=!!document.querySelector('.doc-inline-input,.ts-addr-input');
   const hint=document.getElementById('ts-edit-hint');
   const btn=document.getElementById('ts-save-contact-btn');
-  if(hint) hint.style.display=(hasTs||hasInline)?'':'none';
+  const isPo=!!document.querySelector('.po-title-band');
+  if(hint){
+    hint.style.display=(hasTs||hasInline)?'':'none';
+    if(isPo) hint.textContent='납품처·주소·특기사항·비고는 닫기/인쇄 시 발주에 저장돼요';
+    else if(hasTs||hasInline) hint.textContent='담당자·주소·납품처 입력칸에서 바로 수정할 수 있어요';
+  }
   if(btn) btn.style.display=hasTs?'':'none';
   if(opts&&opts.hideTsEdit){
     if(hint) hint.style.display='none';
