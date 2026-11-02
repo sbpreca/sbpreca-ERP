@@ -207,7 +207,7 @@ input[readonly]{background:#f5f5f5;color:#999}
 /* 거래명세표 — 바깥·안쪽 동일 1px, 표 선은 한 면만 그려 겹침 방지 */
 .ts-meta{display:grid;grid-template-columns:1fr 1fr;border:var(--doc-frame);margin-bottom:12px}
 .ts-side+.ts-side{border-left:var(--doc-line)}
-.ts-side-hd{background:#222;color:#fff;padding:6px 10px;font-size:12px;font-weight:700;letter-spacing:1px;text-align:left}
+.ts-side-hd{background:#1f3864;color:#fff;padding:6px 10px;font-size:12px;font-weight:700;letter-spacing:1px;text-align:left}
 .ts-row{display:flex;min-height:42px;border-bottom:var(--doc-line);align-items:stretch}
 .ts-row:last-child{border-bottom:none}
 .ts-key{background:#f0f0f0;padding:6px 8px;width:68px;min-width:68px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:11px;color:#111;font-weight:700;border-right:var(--doc-line);flex-shrink:0;line-height:1.4;word-break:keep-all;white-space:pre-line}
@@ -223,11 +223,11 @@ input[readonly]{background:#f5f5f5;color:#999}
 .ts-tbl th,.ts-tbl td{padding:0 8px;border:0;border-right:var(--doc-line);border-bottom:var(--doc-line);text-align:center;vertical-align:middle;height:42px;box-sizing:border-box;color:#111}
 .ts-tbl tr>*:last-child{border-right:none}
 .ts-tbl tr:last-child>*{border-bottom:none}
-.ts-tbl th{background:#222;color:#fff;padding:8px 8px;font-size:11px;font-weight:600}
+.ts-tbl th{background:#1f3864;color:#fff;padding:8px 8px;font-size:11px;font-weight:600}
 .ts-tbl td.l{text-align:left}
 .ts-tbl td.r{text-align:right}
 .ts-tbl tr.empty-row td{height:42px;color:#111;background:#fff}
-.ts-tbl tfoot td{background:#f0f0f0;font-weight:700;padding:8px 8px;color:#111}
+.ts-tbl tfoot td{background:#1f3864;color:#fff;font-weight:700;padding:8px 8px}
 .ts-note{flex:1 1 auto;min-height:0;display:flex;border:var(--doc-frame);margin-top:8px}
 .ts-note-key{background:#f0f0f0;padding:8px 8px;width:68px;min-width:68px;display:flex;align-items:flex-start;justify-content:center;text-align:center;font-size:11px;color:#111;font-weight:700;border-right:var(--doc-line);line-height:1.4}
 .ts-note .doc-note-input{padding:8px 10px}
@@ -323,7 +323,6 @@ input[readonly]{background:#f5f5f5;color:#999}
   <div id="delivery-alert" style="display:none;margin-bottom:12px;padding:10px 16px;border-radius:8px;font-size:13px;border:1px solid"></div>
   <div class="nav">
     <button class="nav-btn on" onclick="go('list')">발주 목록</button>
-    <button class="nav-btn" onclick="go('quote')">견적서</button>
     <button class="nav-btn" onclick="go('deliver')">납품 현황</button>
     <button class="nav-btn" onclick="go('closing')">마감현황</button>
     <button class="nav-btn" onclick="go('cashflow')">실입출금</button>
@@ -370,6 +369,7 @@ input[readonly]{background:#f5f5f5;color:#999}
       <button class="btn" onclick="addRow()">+ 품목 추가</button>
       <button class="btn btn-save" onclick="saveOrder()">저장</button>
       <button class="btn btn-po" onclick="showPO()">발주서 PDF</button>
+      <button class="btn btn-po" onclick="showQuote()">견적서 PDF</button>
       <span class="msg" id="save-msg"></span>
     </div>
     <div class="sum-bar">
@@ -407,51 +407,6 @@ input[readonly]{background:#f5f5f5;color:#999}
       </table>
     </div>
     <div id="list-area"></div>
-  </div>
-
-  <!-- 견적서 -->
-  <div id="page-quote" class="page">
-    <div class="form-grid" style="grid-template-columns:160px 160px 160px 1fr">
-      <div class="field"><label>견적 번호</label><input id="q-no"></div>
-      <div class="field"><label>견적일</label><input type="date" id="q-date"></div>
-      <div class="field"><label>담당자</label><select id="q-manager"><option value="이은진">이은진</option><option value="김은희">김은희</option></select></div>
-      <div class="field"><label>고객사</label><select id="q-customer" onchange="onQuoteCustomerChange()"></select></div>
-    </div>
-    <div class="form-grid" style="grid-template-columns:1fr 1fr;margin-top:0">
-      <div class="field"><label>고객 담당자</label><input id="q-contact" placeholder="담당자명" oninput="this.dataset.auto='0'"></div>
-      <div class="field"><label>고객 연락처/이메일</label><input id="q-contact-info" placeholder="전화 / 이메일" oninput="this.dataset.auto='0'"></div>
-      <div class="field"><label>지불조건</label><input id="q-pay" placeholder="세금계산서 발행 후 익월 말일 현금 지급"></div>
-      <div class="field"><label>유효기간</label><input id="q-valid" placeholder="견적일로부터 30일"></div>
-      <div class="field" style="grid-column:1/-1"><label>납품장소</label><input id="q-deliver" placeholder="예: 고객 지정 장소 / 별도 협의" oninput="this.dataset.auto='0'"></div>
-      <div class="field" style="grid-column:1/-1"><label>하단 멘트·특기사항</label><textarea id="q-note" rows="6" placeholder="줄바꿈해서 여러 줄로 적을 수 있어요" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:5px;font:inherit;font-size:13px;line-height:1.5;resize:vertical;box-sizing:border-box"></textarea></div>
-    </div>
-    <div class="section-box">
-      <div class="section-title">견적 품목</div>
-      <table class="items-table">
-        <thead><tr>
-          <th style="width:16%">품목</th>
-          <th style="width:26%">규격</th>
-          <th style="width:8%;text-align:right">수량</th>
-          <th style="width:12%;text-align:right">단가</th>
-          <th style="width:12%;text-align:right">금액</th>
-          <th style="width:12%">납기일</th>
-          <th style="width:12%">비고</th>
-          <th style="width:28px"></th>
-        </tr></thead>
-        <tbody id="quote-items-body"></tbody>
-      </table>
-    </div>
-    <div class="actions">
-      <button class="btn" onclick="addQuoteRow()">+ 품목 추가</button>
-      <button class="btn btn-save" onclick="showQuote()">견적서 PDF</button>
-      <button class="btn" onclick="initQuoteForm()">초기화</button>
-      <span class="msg" id="quote-msg"></span>
-    </div>
-    <div class="sum-bar">
-      <div class="sum-item"><span class="sum-lbl">공급가액 합계</span><span class="sum-val" id="q-sum">0원</span></div>
-      <div class="sum-item"><span class="sum-lbl">부가세(10%)</span><span class="sum-val" id="q-vat">0원</span></div>
-      <div class="sum-item"><span class="sum-lbl">합계(VAT포함)</span><span class="sum-val g" id="q-total">0원</span></div>
-    </div>
   </div>
 
   <!-- 납품 현황 -->
@@ -2522,16 +2477,12 @@ async function renameItemMaster(oldName, newName, inputEl){
   alert(`품목명을 '${to}'(으)로 바꿨어요.\n발주 품목 ${changed}건에 반영했습니다.`);
 }
 
-/** 열려 있는 발주·견적 입력칸의 품목 목록/선택값을 새 이름에 맞춤 */
+/** 열려 있는 발주 입력칸의 품목 목록/선택값을 새 이름에 맞춤 */
 function refreshOpenItemSelectors(from, to){
   const all=catalogItems();
   document.querySelectorAll('#items-body .isel').forEach(sel=>{
     const cur=sel.value===from?to:sel.value;
     sel.innerHTML='<option></option>'+all.map(k=>`<option${k===cur?' selected':''}>${escHtml(k)}</option>`).join('');
-  });
-  quoteItemDatalistId();
-  document.querySelectorAll('#quote-items-body .q-isel').forEach(inp=>{
-    if(String(inp.value||'')===from) inp.value=to;
   });
 }
 
@@ -3114,7 +3065,7 @@ async function showPO(){
   openDocOverlay(built.html);
 }
 
-/* ── 견적서 ── */
+/* ── 견적서: 발주 입력 화면에서 매출처 기준으로 발행 ── */
 function quoteDateKey(d){
   return String(d||'').replace(/-/g,'').slice(2,8); // YYMMDD
 }
@@ -3135,162 +3086,31 @@ async function suggestQuoteNo(quoteDate){
 }
 async function commitQuoteDocNo(finalNo, quoteDate){
   await refreshQuoteDocSeqFromDb();
-  // 번호 문자열에 들어 있는 날짜 기준으로 저장 (거래일과 달라도 수정분이 남도록)
   const ok=await commitDocSeqFromNos('quote', [finalNo], quoteDateKey(quoteDate));
   if(!ok && finalNo){
     const parts=parseDocNoParts('quote', finalNo);
     if(!parts) console.warn('견적 번호 형식을 인식하지 못했어요:', finalNo);
   }
 }
-function fillQuoteCustomers(selected){
-  const sel=document.getElementById('q-customer');
-  if(!sel) return;
-  const companies=Object.keys(SELLERS||{}).sort((a,b)=>a.localeCompare(b,'ko'));
-  const cur=selected!=null?selected:sel.value;
-  sel.innerHTML='<option value="">고객사 선택</option>'+
-    companies.map(c=>`<option value="${escHtml(c)}"${c===cur?' selected':''}>${escHtml(c)}</option>`).join('');
+function orderItemToQuoteLine(r){
+  const qty=+r.sqty||+r.bqty||0;
+  const price=+r.sprice||((ITEM_PRICES[r.item]||{}).sell)||0;
+  return {
+    item:r.item||'',
+    spec:r.spec||'',
+    qty,
+    price,
+    amt:qty*price,
+    due:r.ship||'',
+    memo:''
+  };
 }
-function onQuoteCustomerChange(){
-  const name=document.getElementById('q-customer').value;
-  const info=SELLERS[name]||{};
-  const contactEl=document.getElementById('q-contact');
-  const infoEl=document.getElementById('q-contact-info');
-  if(contactEl && (!contactEl.value || contactEl.dataset.auto==='1')){
-    contactEl.value=info.contact||'';
-    contactEl.dataset.auto='1';
-  }
-  if(infoEl && (!infoEl.value || infoEl.dataset.auto==='1')){
-    const parts=[];
-    if(info.email) parts.push(info.email);
-    infoEl.value=parts.join(' / ');
-    infoEl.dataset.auto='1';
-  }
-  const deliver=document.getElementById('q-deliver');
-  if(deliver && (!deliver.value || deliver.dataset.auto==='1')){
-    deliver.value=info.addr||'';
-    deliver.dataset.auto='1';
-  }
-}
-function quoteItemDatalistId(){
-  let dl=document.getElementById('quote-item-list');
-  if(!dl){
-    dl=document.createElement('datalist');
-    dl.id='quote-item-list';
-    document.body.appendChild(dl);
-  }
-  const allItems=catalogItems();
-  dl.innerHTML=allItems.map(k=>`<option value="${escHtml(k)}"></option>`).join('');
-  return 'quote-item-list';
-}
-function addQuoteRow(it={}){
-  const tr=document.createElement('tr');
-  const listId=quoteItemDatalistId();
-  tr.innerHTML=`
-    <td><input type="text" class="q-isel" list="${listId}" value="${escHtml(it.item||'')}" placeholder="품목명 직접 입력" style="width:100%;font-size:12px;border:1px solid #e8e8e8;padding:4px 5px;border-radius:4px" onchange="autoQuoteSpec(this);autoQuotePrice(this)"></td>
-    <td><input type="text" class="q-spec" value="${escHtml(it.spec||'')}" style="width:100%" oninput="this.dataset.auto='0'"></td>
-    <td><input type="number" class="q-qty" value="${it.qty||''}" style="width:100%;text-align:right" oninput="calcQuoteRow(this)"></td>
-    <td><input type="number" class="q-price" value="${it.price||''}" style="width:100%;text-align:right" oninput="calcQuoteRow(this)"></td>
-    <td class="amt q-amt">${it.qty&&it.price?fmt(it.qty*it.price):'-'}</td>
-    <td><input type="date" class="q-due" value="${it.due||''}" style="width:100%;font-size:11px"></td>
-    <td><input type="text" class="q-memo" value="${escHtml(it.memo||'')}" style="width:100%"></td>
-    <td><button class="del-btn" onclick="this.closest('tr').remove();calcQuoteSum()">×</button></td>`;
-  document.getElementById('quote-items-body').appendChild(tr);
-}
-function autoQuoteSpec(el){
-  const name=String(el.value||'').trim();
-  const tr=el.closest('tr'), s=itemSpecOf(name);
-  if(s){
-    const specEl=tr.querySelector('.q-spec');
-    if(specEl && (!specEl.value || specEl.dataset.auto==='1')){
-      specEl.value=s;
-      specEl.dataset.auto='1';
-    }
-  }
-}
-function autoQuotePrice(el){
-  const tr=el.closest('tr');
-  const priceEl=tr.querySelector('.q-price');
-  if(priceEl.value) return;
-  const found=ITEM_PRICES[String(el.value||'').trim()];
-  if(found && found.sell){ priceEl.value=found.sell; calcQuoteRow(priceEl); }
-}
-function calcQuoteRow(inp){
-  const tr=inp.closest('tr');
-  const qty=+tr.querySelector('.q-qty').value||0;
-  const price=+tr.querySelector('.q-price').value||0;
-  tr.querySelector('.q-amt').textContent=qty&&price?fmt(qty*price):'-';
-  calcQuoteSum();
-}
-function calcQuoteSum(){
-  let sum=0;
-  document.querySelectorAll('#quote-items-body tr').forEach(tr=>{
-    sum+=(+tr.querySelector('.q-qty').value||0)*(+tr.querySelector('.q-price').value||0);
-  });
-  const vat=Math.round(sum*0.1);
-  const elSum=document.getElementById('q-sum');
-  const elVat=document.getElementById('q-vat');
-  const elTot=document.getElementById('q-total');
-  if(elSum) elSum.textContent=fmtW(sum);
-  if(elVat) elVat.textContent=fmtW(vat);
-  if(elTot) elTot.textContent=fmtW(sum+vat);
-}
-function getQuoteRows(){
-  return Array.from(document.querySelectorAll('#quote-items-body tr')).map(tr=>({
-    item:String(tr.querySelector('.q-isel').value||'').trim(),
-    spec:tr.querySelector('.q-spec').value,
-    qty:+tr.querySelector('.q-qty').value||0,
-    price:+tr.querySelector('.q-price').value||0,
-    amt:(+tr.querySelector('.q-qty').value||0)*(+tr.querySelector('.q-price').value||0),
-    due:tr.querySelector('.q-due').value,
-    memo:tr.querySelector('.q-memo').value,
-  })).filter(r=>r.item||r.qty||r.price);
-}
-async function initQuoteForm(){
-  fillQuoteCustomers('');
-  const dateEl=document.getElementById('q-date');
-  const today=new Date().toISOString().slice(0,10);
-  if(dateEl) dateEl.value=today;
-  const noEl=document.getElementById('q-no');
-  if(noEl) noEl.value=await suggestQuoteNo(today);
-  document.getElementById('q-contact').value='';
-  document.getElementById('q-contact').dataset.auto='1';
-  document.getElementById('q-contact-info').value='';
-  document.getElementById('q-contact-info').dataset.auto='1';
-  document.getElementById('q-pay').value=MY.quote_pay||DEFAULT_CFG.quote_pay;
-  document.getElementById('q-valid').value=MY.quote_valid||DEFAULT_CFG.quote_valid;
-  document.getElementById('q-deliver').value='';
-  document.getElementById('q-deliver').dataset.auto='1';
-  document.getElementById('q-note').value=MY.quote_note||DEFAULT_CFG.quote_note;
-  document.getElementById('quote-items-body').innerHTML='';
-  addQuoteRow(); addQuoteRow();
-  calcQuoteSum();
-  const msg=document.getElementById('quote-msg');
-  if(msg){ msg.textContent=''; }
-}
-async function showQuote(){
-  const items=getQuoteRows().filter(r=>r.item);
-  if(!items.length){ alert('품목을 입력해주세요'); return; }
-  const customer=document.getElementById('q-customer').value;
-  if(!customer){ alert('고객사를 선택해주세요'); return; }
-  const date=document.getElementById('q-date').value||new Date().toISOString().slice(0,10);
-  const defaultNo=document.getElementById('q-no').value||await suggestQuoteNo(date);
-  const no=prompt('견적 번호를 확인/수정해주세요', defaultNo);
-  if(no===null) return;
-  const finalNo=String(no).trim()||defaultNo;
-  document.getElementById('q-no').value=finalNo;
-  await commitQuoteDocNo(finalNo, date);
-
-  const manager=document.getElementById('q-manager').value||'이은진';
-  const contact=document.getElementById('q-contact').value||(SELLERS[customer]||{}).contact||'담당자';
-  const contactInfo=document.getElementById('q-contact-info').value||'';
-  const pay=document.getElementById('q-pay').value||MY.quote_pay||'';
-  const valid=document.getElementById('q-valid').value||MY.quote_valid||'';
-  const deliver=document.getElementById('q-deliver').value||'';
-  const note=(document.getElementById('q-note').value||MY.quote_note||DEFAULT_CFG.quote_note||'').trim();
+function buildQuotePageHtml({finalNo, customer, contact, contactInfo, date, valid, pay, deliver, note, manager, items}){
   const si=SELLERS[customer]||{};
   const mgrInfo=(MY.managers&&MY.managers[manager])||{};
   const myContact=manager+(mgrInfo.tel?'　'+mgrInfo.tel:'')+(mgrInfo.email?' / '+mgrInfo.email:'');
   const FIXED_ROWS=DOC_LINE_ROWS;
+  const sub=items.reduce((s,r)=>s+(+r.amt||0),0);
   const dataRows=items.map((r,i)=>`<tr>
     <td>${i+1}</td>
     ${docFitHtml(r.item, 'l')}
@@ -3298,19 +3118,20 @@ async function showQuote(){
     <td class="r">${fmt(r.qty)}</td>
     <td class="r">${fmt(r.price)}</td>
     <td class="r">${fmt(r.amt)}</td>
-    <td>${r.due?r.due.replace(/-/g,'.'):'　'}</td>
+    <td>${r.due?String(r.due).replace(/-/g,'.'):'　'}</td>
     <td class="l">${escHtml(r.memo||'')}</td>
   </tr>`).join('');
   const blank=emptyRows(items.length, Math.max(FIXED_ROWS, items.length), 8, 'empty-row');
-  const html=`<div class="a4-page quote-page">
+  const deliverVal=deliver||si.addr||'';
+  return `<div class="a4-page quote-page">
     <div class="quote-title-band">견 적 서</div>
     <div class="quote-no">No. ${escHtml(finalNo)}</div>
     <div class="po-meta">
       <div class="po-side">
         <div class="po-row"><span class="po-key">수 신 처</span><span class="po-val">${escHtml(customer)}</span></div>
         <div class="po-row"><span class="po-key">담 당 자</span><span class="po-val">${escHtml(formatDocContact(contact))}${contactInfo?'　'+escHtml(contactInfo):''}</span></div>
-        <div class="po-row"><span class="po-key">견 적 일</span><span class="po-val">${date.replace(/-/g,'.')}</span></div>
-        <div class="po-row"><span class="po-key">유효기간</span><span class="po-val">${escHtml(valid||'　')}</span></div>
+        <div class="po-row"><span class="po-key">견 적 일</span><span class="po-val">${escHtml(String(date).replace(/-/g,'.'))}</span></div>
+        <div class="po-row"><span class="po-key">유효기간</span><span class="po-val"><input class="doc-inline-input" value="${escHtml(valid||'')}" placeholder="유효기간" title="클릭해서 수정"></span></div>
       </div>
       <div class="po-side">
         <div class="po-row"><span class="po-key">상 호</span><span class="po-val">${escHtml(MY.name)}</span></div>
@@ -3323,19 +3144,61 @@ async function showQuote(){
     <table class="po-tbl">
       <thead><tr><th style="width:34px">NO</th><th style="width:127px">품목</th><th style="width:143px">규격</th><th style="width:54px">수량</th><th style="width:90px">단가(원)</th><th style="width:100px">금액(원)</th><th style="width:90px">납기일</th><th style="width:80px">비고</th></tr></thead>
       <tbody>${dataRows}${blank}</tbody>
+      <tfoot><tr><td colspan="5" style="text-align:right;padding:8px">합　계</td><td class="r">${fmt(sub)}</td><td colspan="2"></td></tr></tfoot>
     </table>
     <div class="quote-foot">
-      <div class="po-foot-row"><span class="po-foot-key">지불조건</span><span class="po-foot-val">${escHtml(pay||'　')}</span></div>
-      <div class="po-foot-row"><span class="po-foot-key">납품장소</span><span class="po-foot-val">${escHtml(deliver||si.addr||'　')}</span></div>
-      <div class="po-foot-row"><span class="po-foot-key">유효기간</span><span class="po-foot-val">${escHtml(valid||'　')}</span></div>
+      <div class="po-foot-row"><span class="po-foot-key">지불조건</span><span class="po-foot-val"><input class="doc-inline-input" value="${escHtml(pay||'')}" placeholder="지불조건" title="클릭해서 수정"></span></div>
+      <div class="po-foot-row"><span class="po-foot-key">납품장소</span><span class="po-foot-val"><input class="doc-inline-input" value="${escHtml(deliverVal||'')}" placeholder="납품장소" title="클릭해서 수정"></span></div>
+      <div class="po-foot-row"><span class="po-foot-key">유효기간</span><span class="po-foot-val"><input class="doc-inline-input" value="${escHtml(valid||'')}" placeholder="유효기간" title="클릭해서 수정"></span></div>
       ${MY.bank?`<div class="po-foot-row"><span class="po-foot-key">입금계좌</span><span class="po-foot-val">${escHtml(MY.bank)}</span></div>`:''}
     </div>
     <div class="quote-note">
-      <textarea class="doc-note-input" title="줄바꿈해서 입력">${escHtml(note)}</textarea>
+      <textarea class="doc-note-input" title="줄바꿈해서 입력">${escHtml(note||'')}</textarea>
       <div class="quote-sign">담당자 : ${escHtml(manager)}${mgrInfo.tel?' / '+escHtml(mgrInfo.tel):''}${mgrInfo.email?' / '+escHtml(mgrInfo.email):''}</div>
     </div>
   </div>`;
-  setDocMailMeta('quote', [{name:customer, role:'seller'}], items);
+}
+async function showQuote(){
+  const rows=getRows().filter(r=>r.item);
+  if(!rows.length){ alert('품목을 입력해주세요'); return; }
+  const groups={};
+  rows.forEach(r=>{
+    const co=sellerCompany(r.seller);
+    if(!co) return;
+    (groups[co]=groups[co]||[]).push(r);
+  });
+  const customers=Object.keys(groups);
+  if(!customers.length){ alert('견적서에 넣을 매출처를 선택해주세요'); return; }
+
+  const date=document.getElementById('f-date').value||new Date().toISOString().slice(0,10);
+  const manager=document.getElementById('f-manager').value||'이은진';
+  const defaultNo=await suggestQuoteNo(date);
+  const no=prompt('견적 번호를 확인/수정해주세요', defaultNo);
+  if(no===null) return;
+  const finalNo=String(no).trim()||defaultNo;
+  await commitQuoteDocNo(finalNo, date);
+
+  const pay=MY.quote_pay||DEFAULT_CFG.quote_pay||'';
+  const valid=MY.quote_valid||DEFAULT_CFG.quote_valid||'';
+  const note=(MY.quote_note||DEFAULT_CFG.quote_note||'').trim();
+  let html='';
+  const allItems=[];
+  customers.forEach((customer,idx)=>{
+    const its=groups[customer];
+    const sample=its[0]||{};
+    const di=resolveDeliverInfo(sample.seller||customer, sample);
+    const si=SELLERS[customer]||{};
+    const contact=di.contact||si.contact||'담당자';
+    const contactInfo=si.email||'';
+    const deliver=di.addr||si.addr||'';
+    const items=its.map(orderItemToQuoteLine);
+    allItems.push(...items);
+    const pageNo=customers.length===1?finalNo:`${finalNo}-${String(idx+1).padStart(2,'0')}`;
+    html+=buildQuotePageHtml({
+      finalNo:pageNo, customer, contact, contactInfo, date, valid, pay, deliver, note, manager, items
+    });
+  });
+  setDocMailMeta('quote', customers.map(name=>({name, role:'seller'})), allItems);
   openDocOverlay(html);
 }
 
@@ -4653,8 +4516,8 @@ function renderDeliver(){
 
 /* ── 탭 전환 ── */
 function go(p){
-  const navIds=['list','quote','deliver','closing','cashflow','pl','hometax','balance','txclass','annual','settings'];
-  const allIds=['list','quote','deliver','closing','cashflow','hometax','pl','balance','txclass','annual','new','settings'];
+  const navIds=['list','deliver','closing','cashflow','pl','hometax','balance','txclass','annual','settings'];
+  const allIds=['list','deliver','closing','cashflow','hometax','pl','balance','txclass','annual','new','settings'];
   allIds.forEach(id=>{
     const el=document.getElementById('page-'+id);
     if(el) el.classList.toggle('on',id===p);
@@ -4664,10 +4527,6 @@ function go(p){
     btn.classList.toggle('on',navIds[i]===navP);
   });
   if(p==='list')renderList();
-  if(p==='quote'){
-    fillQuoteCustomers();
-    if(!document.querySelector('#quote-items-body tr')) initQuoteForm();
-  }
   if(p==='deliver')renderDeliver();
   if(p==='closing')renderClosing();
   if(p==='cashflow')renderCashflow();
