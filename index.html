@@ -3086,7 +3086,7 @@ function fitDocOverflowCells(){
   document.querySelectorAll('#doc-content td.doc-memo textarea.doc-memo-input').forEach(fitDocMemoCell);
 }
 
-/* ── 발주서 문서번호(수정 -R / 재발행) — 발주번호(order.no)와 별도로 보관 ── */
+/* ── 발주서 발급 여부(목록에서 바로 보기용) ── */
 function ensurePoDocs(){
   if(!MY.po_docs || typeof MY.po_docs!=='object') MY.po_docs={};
 }
@@ -3141,60 +3141,8 @@ function hydratePoDocsOntoOrders(){
   });
   return n;
 }
-function confirmPoDocNo(order, mode){
-  const cur=resolvePoDocNo(order);
-  const orig=resolvePoOrig(order);
-  let suggested=cur||order.no;
-  let tip='발주 번호를 확인/수정해주세요';
-  if(mode==='edit'){
-    suggested=cur?nextTsRevNo(cur):(order.no||'');
-    tip=`발주서 수정 문서번호를 확인해주세요\n발주번호: ${order.no}\n현재 발급번호: ${cur||'(없음)'}`+
-      (orig && orig!==cur ? `\n원번호: ${orig}` : '')+
-      `\n제안(수정본): ${suggested}\n※ 확인하면 발주서 발급번호로 저장됩니다.`;
-  }else if(mode==='reissue'){
-    suggested=cur?nextTsRevNo(cur):(order.no||'');
-    tip=`발주서 재발행 번호를 확인해주세요\n발주번호: ${order.no}\n현재 발급번호: ${cur||'(없음)'}`+
-      `\n제안: ${suggested}\n※ 재발행은 매입처에 다시 보내는 새 서류입니다.`;
-  }
-  const raw=prompt(tip, suggested);
-  if(raw===null) return null;
-  const finalNo=String(raw).trim();
-  if(!finalNo){ alert('발주서 번호를 입력해주세요'); return null; }
-  return finalNo;
-}
-async function applyPoDeliverOverrides(order){
-  const byBuyer={};
-  (order.items||[]).forEach(i=>{if(i&&i.buyer)(byBuyer[i.buyer]=byBuyer[i.buyer]||[]).push(i);});
-  for(const [,its] of Object.entries(byBuyer)){
-    const sample=its.find(i=>i.seller||i.deliver_addr||i.deliver_label)||its[0]||{};
-    const def=resolveDeliverInfo(sample.seller||'', sample);
-    const overridden=promptDeliverOverrideIfWanted(def.company||sellerCompany(sample.seller||''), def);
-    its.forEach(i=>{
-      i.deliver_label=overridden.label||'';
-      i.deliver_addr=overridden.addr||'';
-      i.deliver_contact=overridden.contact||'';
-      if(overridden.label && def.company){
-        i.seller=encodeSeller(def.company, overridden.label);
-      }
-    });
-  }
-  const live=orders.find(o=>o.no===order.no);
-  if(live&&Array.isArray(live.items)){
-    order.items.forEach((it,idx)=>{
-      const tgt=live.items[idx];
-      if(!tgt) return;
-      tgt.deliver_label=it.deliver_label||'';
-      tgt.deliver_addr=it.deliver_addr||'';
-      tgt.deliver_contact=it.deliver_contact||'';
-      if(it.seller) tgt.seller=it.seller;
-    });
-  }
-}
-/**
- * 목록 발주서: mode 'new' 최초 | 'edit' 수정본(-R) | 'reissue' 재발행
- * 발주번호(order.no)는 유지하고, 서류 발급번호(po_doc_no)만 바꾼다.
- */
-async function openPoDoc(no, mode='edit'){
+/** 목록「발주서」: 저장된 발주서를 바로 보여 준다 (확인 창·수정 화면 없음) */
+async function viewPoDoc(no){
   let formSnap=null;
   const formNo=String((document.getElementById('f-no')||{}).value||'').trim();
   if(formNo===no && getRows().length){
@@ -3209,18 +3157,7 @@ async function openPoDoc(no, mode='edit'){
   }
   if(!order) order=cloneOrder(orders.find(x=>x.no===no));
   if(!order){alert('발주를 찾을 수 없어요');return;}
-  const m=(mode==='edit'||mode==='reissue'||mode==='new')?mode:(isPoIssued(no)?'edit':'new');
-  const confirmed=confirmPoDocNo(order, m);
-  if(confirmed===null) return;
-  const prevOrig=resolvePoOrig(order);
-  rememberPoDoc(order.no, confirmed, {orig: m==='new'?confirmed:prevOrig});
-  order.po_doc_no=confirmed;
-  if(m==='reissue' || m==='new'){
-    await applyPoDeliverOverrides(order);
-  }
-  persist(order.no);
-  clearTimeout(_persistTimer);
-  try{ await saveOrdersToDb(); }catch(e){ console.warn(e); }
+  order.po_doc_no=resolvePoDocNo(order)||order.no;
   const built=buildPOHtml(order);
   if(!built.html){alert('발주서에 넣을 품목이 없어요 (매입처를 확인해주세요)');return;}
   setDocMailMeta('po', Object.keys(built.groups).map(name=>({name, role:'buyer'})), built.items);
@@ -3298,27 +3235,40 @@ function buildPOHtml(order){
 async function showPO(){
   if(!getRows().length){alert('품목을 입력해주세요');return;}
   const defaultNo=document.getElementById('f-no').value;
-  const issued=isPoIssued(defaultNo);
-  const mode=issued?'edit':'new';
-  // 입력 화면에서도 목록과 같이 수정/신규 번호 확인
-  const committedProbe=(()=>{
-    const no=String(defaultNo||'').trim();
-    const date=document.getElementById('f-date').value;
-    if(!no||!date) return {no:defaultNo};
-    return {no, date, note:document.getElementById('f-note').value, po_doc_no:resolvePoDocNo({no})};
-  })();
-  const confirmed=confirmPoDocNo(committedProbe, mode);
-  if(confirmed===null)return;
-  // 신규·수정본 모두 서류 번호는 po_doc_no. 발주번호 칸은 원 발주키 유지(수정 -R은 서류번호만).
-  if(mode==='new'){
-    document.getElementById('f-no').value=stripTsRevSuffix(confirmed)||confirmed;
-  }
+  const noRaw=prompt('발주 번호', defaultNo);
+  if(noRaw===null)return;
+  document.getElementById('f-no').value=String(noRaw).trim()||defaultNo;
   const committed=commitFormOrder();
   if(!committed){alert('날짜와 품목을 입력해주세요');return;}
   const order=cloneOrder(committed);
-  rememberPoDoc(order.no, confirmed, {orig: mode==='new'?confirmed:resolvePoOrig(order)});
-  order.po_doc_no=confirmed;
-  await applyPoDeliverOverrides(order);
+  const byBuyer={};
+  (order.items||[]).forEach(i=>{if(i&&i.buyer)(byBuyer[i.buyer]=byBuyer[i.buyer]||[]).push(i);});
+  for(const [,its] of Object.entries(byBuyer)){
+    const sample=its.find(i=>i.seller||i.deliver_addr||i.deliver_label)||its[0]||{};
+    const def=resolveDeliverInfo(sample.seller||'', sample);
+    const overridden=promptDeliverOverrideIfWanted(def.company||sellerCompany(sample.seller||''), def);
+    its.forEach(i=>{
+      i.deliver_label=overridden.label||'';
+      i.deliver_addr=overridden.addr||'';
+      i.deliver_contact=overridden.contact||'';
+      if(overridden.label && def.company){
+        i.seller=encodeSeller(def.company, overridden.label);
+      }
+    });
+  }
+  const live=orders.find(o=>o.no===order.no);
+  if(live&&Array.isArray(live.items)){
+    order.items.forEach((it,idx)=>{
+      const tgt=live.items[idx];
+      if(!tgt) return;
+      tgt.deliver_label=it.deliver_label||'';
+      tgt.deliver_addr=it.deliver_addr||'';
+      tgt.deliver_contact=it.deliver_contact||'';
+      if(it.seller) tgt.seller=it.seller;
+    });
+  }
+  rememberPoDoc(order.no, order.no);
+  order.po_doc_no=order.no;
   persist(order.no);
   clearTimeout(_persistTimer);
   try{ await saveOrdersToDb(); }catch(e){ console.warn(e); }
@@ -4331,18 +4281,12 @@ function openDocOverlay(html, opts){
   fitDocOverflowCells();
   requestAnimationFrame(()=>fitDocOverflowCells());
   const hasTs=!!document.querySelector('.ts-contact-input');
-  const hasInline=!!document.querySelector('.doc-inline-input,.ts-addr-input');
   const hint=document.getElementById('ts-edit-hint');
   const btn=document.getElementById('ts-save-contact-btn');
-  const isPo=!!document.querySelector('.po-title-band');
-  if(hint){
-    hint.style.display=(hasTs||hasInline)?'':'none';
-    if(isPo) hint.textContent='납품처·주소·특기사항·비고는 닫기/인쇄 시 발주에 저장돼요';
-    else if(hasTs||hasInline) hint.textContent='담당자·주소·납품처 입력칸에서 바로 수정할 수 있어요';
-  }
+  // 안내문은 숨김 — 입력칸·버튼만으로 충분
+  if(hint) hint.style.display='none';
   if(btn) btn.style.display=hasTs?'':'none';
   if(opts&&opts.hideTsEdit){
-    if(hint) hint.style.display='none';
     if(btn) btn.style.display='none';
   }
   const kind=currentDocKind();
@@ -4887,33 +4831,15 @@ function renderList(){
       <div class="card-name">${bs||'미지정'}</div>
       <div class="card-items-txt">${its}</div>
       <div style="font-size:12px;color:#444;margin:6px 0 2px;display:flex;gap:6px;align-items:baseline;flex-wrap:wrap">
-        <span style="color:#888;font-size:11px;flex-shrink:0">명세번호</span>
+        <span style="color:#888;font-size:11px;flex-shrink:0">문서번호</span>
         <span style="font-variant-numeric:tabular-nums">${tsLabel}</span>
-      </div>
-      <div style="font-size:12px;color:#444;margin:2px 0 2px;display:flex;gap:6px;align-items:baseline;flex-wrap:wrap">
-        <span style="color:#888;font-size:11px;flex-shrink:0">발주서번호</span>
-        <span style="font-variant-numeric:tabular-nums">${(()=>{
-          const issued=isPoIssued(o.no);
-          if(!issued) return '<span style="color:#bbb">미발급</span>';
-          const cur=resolvePoDocNo(o);
-          const orig=resolvePoOrig(o);
-          return tsNoStackHtml(cur, orig);
-        })()}</span>
       </div>
       <div class="card-amts">
         <div class="card-amt"><span class="card-amt-lbl">매입</span><span class="card-amt-val">${fmtW(o.total_buy)}</span></div>
       </div>
       <div class="card-btns">
-        <button class="btn" style="font-size:12px;padding:5px 12px" onclick="loadOrder('${o.no}')" title="발주 내용 편집">편집</button>
-        ${(()=>{
-          const issued=isPoIssued(o.no);
-          const cur=resolvePoDocNo(o);
-          const btn=(label,mode,title,extra='')=>`<button class="btn btn-po" style="font-size:12px;padding:5px 12px${extra}" onclick="openPoDoc('${o.no}','${mode}')" title="${escHtml(title)}">${label}</button>`;
-          if(issued){
-            return `${btn('수정','edit',`현재 ${cur} → 수정본 ${nextTsRevNo(cur)}`)}${btn('재발행','reissue','새 발주서 번호로 재발행',';margin-left:4px')}`;
-          }
-          return btn('발주서','new','발주서 최초 발행');
-        })()}
+        <button class="btn" style="font-size:12px;padding:5px 12px" onclick="loadOrder('${o.no}')">수정</button>
+        <button class="btn btn-po" style="font-size:12px;padding:5px 12px" onclick="viewPoDoc('${o.no}')">발주서</button>
         <button class="btn" style="font-size:12px;padding:5px 12px;background:#f0fdf4;border-color:#86efac;color:#166534" onclick="copyOrder('${o.no}')">복사</button>
         <button class="btn" style="font-size:12px;padding:5px 12px;color:#dc2626;border-color:#fecaca" onclick="deleteOrder('${o.no}')">삭제</button>
       </div>
@@ -4921,9 +4847,8 @@ function renderList(){
   }).join('');
 
 }
-/** @deprecated 목록은 openPoDoc 사용. 호환용 */
 async function loadAndDoc(no){
-  return openPoDoc(no, isPoIssued(no)?'edit':'new');
+  return viewPoDoc(no);
 }
 
 // ── 납품현황으로 이동 (발주번호 필터) ──
