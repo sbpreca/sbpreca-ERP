@@ -152,7 +152,7 @@ input[readonly]{background:#f5f5f5;color:#999}
 .po-row:last-child{border-bottom:none}
 .po-key{background:#f0f0f0;padding:6px 10px;width:82px;min-width:82px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:11px;color:#333;font-weight:700;border-right:var(--doc-line)}
 .po-val{padding:6px 10px;display:flex;align-items:center;flex:1;font-size:12px}
-.po-tbl{width:100%;border-collapse:separate;border-spacing:0;font-size:12px;margin-bottom:12px;flex:0 0 auto;border:var(--doc-frame)}
+.po-tbl{width:100%;border-collapse:separate;border-spacing:0;font-size:12px;margin-bottom:12px;flex:0 0 auto;border:var(--doc-frame);table-layout:fixed}
 .po-tbl th,.po-tbl td{padding:0 8px;border:0;border-right:var(--doc-line);border-bottom:var(--doc-line);text-align:center;vertical-align:middle;height:42px;box-sizing:border-box}
 .po-tbl tr>*:last-child{border-right:none}
 .po-tbl tr:last-child>*{border-bottom:none}
@@ -161,19 +161,29 @@ input[readonly]{background:#f5f5f5;color:#999}
 .po-tbl td.r{text-align:right}
 .po-tbl tr.empty-row td{height:42px;color:#ddd;background:#fff}
 .po-tbl tfoot td{background:#1f3864;color:#fff;font-weight:700;padding:8px 8px}
-.po-foot{border:var(--doc-frame);margin-top:auto;margin-bottom:12px}
-.po-foot-row{display:flex;min-height:42px;border-bottom:var(--doc-line)}
+.po-tbl td.doc-fit,.ts-tbl td.doc-fit{overflow:hidden;white-space:nowrap}
+.doc-fit-text{display:inline-block;vertical-align:middle;line-height:1.2;white-space:nowrap}
+.po-foot{border:var(--doc-frame);margin-top:12px;margin-bottom:0;display:flex;flex-direction:column;flex:1 1 auto;min-height:0}
+.po-foot-row{display:flex;min-height:42px;border-bottom:var(--doc-line);flex:0 0 auto}
 .po-foot-row:last-child{border-bottom:none}
 .po-foot-key{background:#dbe4f0;padding:5px 10px;width:70px;min-width:70px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:11px;color:#333;font-weight:700;border-right:var(--doc-line)}
 .po-foot-val{padding:5px 10px;display:flex;align-items:center;flex:1;font-size:12px}
+.po-foot-note{flex:1 1 auto;min-height:0;align-items:stretch}
+.po-foot-note .po-foot-key{align-items:flex-start;padding-top:10px}
+.po-foot-note .po-foot-val{align-items:stretch;min-height:0;padding:8px 10px}
 .po-note{font-size:11px;color:#666;line-height:1.9;padding-top:12px;border-top:var(--doc-line);white-space:pre-line}
 .a4-page.quote-page{padding-top:28mm}
 .quote-title-band{background:#1f3864;color:#fff;text-align:center;font-size:26px;font-weight:700;letter-spacing:14px;padding:20px 0;margin-bottom:2px}
 .quote-no{text-align:right;font-size:12px;color:#333;margin-bottom:10px;padding:4px 2px}
 .quote-lead{display:flex;justify-content:space-between;align-items:baseline;font-size:12px;margin:0 2px 10px;color:#333}
 .quote-lead .vat-hint{color:#555;font-size:11px}
-.quote-foot{border:var(--doc-frame);margin-top:12px;margin-bottom:10px;flex:0 0 auto}
-.quote-note{flex:0 0 auto;font-size:11px;color:#333;line-height:1.85;padding-top:10px;border-top:var(--doc-line);white-space:pre-line;margin-top:4px}
+.quote-foot{border:var(--doc-frame);margin-top:12px;margin-bottom:0;flex:0 0 auto}
+.quote-note{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;font-size:12px;color:#333;line-height:1.55;padding-top:8px;border-top:var(--doc-line);margin-top:8px}
+.quote-note .quote-sign{flex:0 0 auto;margin-top:8px;color:#333}
+.doc-note-input{flex:1 1 auto;width:100%;min-height:0;height:auto;border:none;background:transparent;resize:none;font-family:inherit;font-size:12px;line-height:1.55;color:#111;padding:0;margin:0;box-sizing:border-box;overflow:auto;white-space:pre-wrap}
+.po-foot-note .doc-note-input,.ts-note .doc-note-input{height:100%}
+.doc-note-input:hover{background:#fffde7}
+.doc-note-input:focus{background:#fff9c4;outline:none}
 
 /* 거래명세표 서식 */
 .ts-title{text-align:center;font-size:24px;font-weight:700;letter-spacing:12px;margin-bottom:8px;color:#111}
@@ -197,7 +207,7 @@ input[readonly]{background:#f5f5f5;color:#999}
 /* 거래명세표 — 바깥·안쪽 동일 1px, 표 선은 한 면만 그려 겹침 방지 */
 .ts-meta{display:grid;grid-template-columns:1fr 1fr;border:var(--doc-frame);margin-bottom:12px}
 .ts-side+.ts-side{border-left:var(--doc-line)}
-.ts-side-hd{background:#222;color:#fff;padding:6px 10px;font-size:12px;font-weight:700;letter-spacing:1px;text-align:left}
+.ts-side-hd{background:#1f3864;color:#fff;padding:6px 10px;font-size:12px;font-weight:700;letter-spacing:1px;text-align:left}
 .ts-row{display:flex;min-height:42px;border-bottom:var(--doc-line);align-items:stretch}
 .ts-row:last-child{border-bottom:none}
 .ts-key{background:#f0f0f0;padding:6px 8px;width:68px;min-width:68px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:11px;color:#111;font-weight:700;border-right:var(--doc-line);flex-shrink:0;line-height:1.4;word-break:keep-all;white-space:pre-line}
@@ -209,16 +219,19 @@ input[readonly]{background:#f5f5f5;color:#999}
 .ts-amt-box{border:var(--doc-frame);padding:8px 14px;margin-bottom:12px;display:flex;gap:16px;align-items:center}
 .ts-amt-lbl{font-size:12px;color:#111;font-weight:700;min-width:36px}
 .ts-amt-val{font-size:18px;font-weight:700;color:#111}
-.ts-tbl{width:100%;border-collapse:separate;border-spacing:0;font-size:12px;margin-bottom:10px;border:var(--doc-frame)}
+.ts-tbl{width:100%;border-collapse:separate;border-spacing:0;font-size:12px;margin-bottom:10px;border:var(--doc-frame);table-layout:fixed}
 .ts-tbl th,.ts-tbl td{padding:0 8px;border:0;border-right:var(--doc-line);border-bottom:var(--doc-line);text-align:center;vertical-align:middle;height:42px;box-sizing:border-box;color:#111}
 .ts-tbl tr>*:last-child{border-right:none}
 .ts-tbl tr:last-child>*{border-bottom:none}
-.ts-tbl th{background:#222;color:#fff;padding:8px 8px;font-size:11px;font-weight:600}
+.ts-tbl th{background:#1f3864;color:#fff;padding:8px 8px;font-size:11px;font-weight:600}
 .ts-tbl td.l{text-align:left}
 .ts-tbl td.r{text-align:right}
 .ts-tbl tr.empty-row td{height:42px;color:#111;background:#fff}
-.ts-tbl tfoot td{background:#f0f0f0;font-weight:700;padding:8px 8px;color:#111}
-.ts-bank{font-size:12px;color:#111;padding:8px 0;border-top:var(--doc-frame);display:flex;justify-content:space-between;align-items:center;margin-top:8px}
+.ts-tbl tfoot td{background:#1f3864;color:#fff;font-weight:700;padding:8px 8px}
+.ts-note{flex:1 1 auto;min-height:0;display:flex;border:var(--doc-frame);margin-top:8px}
+.ts-note-key{background:#f0f0f0;padding:8px 8px;width:68px;min-width:68px;display:flex;align-items:flex-start;justify-content:center;text-align:center;font-size:11px;color:#111;font-weight:700;border-right:var(--doc-line);line-height:1.4}
+.ts-note .doc-note-input{padding:8px 10px}
+.ts-bank{font-size:12px;color:#111;padding:8px 0;border-top:var(--doc-frame);display:flex;justify-content:space-between;align-items:center;margin-top:8px;flex:0 0 auto}
 
 /* 연간 현황 보고서 (가로 A4) */
 .report-page{width:1120px;padding:14mm 16mm;margin:0 auto;font-family:'맑은 고딕','Malgun Gothic','Apple SD Gothic Neo',sans-serif;color:#111;box-sizing:border-box;--doc-line:1px solid #111;--doc-frame:1px solid #111}
@@ -261,7 +274,8 @@ input[readonly]{background:#f5f5f5;color:#999}
   .a4-page.quote-page{padding-top:28mm!important}
   .a4-page:last-child{page-break-after:auto}
   .a4-page+.a4-page{border-top:none!important}
-  .ts-contact-input,.ts-addr-input,.doc-inline-input,.ts-no-input{border:none!important;background:transparent!important;padding:0!important;box-shadow:none!important;outline:none!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .ts-contact-input,.ts-addr-input,.doc-inline-input,.ts-no-input,.doc-note-input{border:none!important;background:transparent!important;box-shadow:none!important;outline:none!important;overflow:hidden!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .ts-contact-input,.ts-addr-input,.doc-inline-input,.ts-no-input{padding:0!important}
   /* PDF/인쇄에서도 collapse 이중선이 생기지 않게 separate 유지 */
   .po-tbl,.ts-tbl,.report-tbl{border-collapse:separate!important;border-spacing:0!important}
   @page{size:A4 portrait;margin:0}
@@ -309,7 +323,6 @@ input[readonly]{background:#f5f5f5;color:#999}
   <div id="delivery-alert" style="display:none;margin-bottom:12px;padding:10px 16px;border-radius:8px;font-size:13px;border:1px solid"></div>
   <div class="nav">
     <button class="nav-btn on" onclick="go('list')">발주 목록</button>
-    <button class="nav-btn" onclick="go('quote')">견적서</button>
     <button class="nav-btn" onclick="go('deliver')">납품 현황</button>
     <button class="nav-btn" onclick="go('closing')">마감현황</button>
     <button class="nav-btn" onclick="go('cashflow')">실입출금</button>
@@ -327,7 +340,7 @@ input[readonly]{background:#f5f5f5;color:#999}
       <div class="field"><label>발주 번호</label><input id="f-no"></div>
       <div class="field"><label>발주일</label><input type="date" id="f-date"></div>
       <div class="field"><label>담당자</label><select id="f-manager"><option value="이은진">이은진</option><option value="김은희">김은희</option></select></div>
-      <div class="field"><label>특기사항</label><input id="f-note" placeholder="예: COA 메일 송부 요청 必"></div>
+      <div class="field" style="grid-column:1/-1"><label>특기사항</label><textarea id="f-note" rows="5" placeholder="예: COA 메일 송부 요청 必&#10;줄바꿈해서 여러 줄로 적을 수 있어요" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:5px;font:inherit;font-size:13px;line-height:1.5;resize:vertical;box-sizing:border-box"></textarea></div>
     </div>
     <div class="section-box">
       <div class="section-title">발주 품목</div>
@@ -356,6 +369,7 @@ input[readonly]{background:#f5f5f5;color:#999}
       <button class="btn" onclick="addRow()">+ 품목 추가</button>
       <button class="btn btn-save" onclick="saveOrder()">저장</button>
       <button class="btn btn-po" onclick="showPO()">발주서 PDF</button>
+      <button class="btn btn-po" onclick="showQuote()">견적서 PDF</button>
       <span class="msg" id="save-msg"></span>
     </div>
     <div class="sum-bar">
@@ -393,51 +407,6 @@ input[readonly]{background:#f5f5f5;color:#999}
       </table>
     </div>
     <div id="list-area"></div>
-  </div>
-
-  <!-- 견적서 -->
-  <div id="page-quote" class="page">
-    <div class="form-grid" style="grid-template-columns:160px 160px 160px 1fr">
-      <div class="field"><label>견적 번호</label><input id="q-no"></div>
-      <div class="field"><label>견적일</label><input type="date" id="q-date"></div>
-      <div class="field"><label>담당자</label><select id="q-manager"><option value="이은진">이은진</option><option value="김은희">김은희</option></select></div>
-      <div class="field"><label>고객사</label><select id="q-customer" onchange="onQuoteCustomerChange()"></select></div>
-    </div>
-    <div class="form-grid" style="grid-template-columns:1fr 1fr;margin-top:0">
-      <div class="field"><label>고객 담당자</label><input id="q-contact" placeholder="담당자명" oninput="this.dataset.auto='0'"></div>
-      <div class="field"><label>고객 연락처/이메일</label><input id="q-contact-info" placeholder="전화 / 이메일" oninput="this.dataset.auto='0'"></div>
-      <div class="field"><label>지불조건</label><input id="q-pay" placeholder="세금계산서 발행 후 익월 말일 현금 지급"></div>
-      <div class="field"><label>유효기간</label><input id="q-valid" placeholder="견적일로부터 30일"></div>
-      <div class="field" style="grid-column:1/-1"><label>납품장소</label><input id="q-deliver" placeholder="예: 고객 지정 장소 / 별도 협의" oninput="this.dataset.auto='0'"></div>
-      <div class="field" style="grid-column:1/-1"><label>하단 멘트·특기사항</label><textarea id="q-note" rows="3" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:5px;font:inherit;font-size:13px;resize:vertical"></textarea></div>
-    </div>
-    <div class="section-box">
-      <div class="section-title">견적 품목</div>
-      <table class="items-table">
-        <thead><tr>
-          <th style="width:28%">품목</th>
-          <th style="width:14%">규격</th>
-          <th style="width:8%;text-align:right">수량</th>
-          <th style="width:12%;text-align:right">단가</th>
-          <th style="width:12%;text-align:right">금액</th>
-          <th style="width:12%">납기일</th>
-          <th style="width:12%">비고</th>
-          <th style="width:28px"></th>
-        </tr></thead>
-        <tbody id="quote-items-body"></tbody>
-      </table>
-    </div>
-    <div class="actions">
-      <button class="btn" onclick="addQuoteRow()">+ 품목 추가</button>
-      <button class="btn btn-save" onclick="showQuote()">견적서 PDF</button>
-      <button class="btn" onclick="initQuoteForm()">초기화</button>
-      <span class="msg" id="quote-msg"></span>
-    </div>
-    <div class="sum-bar">
-      <div class="sum-item"><span class="sum-lbl">공급가액 합계</span><span class="sum-val" id="q-sum">0원</span></div>
-      <div class="sum-item"><span class="sum-lbl">부가세(10%)</span><span class="sum-val" id="q-vat">0원</span></div>
-      <div class="sum-item"><span class="sum-lbl">합계(VAT포함)</span><span class="sum-val g" id="q-total">0원</span></div>
-    </div>
   </div>
 
   <!-- 납품 현황 -->
@@ -907,14 +876,15 @@ input[readonly]{background:#f5f5f5;color:#999}
           <option value="미분류">미분류</option>
         </select>
       </div>
-      <p style="font-size:13px;color:#666;margin-bottom:12px">업체와 무관하게 품목 하나에 매입단가·매출단가를 등록해두면, 발주·견적 입력 시 품목을 고를 때 자동으로 채워져요. <strong>품목명을 바꾸면 기존 발주·납품 내역에도 같이 반영</strong>됩니다.</p>
+      <p style="font-size:13px;color:#666;margin-bottom:12px">업체와 무관하게 품목 하나에 매입단가·매출단가·단위를 등록해두면, 발주·견적 입력 시 품목을 고를 때 단가가 채워지고, 규격이 없으면 단위가 규격으로 들어가요. <strong>품목명을 바꾸면 기존 발주·납품 내역에도 같이 반영</strong>됩니다.</p>
       <table class="data-tbl">
-        <thead><tr><th>품목</th><th style="width:90px">분류</th><th class="r" style="width:140px">매입단가</th><th class="r" style="width:140px">매출단가</th><th style="width:60px"></th></tr></thead>
+        <thead><tr><th>품목</th><th style="width:90px">분류</th><th style="width:120px">단위</th><th class="r" style="width:140px">매입단가</th><th class="r" style="width:140px">매출단가</th><th style="width:60px"></th></tr></thead>
         <tbody id="item-price-body"></tbody>
       </table>
       <div style="padding:10px 12px;display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid #eee">
         <input id="new-price-item" placeholder="품목명" style="width:200px">
         <select id="new-price-category" style="width:110px"><option value="조명">조명</option><option value="원부자재">원부자재</option><option value="수수료">수수료</option></select>
+        <input id="new-price-unit" placeholder="단위 (예: kg, EA, CAN)" style="width:160px">
         <input type="number" id="new-price-buy" placeholder="매입단가" style="width:130px">
         <input type="number" id="new-price-sell" placeholder="매출단가" style="width:130px">
         <button class="btn btn-save" onclick="addItemPrice()">+ 추가</button>
@@ -937,7 +907,7 @@ input[readonly]{background:#f5f5f5;color:#999}
         <div class="field"><label>대표 전화</label><input id="cfg-tel"></div>
         <div class="field" style="grid-column:1/-1"><label>주소</label><input id="cfg-addr"></div>
         <div class="field" style="grid-column:1/-1"><label>계좌 (거래명세표 하단)</label><input id="cfg-bank"></div>
-        <div class="field" style="grid-column:1/-1"><label>발주서 특기사항 기본값</label><input id="cfg-note"></div>
+        <div class="field" style="grid-column:1/-1"><label>발주서 특기사항 기본값</label><textarea id="cfg-note" rows="4" placeholder="줄바꿈해서 여러 줄로 적을 수 있어요" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:5px;font:inherit;font-size:13px;line-height:1.5;resize:vertical;box-sizing:border-box"></textarea></div>
         <div class="field" style="grid-column:1/-1"><label>견적서 지불조건 기본값</label><input id="cfg-quote-pay" placeholder="세금계산서 발행 후 익월 말일 현금 지급"></div>
         <div class="field" style="grid-column:1/-1"><label>견적서 유효기간 기본값</label><input id="cfg-quote-valid" placeholder="견적일로부터 30일"></div>
         <div class="field" style="grid-column:1/-1"><label>견적서 하단 멘트 기본값</label><textarea id="cfg-quote-note" rows="4" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:5px;font:inherit;font-size:13px;resize:vertical"></textarea></div>
@@ -1145,6 +1115,7 @@ const DEFAULT_CFG={
   delivery_sites:JSON.parse(JSON.stringify(DEFAULT_DELIVERY_SITES)),
   item_categories:{},
   item_specs:{},
+  item_units:{},
   doc_seq:{ts:{},quote:{}},
   doc_mail:{},
   quote_pay:'세금계산서 발행 후 익월 말일 현금 지급',
@@ -1998,6 +1969,7 @@ async function loadConfigFromDb(){
   const cfg=data.data||{};
   if(!cfg.item_categories||typeof cfg.item_categories!=='object') cfg.item_categories={};
   if(!cfg.item_specs||typeof cfg.item_specs!=='object') cfg.item_specs={};
+  if(!cfg.item_units||typeof cfg.item_units!=='object') cfg.item_units={};
   if(!cfg.doc_seq||typeof cfg.doc_seq!=='object') cfg.doc_seq={ts:{},quote:{}};
   if(!cfg.doc_seq.ts||typeof cfg.doc_seq.ts!=='object') cfg.doc_seq.ts={};
   if(!cfg.doc_seq.quote||typeof cfg.doc_seq.quote!=='object') cfg.doc_seq.quote={};
@@ -2361,10 +2333,15 @@ function catalogItems(){
   const base=fromPrices.length?fromPrices:ITEMS;
   return [...new Set([...base, ...fromOrders])].sort((a,b)=>a.localeCompare(b,'ko'));
 }
+function itemUnitOf(name){
+  if(!name||!MY||!MY.item_units) return '';
+  return String(MY.item_units[name]||'').trim();
+}
 function itemSpecOf(name){
   if(!name) return '';
   if(MY&&MY.item_specs&&MY.item_specs[name]) return MY.item_specs[name];
-  return SPECS[name]||'';
+  if(SPECS[name]) return SPECS[name];
+  return itemUnitOf(name);
 }
 async function setItemCategory(item, category){
   if(!MY.item_categories) MY.item_categories={};
@@ -2383,12 +2360,13 @@ function renderItemPrices(){
     .filter(item=>!filter||filter==='전체'||itemCategory(item)===filter);
   const body=document.getElementById('item-price-body');
   if(!names.length){
-    body.innerHTML=`<tr><td colspan="5" style="text-align:center;color:#bbb;padding:1.2rem">${filter!=='전체'?'이 분류에 등록된 단가가 없어요':'등록된 단가가 없어요'}</td></tr>`;
+    body.innerHTML=`<tr><td colspan="6" style="text-align:center;color:#bbb;padding:1.2rem">${filter!=='전체'?'이 분류에 등록된 단가가 없어요':'등록된 단가가 없어요'}</td></tr>`;
     return;
   }
   body.innerHTML=names.map(item=>{
     const p=ITEM_PRICES[item]||{buy:0,sell:0};
     const cat=itemCategory(item);
+    const unit=escHtml(itemUnitOf(item));
     const inPrice=!!ITEM_PRICES[item];
     const attr=escHtml(item);
     return `<tr>
@@ -2407,6 +2385,11 @@ function renderItemPrices(){
           <option value="미분류"${cat==='미분류'?' selected':''}>미분류</option>
         </select>
       </td>
+      <td style="padding:4px 6px">
+        <input type="text" value="${unit}" data-item="${attr}" placeholder="kg, EA…"
+          style="width:100%;border:1px solid #ddd;border-radius:4px;padding:4px 6px;font-size:12px"
+          onchange="saveItemUnit(this.getAttribute('data-item'), this.value)">
+      </td>
       <td class="r" style="padding:4px 8px">
         <input type="number" value="${p.buy||0}" data-item="${attr}" style="width:120px;text-align:right;border:1px solid #ddd;border-radius:4px;padding:4px 6px"
           onchange="saveItemPriceField(this.getAttribute('data-item'),'buy',this.value)">
@@ -2418,6 +2401,15 @@ function renderItemPrices(){
       <td style="text-align:center"><button class="del-btn" data-item="${attr}" onclick="delItemPrice(this.getAttribute('data-item'))" title="단가표에서만 삭제 (발주 내역은 유지)">×</button></td>
     </tr>`;
   }).join('');
+}
+
+async function saveItemUnit(item, value){
+  if(!item) return;
+  if(!MY.item_units) MY.item_units={};
+  const v=String(value||'').trim();
+  if(v) MY.item_units[item]=v;
+  else delete MY.item_units[item];
+  await saveConfigToDb();
 }
 
 async function saveItemPriceField(item,field,value){
@@ -2465,6 +2457,10 @@ async function renameItemMaster(oldName, newName, inputEl){
   delete MY.item_specs[from];
   if(SPECS[from] && !SPECS[to]) SPECS[to]=SPECS[from];
 
+  if(!MY.item_units) MY.item_units={};
+  if(MY.item_units[from] && !MY.item_units[to]) MY.item_units[to]=MY.item_units[from];
+  delete MY.item_units[from];
+
   let changed=0;
   orders.forEach(o=>{
     let dirty=false;
@@ -2481,16 +2477,12 @@ async function renameItemMaster(oldName, newName, inputEl){
   alert(`품목명을 '${to}'(으)로 바꿨어요.\n발주 품목 ${changed}건에 반영했습니다.`);
 }
 
-/** 열려 있는 발주·견적 입력칸의 품목 목록/선택값을 새 이름에 맞춤 */
+/** 열려 있는 발주 입력칸의 품목 목록/선택값을 새 이름에 맞춤 */
 function refreshOpenItemSelectors(from, to){
   const all=catalogItems();
   document.querySelectorAll('#items-body .isel').forEach(sel=>{
     const cur=sel.value===from?to:sel.value;
     sel.innerHTML='<option></option>'+all.map(k=>`<option${k===cur?' selected':''}>${escHtml(k)}</option>`).join('');
-  });
-  quoteItemDatalistId();
-  document.querySelectorAll('#quote-items-body .q-isel').forEach(inp=>{
-    if(String(inp.value||'')===from) inp.value=to;
   });
 }
 
@@ -2499,15 +2491,20 @@ async function addItemPrice(){
   const buy=+document.getElementById('new-price-buy').value||0;
   const sell=+document.getElementById('new-price-sell').value||0;
   const category=document.getElementById('new-price-category').value||'조명';
+  const unit=(document.getElementById('new-price-unit').value||'').trim();
   if(!item){ alert('품목명을 입력해주세요'); return; }
   ITEM_PRICES[item]={buy,sell};
   if(!MY.item_categories) MY.item_categories={};
   MY.item_categories[item]=category;
+  if(!MY.item_units) MY.item_units={};
+  if(unit) MY.item_units[item]=unit;
+  else delete MY.item_units[item];
   await upsertItemPrice(item,buy,sell);
   await saveConfigToDb();
   document.getElementById('new-price-item').value='';
   document.getElementById('new-price-buy').value='';
   document.getElementById('new-price-sell').value='';
+  document.getElementById('new-price-unit').value='';
   refreshOpenItemSelectors(item, item);
   renderItemPrices();
 }
@@ -2518,6 +2515,7 @@ async function delItemPrice(item){
   delete ITEM_PRICES[item];
   if(MY.item_categories) delete MY.item_categories[item];
   if(MY.item_specs) delete MY.item_specs[item];
+  if(MY.item_units) delete MY.item_units[item];
   await deleteItemPrice(item);
   await saveConfigToDb();
   refreshOpenItemSelectors(item, item);
@@ -2915,7 +2913,8 @@ function loadOrder(no){
   o.items.forEach(it=>addRow(it));calcS();
 }
 
-/* ── A4 고정 서식: 빈 행 채우기 (기본 total줄 보장) ── */
+/* ── A4 고정 서식: 빈 행 채우기 (기본 total줄 보장). 내역은 6줄, 남은 높이는 특기사항 ── */
+const DOC_LINE_ROWS=6;
 function emptyRows(current, total, cols, cls){
   const n=Math.max(0,(total||0)-(current||0));
   let rows='';
@@ -2924,6 +2923,32 @@ function emptyRows(current, total, cols, cls){
     rows+=`<tr class="${cls}"><td>${no}</td>`+`<td></td>`.repeat(Math.max(0,cols-1))+`</tr>`;
   }
   return rows;
+}
+function docFitHtml(text, align){
+  const cls=align?`doc-fit ${align}`:'doc-fit';
+  return `<td class="${cls}"><span class="doc-fit-text">${escHtml(text||'')}</span></td>`;
+}
+/** 품목·규격이 칸 높이를 넘으면 글씨를 줄여 칸 안에 맞춘다 */
+function fitDocOverflowCells(){
+  document.querySelectorAll('#doc-content td.doc-fit .doc-fit-text').forEach(el=>{
+    const text=(el.textContent||'').replace(/\u3000/g,'').trim();
+    el.style.display='block';
+    el.style.width='100%';
+    el.style.whiteSpace='normal';
+    el.style.wordBreak='break-all';
+    el.style.lineHeight='1.15';
+    el.style.fontSize='12px';
+    if(!text) return;
+    const td=el.parentElement;
+    const maxH=Math.max(12, td.clientHeight-1);
+    let size=12;
+    let guard=0;
+    while(size>6 && el.scrollHeight>maxH && guard<20){
+      size=Math.round((size-0.5)*10)/10;
+      el.style.fontSize=size+'px';
+      guard++;
+    }
+  });
 }
 
 /* ── 발주서: 매입처별, A4 고정, 날인란 없음 ── */
@@ -2938,7 +2963,7 @@ function buildPOHtml(order){
   const groups={};
   items.forEach(i=>{if(i.buyer)(groups[i.buyer]=groups[i.buyer]||[]).push(i);});
   const buyerCount=Object.keys(groups).length;
-  const FIXED_ROWS=10;
+  const FIXED_ROWS=DOC_LINE_ROWS;
   let html='';
   Object.entries(groups).forEach(([buyer,its],idx)=>{
     const bi=BUYERS[buyer]||{contact:'담당자'};
@@ -2952,8 +2977,8 @@ function buildPOHtml(order){
     const deliverDisp=deliverLabel?`${deliverName} (${deliverLabel})`:deliverName;
     const dataRows=its.map((r,i)=>`<tr>
       <td>${i+1}</td>
-      <td class="l">${escHtml(r.item||'')}</td>
-      <td>${escHtml(r.spec||'')}</td>
+      ${docFitHtml(r.item||'', 'l')}
+      ${docFitHtml(r.spec||'')}
       <td class="r">${fmt(r.bqty)}</td>
       <td class="r">${fmt(r.bprice)}</td>
       <td class="r">${fmt(r.bamt)}</td>
@@ -2987,7 +3012,7 @@ function buildPOHtml(order){
         <div class="po-foot-row"><span class="po-foot-key">납 품 처</span><span class="po-foot-val"><input class="doc-inline-input" value="${escHtml(deliverDisp||'')}" placeholder="납품처" title="클릭해서 수정"></span></div>
         <div class="po-foot-row"><span class="po-foot-key">소 재 지</span><span class="po-foot-val"><input class="doc-inline-input" value="${escHtml(di.addr||'')}" placeholder="납품 주소" title="클릭해서 수정"></span></div>
         <div class="po-foot-row"><span class="po-foot-key">담 당 자</span><span class="po-foot-val"><input class="doc-inline-input" value="${escHtml(formatDocContact(di.contact||'')||'')}" placeholder="담당자" title="클릭해서 수정"></span></div>
-        ${note?`<div class="po-foot-row"><span class="po-foot-key">특기사항</span><span class="po-foot-val">${escHtml(note)}</span></div>`:''}
+        <div class="po-foot-row po-foot-note"><span class="po-foot-key">특기사항</span><span class="po-foot-val"><textarea class="doc-note-input" title="줄바꿈해서 입력">${escHtml(note)}</textarea></span></div>
       </div>
     </div>`;
   });
@@ -3040,7 +3065,7 @@ async function showPO(){
   openDocOverlay(built.html);
 }
 
-/* ── 견적서 ── */
+/* ── 견적서: 발주 입력 화면에서 매출처 기준으로 발행 ── */
 function quoteDateKey(d){
   return String(d||'').replace(/-/g,'').slice(2,8); // YYMMDD
 }
@@ -3061,184 +3086,52 @@ async function suggestQuoteNo(quoteDate){
 }
 async function commitQuoteDocNo(finalNo, quoteDate){
   await refreshQuoteDocSeqFromDb();
-  // 번호 문자열에 들어 있는 날짜 기준으로 저장 (거래일과 달라도 수정분이 남도록)
   const ok=await commitDocSeqFromNos('quote', [finalNo], quoteDateKey(quoteDate));
   if(!ok && finalNo){
     const parts=parseDocNoParts('quote', finalNo);
     if(!parts) console.warn('견적 번호 형식을 인식하지 못했어요:', finalNo);
   }
 }
-function fillQuoteCustomers(selected){
-  const sel=document.getElementById('q-customer');
-  if(!sel) return;
-  const companies=Object.keys(SELLERS||{}).sort((a,b)=>a.localeCompare(b,'ko'));
-  const cur=selected!=null?selected:sel.value;
-  sel.innerHTML='<option value="">고객사 선택</option>'+
-    companies.map(c=>`<option value="${escHtml(c)}"${c===cur?' selected':''}>${escHtml(c)}</option>`).join('');
+function orderItemToQuoteLine(r){
+  const qty=+r.sqty||+r.bqty||0;
+  const price=+r.sprice||((ITEM_PRICES[r.item]||{}).sell)||0;
+  return {
+    item:r.item||'',
+    spec:r.spec||'',
+    qty,
+    price,
+    amt:qty*price,
+    due:r.ship||'',
+    memo:''
+  };
 }
-function onQuoteCustomerChange(){
-  const name=document.getElementById('q-customer').value;
-  const info=SELLERS[name]||{};
-  const contactEl=document.getElementById('q-contact');
-  const infoEl=document.getElementById('q-contact-info');
-  if(contactEl && (!contactEl.value || contactEl.dataset.auto==='1')){
-    contactEl.value=info.contact||'';
-    contactEl.dataset.auto='1';
-  }
-  if(infoEl && (!infoEl.value || infoEl.dataset.auto==='1')){
-    const parts=[];
-    if(info.email) parts.push(info.email);
-    infoEl.value=parts.join(' / ');
-    infoEl.dataset.auto='1';
-  }
-  const deliver=document.getElementById('q-deliver');
-  if(deliver && (!deliver.value || deliver.dataset.auto==='1')){
-    deliver.value=info.addr||'';
-    deliver.dataset.auto='1';
-  }
-}
-function quoteItemDatalistId(){
-  let dl=document.getElementById('quote-item-list');
-  if(!dl){
-    dl=document.createElement('datalist');
-    dl.id='quote-item-list';
-    document.body.appendChild(dl);
-  }
-  const allItems=catalogItems();
-  dl.innerHTML=allItems.map(k=>`<option value="${escHtml(k)}"></option>`).join('');
-  return 'quote-item-list';
-}
-function addQuoteRow(it={}){
-  const tr=document.createElement('tr');
-  const listId=quoteItemDatalistId();
-  tr.innerHTML=`
-    <td><input type="text" class="q-isel" list="${listId}" value="${escHtml(it.item||'')}" placeholder="품목명 직접 입력" style="width:100%;font-size:12px;border:1px solid #e8e8e8;padding:4px 5px;border-radius:4px" onchange="autoQuoteSpec(this);autoQuotePrice(this)"></td>
-    <td><input type="text" class="q-spec" value="${escHtml(it.spec||'')}" style="width:100%" oninput="this.dataset.auto='0'"></td>
-    <td><input type="number" class="q-qty" value="${it.qty||''}" style="width:100%;text-align:right" oninput="calcQuoteRow(this)"></td>
-    <td><input type="number" class="q-price" value="${it.price||''}" style="width:100%;text-align:right" oninput="calcQuoteRow(this)"></td>
-    <td class="amt q-amt">${it.qty&&it.price?fmt(it.qty*it.price):'-'}</td>
-    <td><input type="date" class="q-due" value="${it.due||''}" style="width:100%;font-size:11px"></td>
-    <td><input type="text" class="q-memo" value="${escHtml(it.memo||'')}" style="width:100%"></td>
-    <td><button class="del-btn" onclick="this.closest('tr').remove();calcQuoteSum()">×</button></td>`;
-  document.getElementById('quote-items-body').appendChild(tr);
-}
-function autoQuoteSpec(el){
-  const name=String(el.value||'').trim();
-  const tr=el.closest('tr'), s=itemSpecOf(name);
-  if(s){
-    const specEl=tr.querySelector('.q-spec');
-    if(specEl && (!specEl.value || specEl.dataset.auto==='1')){
-      specEl.value=s;
-      specEl.dataset.auto='1';
-    }
-  }
-}
-function autoQuotePrice(el){
-  const tr=el.closest('tr');
-  const priceEl=tr.querySelector('.q-price');
-  if(priceEl.value) return;
-  const found=ITEM_PRICES[String(el.value||'').trim()];
-  if(found && found.sell){ priceEl.value=found.sell; calcQuoteRow(priceEl); }
-}
-function calcQuoteRow(inp){
-  const tr=inp.closest('tr');
-  const qty=+tr.querySelector('.q-qty').value||0;
-  const price=+tr.querySelector('.q-price').value||0;
-  tr.querySelector('.q-amt').textContent=qty&&price?fmt(qty*price):'-';
-  calcQuoteSum();
-}
-function calcQuoteSum(){
-  let sum=0;
-  document.querySelectorAll('#quote-items-body tr').forEach(tr=>{
-    sum+=(+tr.querySelector('.q-qty').value||0)*(+tr.querySelector('.q-price').value||0);
-  });
-  const vat=Math.round(sum*0.1);
-  const elSum=document.getElementById('q-sum');
-  const elVat=document.getElementById('q-vat');
-  const elTot=document.getElementById('q-total');
-  if(elSum) elSum.textContent=fmtW(sum);
-  if(elVat) elVat.textContent=fmtW(vat);
-  if(elTot) elTot.textContent=fmtW(sum+vat);
-}
-function getQuoteRows(){
-  return Array.from(document.querySelectorAll('#quote-items-body tr')).map(tr=>({
-    item:String(tr.querySelector('.q-isel').value||'').trim(),
-    spec:tr.querySelector('.q-spec').value,
-    qty:+tr.querySelector('.q-qty').value||0,
-    price:+tr.querySelector('.q-price').value||0,
-    amt:(+tr.querySelector('.q-qty').value||0)*(+tr.querySelector('.q-price').value||0),
-    due:tr.querySelector('.q-due').value,
-    memo:tr.querySelector('.q-memo').value,
-  })).filter(r=>r.item||r.qty||r.price);
-}
-async function initQuoteForm(){
-  fillQuoteCustomers('');
-  const dateEl=document.getElementById('q-date');
-  const today=new Date().toISOString().slice(0,10);
-  if(dateEl) dateEl.value=today;
-  const noEl=document.getElementById('q-no');
-  if(noEl) noEl.value=await suggestQuoteNo(today);
-  document.getElementById('q-contact').value='';
-  document.getElementById('q-contact').dataset.auto='1';
-  document.getElementById('q-contact-info').value='';
-  document.getElementById('q-contact-info').dataset.auto='1';
-  document.getElementById('q-pay').value=MY.quote_pay||DEFAULT_CFG.quote_pay;
-  document.getElementById('q-valid').value=MY.quote_valid||DEFAULT_CFG.quote_valid;
-  document.getElementById('q-deliver').value='';
-  document.getElementById('q-deliver').dataset.auto='1';
-  document.getElementById('q-note').value=MY.quote_note||DEFAULT_CFG.quote_note;
-  document.getElementById('quote-items-body').innerHTML='';
-  addQuoteRow(); addQuoteRow();
-  calcQuoteSum();
-  const msg=document.getElementById('quote-msg');
-  if(msg){ msg.textContent=''; }
-}
-async function showQuote(){
-  const items=getQuoteRows().filter(r=>r.item);
-  if(!items.length){ alert('품목을 입력해주세요'); return; }
-  const customer=document.getElementById('q-customer').value;
-  if(!customer){ alert('고객사를 선택해주세요'); return; }
-  const date=document.getElementById('q-date').value||new Date().toISOString().slice(0,10);
-  const defaultNo=document.getElementById('q-no').value||await suggestQuoteNo(date);
-  const no=prompt('견적 번호를 확인/수정해주세요', defaultNo);
-  if(no===null) return;
-  const finalNo=String(no).trim()||defaultNo;
-  document.getElementById('q-no').value=finalNo;
-  await commitQuoteDocNo(finalNo, date);
-
-  const manager=document.getElementById('q-manager').value||'이은진';
-  const contact=document.getElementById('q-contact').value||(SELLERS[customer]||{}).contact||'담당자';
-  const contactInfo=document.getElementById('q-contact-info').value||'';
-  const pay=document.getElementById('q-pay').value||MY.quote_pay||'';
-  const valid=document.getElementById('q-valid').value||MY.quote_valid||'';
-  const deliver=document.getElementById('q-deliver').value||'';
-  const note=(document.getElementById('q-note').value||MY.quote_note||DEFAULT_CFG.quote_note||'').trim();
+function buildQuotePageHtml({finalNo, customer, contact, contactInfo, date, valid, pay, deliver, note, manager, items}){
   const si=SELLERS[customer]||{};
   const mgrInfo=(MY.managers&&MY.managers[manager])||{};
   const myContact=manager+(mgrInfo.tel?'　'+mgrInfo.tel:'')+(mgrInfo.email?' / '+mgrInfo.email:'');
-  // 견적은 빈 줄 최소화(입력 행 + 여유 1~2줄). 10줄 고정 시 하단 멘트가 A4에서 잘림
-  const FIXED_ROWS=Math.max(items.length+1, Math.min(5, items.length+2));
+  const FIXED_ROWS=DOC_LINE_ROWS;
+  const sub=items.reduce((s,r)=>s+(+r.amt||0),0);
   const dataRows=items.map((r,i)=>`<tr>
     <td>${i+1}</td>
-    <td class="l">${escHtml(r.item)}</td>
-    <td>${escHtml(r.spec||'')}</td>
+    ${docFitHtml(r.item, 'l')}
+    ${docFitHtml(r.spec||'')}
     <td class="r">${fmt(r.qty)}</td>
     <td class="r">${fmt(r.price)}</td>
     <td class="r">${fmt(r.amt)}</td>
-    <td>${r.due?r.due.replace(/-/g,'.'):'　'}</td>
+    <td>${r.due?String(r.due).replace(/-/g,'.'):'　'}</td>
     <td class="l">${escHtml(r.memo||'')}</td>
   </tr>`).join('');
   const blank=emptyRows(items.length, Math.max(FIXED_ROWS, items.length), 8, 'empty-row');
-  const noteHtml=escHtml(note).replace(/\n/g,'<br>');
-  const html=`<div class="a4-page quote-page">
+  const deliverVal=deliver||si.addr||'';
+  return `<div class="a4-page quote-page">
     <div class="quote-title-band">견 적 서</div>
     <div class="quote-no">No. ${escHtml(finalNo)}</div>
     <div class="po-meta">
       <div class="po-side">
         <div class="po-row"><span class="po-key">수 신 처</span><span class="po-val">${escHtml(customer)}</span></div>
         <div class="po-row"><span class="po-key">담 당 자</span><span class="po-val">${escHtml(formatDocContact(contact))}${contactInfo?'　'+escHtml(contactInfo):''}</span></div>
-        <div class="po-row"><span class="po-key">견 적 일</span><span class="po-val">${date.replace(/-/g,'.')}</span></div>
-        <div class="po-row"><span class="po-key">유효기간</span><span class="po-val">${escHtml(valid||'　')}</span></div>
+        <div class="po-row"><span class="po-key">견 적 일</span><span class="po-val">${escHtml(String(date).replace(/-/g,'.'))}</span></div>
+        <div class="po-row"><span class="po-key">유효기간</span><span class="po-val"><input class="doc-inline-input" value="${escHtml(valid||'')}" placeholder="유효기간" title="클릭해서 수정"></span></div>
       </div>
       <div class="po-side">
         <div class="po-row"><span class="po-key">상 호</span><span class="po-val">${escHtml(MY.name)}</span></div>
@@ -3249,20 +3142,63 @@ async function showQuote(){
     </div>
     <div class="quote-lead"><span>아래와 같이 견적 드립니다.</span><span class="vat-hint">(부가가치세 별도)</span></div>
     <table class="po-tbl">
-      <thead><tr><th style="width:34px">NO</th><th>품목</th><th style="width:80px">규격</th><th style="width:54px">수량</th><th style="width:90px">단가(원)</th><th style="width:100px">금액(원)</th><th style="width:90px">납기일</th><th style="width:80px">비고</th></tr></thead>
+      <thead><tr><th style="width:34px">NO</th><th style="width:127px">품목</th><th style="width:143px">규격</th><th style="width:54px">수량</th><th style="width:90px">단가(원)</th><th style="width:100px">금액(원)</th><th style="width:90px">납기일</th><th style="width:80px">비고</th></tr></thead>
       <tbody>${dataRows}${blank}</tbody>
+      <tfoot><tr><td colspan="5" style="text-align:right;padding:8px">합　계</td><td class="r">${fmt(sub)}</td><td colspan="2"></td></tr></tfoot>
     </table>
     <div class="quote-foot">
-      <div class="po-foot-row"><span class="po-foot-key">지불조건</span><span class="po-foot-val">${escHtml(pay||'　')}</span></div>
-      <div class="po-foot-row"><span class="po-foot-key">납품장소</span><span class="po-foot-val">${escHtml(deliver||si.addr||'　')}</span></div>
-      <div class="po-foot-row"><span class="po-foot-key">유효기간</span><span class="po-foot-val">${escHtml(valid||'　')}</span></div>
+      <div class="po-foot-row"><span class="po-foot-key">지불조건</span><span class="po-foot-val"><input class="doc-inline-input" value="${escHtml(pay||'')}" placeholder="지불조건" title="클릭해서 수정"></span></div>
+      <div class="po-foot-row"><span class="po-foot-key">납품장소</span><span class="po-foot-val"><input class="doc-inline-input" value="${escHtml(deliverVal||'')}" placeholder="납품장소" title="클릭해서 수정"></span></div>
+      <div class="po-foot-row"><span class="po-foot-key">유효기간</span><span class="po-foot-val"><input class="doc-inline-input" value="${escHtml(valid||'')}" placeholder="유효기간" title="클릭해서 수정"></span></div>
       ${MY.bank?`<div class="po-foot-row"><span class="po-foot-key">입금계좌</span><span class="po-foot-val">${escHtml(MY.bank)}</span></div>`:''}
     </div>
-    <div class="quote-note">${noteHtml||'　'}
-      <div style="margin-top:10px;color:#333">담당자 : ${escHtml(manager)}${mgrInfo.tel?' / '+escHtml(mgrInfo.tel):''}${mgrInfo.email?' / '+escHtml(mgrInfo.email):''}</div>
+    <div class="quote-note">
+      <textarea class="doc-note-input" title="줄바꿈해서 입력">${escHtml(note||'')}</textarea>
+      <div class="quote-sign">담당자 : ${escHtml(manager)}${mgrInfo.tel?' / '+escHtml(mgrInfo.tel):''}${mgrInfo.email?' / '+escHtml(mgrInfo.email):''}</div>
     </div>
   </div>`;
-  setDocMailMeta('quote', [{name:customer, role:'seller'}], items);
+}
+async function showQuote(){
+  const rows=getRows().filter(r=>r.item);
+  if(!rows.length){ alert('품목을 입력해주세요'); return; }
+  const groups={};
+  rows.forEach(r=>{
+    const co=sellerCompany(r.seller);
+    if(!co) return;
+    (groups[co]=groups[co]||[]).push(r);
+  });
+  const customers=Object.keys(groups);
+  if(!customers.length){ alert('견적서에 넣을 매출처를 선택해주세요'); return; }
+
+  const date=document.getElementById('f-date').value||new Date().toISOString().slice(0,10);
+  const manager=document.getElementById('f-manager').value||'이은진';
+  const defaultNo=await suggestQuoteNo(date);
+  const no=prompt('견적 번호를 확인/수정해주세요', defaultNo);
+  if(no===null) return;
+  const finalNo=String(no).trim()||defaultNo;
+  await commitQuoteDocNo(finalNo, date);
+
+  const pay=MY.quote_pay||DEFAULT_CFG.quote_pay||'';
+  const valid=MY.quote_valid||DEFAULT_CFG.quote_valid||'';
+  const note=(MY.quote_note||DEFAULT_CFG.quote_note||'').trim();
+  let html='';
+  const allItems=[];
+  customers.forEach((customer,idx)=>{
+    const its=groups[customer];
+    const sample=its[0]||{};
+    const di=resolveDeliverInfo(sample.seller||customer, sample);
+    const si=SELLERS[customer]||{};
+    const contact=di.contact||si.contact||'담당자';
+    const contactInfo=si.email||'';
+    const deliver=di.addr||si.addr||'';
+    const items=its.map(orderItemToQuoteLine);
+    allItems.push(...items);
+    const pageNo=customers.length===1?finalNo:`${finalNo}-${String(idx+1).padStart(2,'0')}`;
+    html+=buildQuotePageHtml({
+      finalNo:pageNo, customer, contact, contactInfo, date, valid, pay, deliver, note, manager, items
+    });
+  });
+  setDocMailMeta('quote', customers.map(name=>({name, role:'seller'})), allItems);
   openDocOverlay(html);
 }
 
@@ -4019,6 +3955,12 @@ async function buildDocPdfBase64(){
       span.style.cssText='display:inline-block;min-width:4em;width:100%';
       inp.replaceWith(span);
     });
+    clone.querySelectorAll('textarea.doc-note-input').forEach(inp=>{
+      const div=document.createElement('div');
+      div.textContent=inp.value||'';
+      div.style.cssText='white-space:pre-wrap;font-size:12px;line-height:1.55;width:100%;height:100%';
+      inp.replaceWith(div);
+    });
     host.appendChild(clone);
   });
   document.body.appendChild(host);
@@ -4096,6 +4038,8 @@ function openDocOverlay(html, opts){
   document.getElementById('dynamic-page-style').textContent='';
   document.getElementById('doc-frame').style.width='794px';
   document.getElementById('overlay').style.display='block';
+  fitDocOverflowCells();
+  requestAnimationFrame(()=>fitDocOverflowCells());
   const hasTs=!!document.querySelector('.ts-contact-input');
   const hasInline=!!document.querySelector('.doc-inline-input,.ts-addr-input');
   const hint=document.getElementById('ts-edit-hint');
@@ -4155,7 +4099,7 @@ async function saveTsContactsToSettings(){
 
 /* ── 거래명세표: 선택 품목, A4 고정 ── */
 function tsPageHtml({company, seller, contact, addr, its, dy, dm, dd, tsNo, tsOrig, sepClass, tradeDate}){
-  const FIXED_ROWS=10;
+  const FIXED_ROWS=DOC_LINE_ROWS;
   const si=sellerInfo(seller||company);
   const di=resolveDeliverInfo(seller||company, (its&&its[0])||{});
   const siteName=di.label||sellerSite(seller||'')||'';
@@ -4165,8 +4109,8 @@ function tsPageHtml({company, seller, contact, addr, its, dy, dm, dd, tsNo, tsOr
     const d=tradeDate||r.ship||'';
     return `<tr>
     <td>${d?d.slice(5).replace('-','.'):'　'}</td>
-    <td class="l">${r.item}</td>
-    <td>${r.spec||''}</td>
+    ${docFitHtml(r.item||'', 'l')}
+    ${docFitHtml(r.spec||'')}
     <td class="r">${fmt(r.sqty)}</td>
     <td class="r">${fmt(r.sprice)}</td>
     <td class="r">${fmt(r.samt)}</td>
@@ -4226,6 +4170,10 @@ function tsPageHtml({company, seller, contact, addr, its, dy, dm, dd, tsNo, tsOr
         <td></td>
       </tr></tfoot>
     </table>
+    <div class="ts-note">
+      <div class="ts-note-key">특기사항</div>
+      <textarea class="doc-note-input" title="줄바꿈해서 입력" placeholder="특기사항을 입력하세요"></textarea>
+    </div>
     <div class="ts-bank">
       <span>${MY.bank}</span>
       <span>인수자　　　　　　　　　(인)</span>
@@ -4568,8 +4516,8 @@ function renderDeliver(){
 
 /* ── 탭 전환 ── */
 function go(p){
-  const navIds=['list','quote','deliver','closing','cashflow','pl','hometax','balance','txclass','annual','settings'];
-  const allIds=['list','quote','deliver','closing','cashflow','hometax','pl','balance','txclass','annual','new','settings'];
+  const navIds=['list','deliver','closing','cashflow','pl','hometax','balance','txclass','annual','settings'];
+  const allIds=['list','deliver','closing','cashflow','hometax','pl','balance','txclass','annual','new','settings'];
   allIds.forEach(id=>{
     const el=document.getElementById('page-'+id);
     if(el) el.classList.toggle('on',id===p);
@@ -4579,10 +4527,6 @@ function go(p){
     btn.classList.toggle('on',navIds[i]===navP);
   });
   if(p==='list')renderList();
-  if(p==='quote'){
-    fillQuoteCustomers();
-    if(!document.querySelector('#quote-items-body tr')) initQuoteForm();
-  }
   if(p==='deliver')renderDeliver();
   if(p==='closing')renderClosing();
   if(p==='cashflow')renderCashflow();
