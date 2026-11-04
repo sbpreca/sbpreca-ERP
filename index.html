@@ -3387,7 +3387,7 @@ function buildQuotePageHtml({finalNo, customer, contact, contactInfo, date, vali
     <div class="quote-foot">
       <div class="po-foot-row"><span class="po-foot-key">지불조건</span><span class="po-foot-val"><input class="doc-inline-input" value="${escHtml(docFieldText(pay))}"></span></div>
       <div class="po-foot-row"><span class="po-foot-key">납품장소</span><span class="po-foot-val"><input class="doc-inline-input" value="${escHtml(docFieldText(deliverVal))}"></span></div>
-      <div class="po-foot-row"><span class="po-foot-key">유효기간</span><span class="po-foot-val"><input class="doc-inline-input" value="${escHtml(docFieldText(valid))}"></span></div>
+      <div class="po-foot-row"><span class="po-foot-key">특이사항</span><span class="po-foot-val"><input class="doc-inline-input" value=""></span></div>
       ${MY.bank?`<div class="po-foot-row"><span class="po-foot-key">입금계좌</span><span class="po-foot-val">${escHtml(MY.bank)}</span></div>`:''}
     </div>
     <div class="quote-note">
