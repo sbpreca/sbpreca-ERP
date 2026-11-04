@@ -1153,7 +1153,7 @@ const DEFAULT_CFG={
   item_categories:{},
   item_specs:{},
   item_units:{},
-  doc_seq:{ts:{},quote:{}},
+  doc_seq:{ts:{},quote:{},po:{}},
   doc_mail:{},
   po_docs:{},
   quote_pay:'세금계산서 발행 후 익월 말일 현금 지급',
@@ -2135,9 +2135,10 @@ async function loadConfigFromDb(){
   if(!cfg.item_categories||typeof cfg.item_categories!=='object') cfg.item_categories={};
   if(!cfg.item_specs||typeof cfg.item_specs!=='object') cfg.item_specs={};
   if(!cfg.item_units||typeof cfg.item_units!=='object') cfg.item_units={};
-  if(!cfg.doc_seq||typeof cfg.doc_seq!=='object') cfg.doc_seq={ts:{},quote:{}};
+  if(!cfg.doc_seq||typeof cfg.doc_seq!=='object') cfg.doc_seq={ts:{},quote:{},po:{}};
   if(!cfg.doc_seq.ts||typeof cfg.doc_seq.ts!=='object') cfg.doc_seq.ts={};
   if(!cfg.doc_seq.quote||typeof cfg.doc_seq.quote!=='object') cfg.doc_seq.quote={};
+  if(!cfg.doc_seq.po||typeof cfg.doc_seq.po!=='object') cfg.doc_seq.po={};
   if(!cfg.doc_mail||typeof cfg.doc_mail!=='object') cfg.doc_mail={};
   if(!cfg.po_docs||typeof cfg.po_docs!=='object') cfg.po_docs={};
   if(!cfg.ts_item_docs||typeof cfg.ts_item_docs!=='object') cfg.ts_item_docs={};
@@ -3337,8 +3338,17 @@ async function showPO(){
       if(it.seller) tgt.seller=it.seller;
     });
   }
-  rememberPoDoc(order.no, order.no);
-  order.po_doc_no=order.no;
+  // 문서번호: 상보 접두 SBPO-YYMMDD-순번 (발주번호 order.no 와 별개). 구형·기발급 번호는 유지
+  let poDocNo=resolvePoDocNo(order);
+  const metaPo=getPoDocMeta(order.no);
+  if(!parseDocNoParts('po', poDocNo)){
+    if(!(metaPo && metaPo.issued && poDocNo)){
+      poDocNo=await suggestPoDocNo(order.date);
+    }
+  }
+  rememberPoDoc(order.no, poDocNo);
+  order.po_doc_no=poDocNo;
+  await commitDocSeqFromNos('po', [poDocNo], quoteDateKey(order.date));
   persist(order.no);
   clearTimeout(_persistTimer);
   try{ await saveOrdersToDb(); }catch(e){ console.warn(e); }
@@ -3354,8 +3364,7 @@ function quoteDateKey(d){
 }
 async function refreshQuoteDocSeqFromDb(){
   const cfg=await loadConfigFromDb();
-  if(!MY.doc_seq||typeof MY.doc_seq!=='object') MY.doc_seq={ts:{},quote:{}};
-  if(!MY.doc_seq.quote||typeof MY.doc_seq.quote!=='object') MY.doc_seq.quote={};
+  ensureDocSeqBuckets();
   const remote=(cfg&&cfg.doc_seq&&cfg.doc_seq.quote)||{};
   Object.keys(remote).forEach(d=>{
     MY.doc_seq.quote[d]=Math.max(+MY.doc_seq.quote[d]||0, +remote[d]||0);
@@ -3365,7 +3374,21 @@ async function suggestQuoteNo(quoteDate){
   await refreshQuoteDocSeqFromDb();
   const ymd=quoteDateKey(quoteDate);
   const next=(+MY.doc_seq.quote[ymd]||0)+1;
-  return `QT-${ymd}-${String(next).padStart(2,'0')}`;
+  return formatDocNo('quote', ymd, next);
+}
+async function refreshPoDocSeqFromDb(){
+  const cfg=await loadConfigFromDb();
+  ensureDocSeqBuckets();
+  const remote=(cfg&&cfg.doc_seq&&cfg.doc_seq.po)||{};
+  Object.keys(remote).forEach(d=>{
+    MY.doc_seq.po[d]=Math.max(+MY.doc_seq.po[d]||0, +remote[d]||0);
+  });
+}
+async function suggestPoDocNo(poDate){
+  await refreshPoDocSeqFromDb();
+  const ymd=quoteDateKey(poDate);
+  const next=(+MY.doc_seq.po[ymd]||0)+1;
+  return formatDocNo('po', ymd, next);
 }
 async function commitQuoteDocNo(finalNo, quoteDate){
   await refreshQuoteDocSeqFromDb();
@@ -3514,10 +3537,22 @@ function promptTsTradeDate(defaultDate){
 function tsDateKey(tradeDate){
   return String(tradeDate||'').replace(/-/g,'').slice(2,8); // YYMMDD
 }
-/** TS-YYMMDD-NN / QT-YYMMDD-NN (뒤에 -01·-R1 등 접미사 있어도 본번 인식) */
+/** 상보(SB) 공통 접두 + 문서종류 → SBTS / SBQT / SBPO */
+const DOC_NO_PREFIX={ts:'SBTS', quote:'SBQT', po:'SBPO'};
+const DOC_NO_PREFIX_LEGACY={ts:'TS', quote:'QT', po:'PO'};
+function docNoPrefix(kind){
+  return DOC_NO_PREFIX[kind]||DOC_NO_PREFIX.ts;
+}
+function formatDocNo(kind, ymd, seq){
+  return `${docNoPrefix(kind)}-${ymd}-${String(seq).padStart(2,'0')}`;
+}
+/** SBTS|SBQT|SBPO-YYMMDD-NN (구형 TS|QT|PO- 도 인식). 뒤에 -R1 등 있어도 본번 인식 */
 function parseDocNoParts(kind, docNo){
-  const prefix=kind==='quote'?'QT':'TS';
-  const m=String(docNo||'').trim().match(new RegExp(`^${prefix}-(\\d{6})-(\\d+)`, 'i'));
+  const s=String(docNo||'').trim();
+  const cur=docNoPrefix(kind);
+  const leg=DOC_NO_PREFIX_LEGACY[kind]||'';
+  let m=s.match(new RegExp(`^${cur}-(\\d{6})-(\\d+)`, 'i'));
+  if(!m && leg) m=s.match(new RegExp(`^${leg}-(\\d{6})-(\\d+)`, 'i'));
   if(!m) return null;
   return {ymd:m[1], seq:parseInt(m[2],10)};
 }
@@ -3529,7 +3564,7 @@ function tsRevNumber(no){
   const m=String(no||'').trim().match(/-R(\d+)$/i);
   return m?parseInt(m[1],10):0;
 }
-/** 수정본 다음 번호: TS-…-01 → TS-…-01-R1, R1 → R2 */
+/** 수정본 다음 번호: SBTS-…-01 → SBTS-…-01-R1, R1 → R2 */
 function nextTsRevNo(currentNo){
   const cur=String(currentNo||'').trim();
   if(!cur) return '';
@@ -3644,20 +3679,28 @@ function parseTsDocSeq(docNo, ymd){
   return parts.seq;
 }
 function ensureDocSeqBuckets(){
-  if(!MY.doc_seq||typeof MY.doc_seq!=='object') MY.doc_seq={ts:{},quote:{}};
+  if(!MY.doc_seq||typeof MY.doc_seq!=='object') MY.doc_seq={ts:{},quote:{},po:{}};
   if(!MY.doc_seq.ts||typeof MY.doc_seq.ts!=='object') MY.doc_seq.ts={};
   if(!MY.doc_seq.quote||typeof MY.doc_seq.quote!=='object') MY.doc_seq.quote={};
+  if(!MY.doc_seq.po||typeof MY.doc_seq.po!=='object') MY.doc_seq.po={};
+}
+function docSeqBucket(kind){
+  ensureDocSeqBuckets();
+  if(kind==='quote') return MY.doc_seq.quote;
+  if(kind==='po') return MY.doc_seq.po;
+  return MY.doc_seq.ts;
 }
 /** 문서번호 수정분을 공유 채번에 반영. 번호 안의 날짜를 우선하고, 없으면 fallbackYmd 사용 */
 async function commitDocSeqFromNos(kind, nos, fallbackYmd){
-  ensureDocSeqBuckets();
-  const bucket=kind==='quote'?MY.doc_seq.quote:MY.doc_seq.ts;
+  const bucket=docSeqBucket(kind);
   let raised=false;
   (nos||[]).forEach(no=>{
     let parts=parseDocNoParts(kind, no);
     if(!parts && fallbackYmd){
-      const prefix=kind==='quote'?'QT':'TS';
-      const m=String(no||'').trim().match(new RegExp(`^${prefix}-${fallbackYmd}-(\\d+)`, 'i'));
+      const cur=docNoPrefix(kind);
+      const leg=DOC_NO_PREFIX_LEGACY[kind]||'';
+      let m=String(no||'').trim().match(new RegExp(`^${cur}-${fallbackYmd}-(\\d+)`, 'i'));
+      if(!m && leg) m=String(no||'').trim().match(new RegExp(`^${leg}-${fallbackYmd}-(\\d+)`, 'i'));
       if(m) parts={ymd:fallbackYmd, seq:parseInt(m[1],10)};
     }
     if(!parts || !(parts.seq>0)) return;
@@ -3682,7 +3725,7 @@ async function suggestTsDocNo(tradeDate){
   await refreshTsDocSeqFromDb();
   const ymd=tsDateKey(tradeDate);
   const next=(+MY.doc_seq.ts[ymd]||0)+1;
-  return `TS-${ymd}-${String(next).padStart(2,'0')}`;
+  return formatDocNo('ts', ymd, next);
 }
 /** 품목 묶음에서 재사용할 명세 번호 선택 (선호값 → 최고 -Rn) */
 function pickTsReuseNo(items, preferred){
@@ -3726,7 +3769,7 @@ function findTsNoFromMailLog(tradeDate){
   const hits=Object.keys(MY.doc_mail||{})
     .map(k=>String(k).trim())
     .filter(k=>{
-      if(!/^TS-/i.test(k)) return false;
+      if(!/^(SBTS|TS)-/i.test(k)) return false;
       const p=parseDocNoParts('ts', k);
       return p && p.ymd===ymd;
     });
@@ -3854,7 +3897,7 @@ async function confirmTsDocNo(tradeDate, opts={}){
         `\n※ 공유 채번 확정은 프린트/메일 발송 시입니다.`;
     }else{
       tip='품목에 저장된 문서번호가 없어요.\n'+
-        '기존에 쓴 번호(예: TS-YYMMDD-순번)를 입력해주세요.\n'+
+        '기존에 쓴 번호(예: SBTS-YYMMDD-순번)를 입력해주세요.\n'+
         '※ 확인하면 해당 번호가 이 품목들에 저장됩니다.';
     }
   }else{
@@ -3865,7 +3908,7 @@ async function confirmTsDocNo(tradeDate, opts={}){
   const finalNo=String(userDocNo).trim();
   if(!finalNo){ alert('문서번호를 입력해주세요'); return null; }
   if(!parseDocNoParts('ts', finalNo) && !parseTsDocSeq(finalNo, ymd)){
-    if(!confirm(`문서번호 형식을 인식하지 못했어요 (권장: TS-YYMMDD-순번 또는 …-Rn).\n그래도 "${finalNo}" 로 진행할까요?`)) return null;
+    if(!confirm(`문서번호 형식을 인식하지 못했어요 (권장: SBTS-YYMMDD-순번 또는 …-Rn).\n그래도 "${finalNo}" 로 진행할까요?`)) return null;
   }
   return finalNo;
 }
@@ -4248,7 +4291,7 @@ function docMailContext(){
   if(mgr.tel) lines.push(mgr.tel);
   lines.push('(주) 상보프레카', fromEmail);
   const safeNo=(nos[0]||'doc').replace(/[^\w.\-]+/g,'_').replace(/_+/g,'_')||'doc';
-  const filename=`${kind==='po'?'PO':(kind==='quote'?'QT':'TS')}_${safeNo}.pdf`;
+  const filename=`${docNoPrefix(kind==='po'?'po':(kind==='quote'?'quote':'ts'))}_${safeNo}.pdf`;
   return {fromEmail, fromName, toEmail, toName, subject, body:lines.join('\r\n'), filename, docLabel};
 }
 function bytesToBase64(bytes){
