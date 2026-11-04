@@ -1148,15 +1148,15 @@ const DEFAULT_CFG={
   po_docs:{},
   quote_pay:'세금계산서 발행 후 익월 말일 현금 지급',
   quote_valid:'견적일로부터 30일',
-  quote_note:'※ 발주서 접수 시 계약이 성립된 것으로 봅니다.\n※ 납품장소·운송비 부담은 별도 협의에 따릅니다.\n※ 품질·규격은 귀사 승인 사양 및 관련 규격에 따릅니다.'
+  quote_note:'※ 발주서 접수 시 계약이 성립된 것으로 봅니다.\n※ 납품장소·운송비 부담은 별도 협의에 따릅니다.'
 };
-/** 견적 하단 멘트: 지정 3문장만 유지 (구버전 기본 멘트·담당자 줄 등 정리) */
+/** 견적 하단 멘트: 지정 두 문장만 유지 (구버전·품질규격·담당자 줄 등 정리) */
 function normalizeQuoteNote(note){
   const keep=DEFAULT_CFG.quote_note;
   const n=String(note||'').replace(/\u3000/g,' ').trim();
   if(!n) return keep;
-  if(/견적을 요청해주셔서|부가세\s*\(\s*VAT\s*\)|유효기간이 지난|확인 날인본|기타 문의는 담당자|^담당자\s*:/.test(n)) return keep;
-  // 계약·운송 기본 멘트가 있으면 지정 3문장으로 통일
+  if(/품질\s*·\s*규격|견적을 요청해주셔서|부가세\s*\(\s*VAT\s*\)|유효기간이 지난|확인 날인본|기타 문의는 담당자|^담당자\s*:/.test(n)) return keep;
+  // 계약·운송 기본 멘트가 있으면 지정 두 문장으로 통일
   if(n.includes('발주서 접수 시 계약이 성립') && n.includes('납품장소·운송비 부담')) return keep;
   return n;
 }
