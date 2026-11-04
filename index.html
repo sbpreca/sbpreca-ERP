@@ -146,14 +146,24 @@ input[readonly]{background:#f5f5f5;color:#999}
 /* 발주서·견적서 서식 */
 .po-title-band{background:#1f3864;color:#fff;text-align:center;font-size:26px;font-weight:700;letter-spacing:14px;padding:20px 0;margin-bottom:2px}
 .po-no{text-align:right;font-size:12px;color:#333;margin-bottom:18px;padding:4px 2px}
-.po-meta{display:grid;grid-template-columns:1fr 1fr;border:var(--doc-frame);margin-bottom:14px;align-items:stretch;box-sizing:border-box}
-.po-meta .po-key{background:#dbe4f0}
+/* 상·하단 정보칸도 품목표와 같은 table+칸선 방식 (겹침 굵기 방지) */
+.po-meta,.po-foot,.quote-foot{width:100%;border-collapse:separate;border-spacing:0;border:var(--doc-frame);table-layout:fixed;box-sizing:border-box;font-size:12px}
+.po-meta{margin-bottom:14px}
+.po-foot,.quote-foot{margin-top:12px;margin-bottom:0;flex:1 1 auto;min-height:0}
+.quote-foot{flex:0 0 auto}
+.po-meta th,.po-meta td,.po-foot th,.po-foot td,.quote-foot th,.quote-foot td{
+  border:0;border-right:var(--doc-line);border-bottom:var(--doc-line);padding:6px 10px;vertical-align:middle;height:42px;box-sizing:border-box;text-align:left;font-size:12px;color:#111
+}
+.po-meta tr>*:last-child,.po-foot tr>*:last-child,.quote-foot tr>*:last-child{border-right:none}
+.po-meta tr:last-child>*,.po-foot tr:last-child>*,.quote-foot tr:last-child>*{border-bottom:none}
+.po-key,.po-foot-key{background:#dbe4f0;width:82px;min-width:82px;text-align:center;font-size:11px;color:#333;font-weight:700}
+.po-foot-key{width:70px;min-width:70px;padding:5px 8px}
+.po-val,.po-foot-val{font-size:12px;min-width:0}
 .po-side{min-width:0}
-.po-side+.po-side{border-left:var(--doc-line)}
 .po-row{display:flex;min-height:42px;border-bottom:var(--doc-line);box-sizing:border-box}
 .po-row:last-child{border-bottom:none}
-.po-key{background:#f0f0f0;padding:6px 10px;width:82px;min-width:82px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:11px;color:#333;font-weight:700;border-right:var(--doc-line);box-sizing:border-box}
-.po-val{padding:6px 10px;display:flex;align-items:center;flex:1;font-size:12px;min-width:0}
+.po-foot-note th,.po-foot-note td{height:auto;min-height:72px;vertical-align:top;padding-top:10px}
+.po-foot-note .doc-note-input{min-height:56px}
 .po-tbl{width:100%;border-collapse:separate;border-spacing:0;font-size:12px;margin-bottom:12px;flex:0 0 auto;border:var(--doc-frame);table-layout:fixed;box-sizing:border-box}
 .po-tbl th,.po-tbl td{padding:0 8px;border:0;border-right:var(--doc-line);border-bottom:var(--doc-line);text-align:center;vertical-align:middle;height:42px;box-sizing:border-box}
 .po-tbl tr>*:last-child{border-right:none}
@@ -170,21 +180,14 @@ input[readonly]{background:#f5f5f5;color:#999}
 .doc-memo-input{display:block;width:100%;height:auto;min-height:0;max-height:38px;border:none;background:transparent;resize:none;font-family:inherit;font-size:12px;line-height:1.15;color:#111;padding:0 2px;margin:0;box-sizing:border-box;overflow:hidden;white-space:pre-wrap;word-break:break-all;text-align:center}
 .doc-memo-input:hover{background:#fffde7}
 .doc-memo-input:focus{background:#fff9c4;outline:none}
-.po-foot{border:var(--doc-frame);margin-top:12px;margin-bottom:0;display:flex;flex-direction:column;flex:1 1 auto;min-height:0;box-sizing:border-box}
 .po-foot-row{display:flex;min-height:42px;border-bottom:var(--doc-line);flex:0 0 auto;box-sizing:border-box}
 .po-foot-row:last-child{border-bottom:none}
-.po-foot-key{background:#dbe4f0;padding:5px 10px;width:70px;min-width:70px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:11px;color:#333;font-weight:700;border-right:var(--doc-line);box-sizing:border-box}
-.po-foot-val{padding:5px 10px;display:flex;align-items:center;flex:1;font-size:12px;min-width:0}
-.po-foot-note{flex:1 1 auto;min-height:0;align-items:stretch}
-.po-foot-note .po-foot-key{align-items:flex-start;padding-top:10px}
-.po-foot-note .po-foot-val{align-items:stretch;min-height:0;padding:8px 10px}
 .po-note{font-size:11px;color:#666;line-height:1.9;padding-top:12px;border-top:var(--doc-line);white-space:pre-line}
 .a4-page.quote-page{padding-top:106px}
 .quote-title-band{background:#1f3864;color:#fff;text-align:center;font-size:26px;font-weight:700;letter-spacing:14px;padding:20px 0;margin-bottom:2px}
 .quote-no{text-align:right;font-size:12px;color:#333;margin-bottom:10px;padding:4px 2px}
 .quote-lead{display:flex;justify-content:space-between;align-items:baseline;font-size:12px;margin:0 2px 10px;color:#333}
 .quote-lead .vat-hint{color:#555;font-size:11px}
-.quote-foot{border:var(--doc-frame);margin-top:12px;margin-bottom:0;flex:0 0 auto;box-sizing:border-box}
 .quote-note{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;font-size:12px;color:#333;line-height:1.55;padding-top:8px;border-top:var(--doc-line);margin-top:8px}
 .doc-note-input{flex:1 1 auto;width:100%;min-height:0;height:auto;border:none;background:transparent;resize:none;font-family:inherit;font-size:12px;line-height:1.55;color:#111;padding:0;margin:0;box-sizing:border-box;overflow:hidden;white-space:pre-wrap}
 .po-foot-note .doc-note-input,.ts-note .doc-note-input{height:100%}
@@ -291,50 +294,68 @@ input[readonly]{background:#f5f5f5;color:#999}
   .a4-page.quote-page{padding-top:28mm!important}
   .a4-page:last-child{page-break-after:auto}
   .a4-page+.a4-page{border-top:none!important}
-  .po-meta,.po-foot,.quote-foot,.ts-meta,.ts-note,.ts-amt-box{
+  .ts-meta,.ts-note,.ts-amt-box{
     border:var(--doc-frame-w) solid #111!important;
+    position:relative;
     -webkit-print-color-adjust:exact;print-color-adjust:exact;
   }
-  /* 메타·하단: 가로선은 행 ::after, 세로선은 key ::after (border 미사용) */
-  .po-side+.po-side,.ts-side+.ts-side{border-left:none!important;position:relative}
-  .po-side+.po-side::before,.ts-side+.ts-side::before{
-    content:'';position:absolute;left:0;top:0;bottom:0;width:var(--doc-line-w);background:#111;z-index:2;
+  /* 명세 상단(아직 div 구조): 오버레이로 가로선 1회만 */
+  .ts-row{border-bottom:none!important;position:relative}
+  .ts-side+.ts-side{border-left:none!important}
+  .ts-meta::before{
+    content:'';position:absolute;inset:0;z-index:5;pointer-events:none;
+    background-image:
+      linear-gradient(#111,#111),linear-gradient(#111,#111),linear-gradient(#111,#111),
+      linear-gradient(#111,#111),linear-gradient(#111,#111),
+      linear-gradient(#111,#111);
+    background-size:
+      100% var(--doc-line-w),100% var(--doc-line-w),100% var(--doc-line-w),
+      100% var(--doc-line-w),100% var(--doc-line-w),
+      var(--doc-line-w) 100%;
+    background-repeat:no-repeat;
+    background-position:
+      0 calc(7mm - var(--doc-line-w)),
+      0 calc(7mm + 9mm - var(--doc-line-w)),
+      0 calc(7mm + 18mm - var(--doc-line-w)),
+      0 calc(7mm + 27mm - var(--doc-line-w)),
+      0 calc(7mm + 36mm - var(--doc-line-w)),
+      50% 0;
     -webkit-print-color-adjust:exact;print-color-adjust:exact;
   }
-  .po-row,.ts-row,.po-foot-row{border-bottom:none!important;position:relative}
-  .po-row:not(:last-child)::after,.ts-row:not(:last-child)::after,.po-foot-row:not(:last-child)::after{
-    content:'';position:absolute;left:0;right:0;bottom:0;height:var(--doc-line-w);background:#111;z-index:2;
-    -webkit-print-color-adjust:exact;print-color-adjust:exact;
-  }
-  .po-key,.ts-key,.po-foot-key,.ts-note-key{border-right:none!important;position:relative}
-  .po-key::after,.ts-key::after,.po-foot-key::after,.ts-note-key::after{
+  .ts-side-hd{height:7mm!important;box-sizing:border-box!important;padding-top:0!important;padding-bottom:0!important;display:flex!important;align-items:center!important}
+  .ts-key,.ts-note-key{border-right:none!important;position:relative;z-index:1}
+  .ts-key::after,.ts-note-key::after{
     content:'';position:absolute;top:0;right:0;bottom:0;width:var(--doc-line-w);background:#111;z-index:2;
     -webkit-print-color-adjust:exact;print-color-adjust:exact;
   }
-  /* 표: 칸 border 제거 → 메타와 동일하게 ::before(가로)·::after(세로) mm 바로 그림 */
-  .po-tbl,.ts-tbl{
+  .ts-row{min-height:9mm!important;height:9mm!important}
+  /* 발주·견적 상·하단·품목표: 동일 table 칸선 (::before 가로 / ::after 세로) */
+  .po-meta,.po-foot,.quote-foot,.po-tbl,.ts-tbl{
     border-collapse:collapse!important;border-spacing:0!important;
     border:var(--doc-frame-w) solid #111!important;
     -webkit-print-color-adjust:exact;print-color-adjust:exact;
   }
+  .po-meta th,.po-meta td,.po-foot th,.po-foot td,.quote-foot th,.quote-foot td,
   .po-tbl th,.po-tbl td,.ts-tbl th,.ts-tbl td{
     border:none!important;
     height:9mm!important;
     position:relative;
     -webkit-print-color-adjust:exact;print-color-adjust:exact;
   }
+  .po-foot tr.po-foot-note th,.po-foot tr.po-foot-note td{height:auto!important;min-height:12mm!important}
   .po-tbl th,.po-tbl tfoot td,.ts-tbl th,.ts-tbl tfoot td{background-color:#1f3864!important}
+  .po-meta .po-key,.po-foot .po-foot-key,.quote-foot .po-foot-key{background-color:#dbe4f0!important}
   .po-tbl tr.empty-row td,.ts-tbl tr.empty-row td{background-color:#fff!important}
+  .po-meta tr:not(:last-child)>*::before,.po-foot tr:not(:last-child)>*::before,.quote-foot tr:not(:last-child)>*::before,
   .po-tbl tr:not(:last-child)>*::before,.ts-tbl tr:not(:last-child)>*::before{
     content:'';position:absolute;left:0;right:0;bottom:0;height:var(--doc-line-w);background:#111;z-index:3;
     -webkit-print-color-adjust:exact;print-color-adjust:exact;
   }
+  .po-meta tr>*:not(:last-child)::after,.po-foot tr>*:not(:last-child)::after,.quote-foot tr>*:not(:last-child)::after,
   .po-tbl tr>*:not(:last-child)::after,.ts-tbl tr>*:not(:last-child)::after{
     content:'';position:absolute;top:0;right:0;bottom:0;width:var(--doc-line-w);background:#111;z-index:3;
     -webkit-print-color-adjust:exact;print-color-adjust:exact;
   }
-  .po-row,.ts-row{min-height:9mm!important;height:9mm!important}
-  .po-foot-row:not(.po-foot-note){min-height:9mm!important;height:9mm!important}
   .quote-note,.po-note{
     border-top:none!important;position:relative;
   }
@@ -3312,31 +3333,37 @@ function buildPOHtml(order){
     html+=`<div class="a4-page" data-po-order="${escHtml(no)}" data-po-buyer="${escHtml(buyer)}">
       <div class="po-title-band">발 주 서</div>
       <div class="po-no">No. ${escHtml(poNo)}</div>
-      <div class="po-meta">
-        <div class="po-side">
-          <div class="po-row"><span class="po-key">수 신 처</span><span class="po-val">${escHtml(buyer)}</span></div>
-          <div class="po-row"><span class="po-key">담 당 자</span><span class="po-val">${escHtml(docFieldText(formatDocContact(bi.contact||'')))}</span></div>
-          <div class="po-row"><span class="po-key">발 주 일</span><span class="po-val">${escHtml(String(date).replace(/-/g,'.'))}</span></div>
-          <div class="po-row"><span class="po-key">　</span><span class="po-val">　</span></div>
-        </div>
-        <div class="po-side">
-          <div class="po-row"><span class="po-key">상 호</span><span class="po-val">${escHtml(MY.name)}</span></div>
-          <div class="po-row"><span class="po-key">사업자번호</span><span class="po-val">${escHtml(MY.biz)}　대표: ${escHtml(MY.ceo)}</span></div>
-          <div class="po-row"><span class="po-key">소 재 지</span><span class="po-val">${escHtml(MY.addr)}</span></div>
-          <div class="po-row"><span class="po-key">담 당 자</span><span class="po-val">${escHtml(manager)}　${escHtml((MY.managers&&MY.managers[manager])?(MY.managers[manager].tel||'')+(MY.managers[manager].email?' / '+MY.managers[manager].email:''): (MY.contact||''))}</span></div>
-        </div>
-      </div>
+      <table class="po-meta">
+        <colgroup><col style="width:82px"><col><col style="width:82px"><col></colgroup>
+        <tr>
+          <th class="po-key">수 신 처</th><td class="po-val">${escHtml(buyer)}</td>
+          <th class="po-key">상 호</th><td class="po-val">${escHtml(MY.name)}</td>
+        </tr>
+        <tr>
+          <th class="po-key">담 당 자</th><td class="po-val">${escHtml(docFieldText(formatDocContact(bi.contact||'')))}</td>
+          <th class="po-key">사업자번호</th><td class="po-val">${escHtml(MY.biz)}　대표: ${escHtml(MY.ceo)}</td>
+        </tr>
+        <tr>
+          <th class="po-key">발 주 일</th><td class="po-val">${escHtml(String(date).replace(/-/g,'.'))}</td>
+          <th class="po-key">소 재 지</th><td class="po-val">${escHtml(MY.addr)}</td>
+        </tr>
+        <tr>
+          <th class="po-key">　</th><td class="po-val">　</td>
+          <th class="po-key">담 당 자</th><td class="po-val">${escHtml(manager)}　${escHtml((MY.managers&&MY.managers[manager])?(MY.managers[manager].tel||'')+(MY.managers[manager].email?' / '+MY.managers[manager].email:''): (MY.contact||''))}</td>
+        </tr>
+      </table>
       <table class="po-tbl">
         <thead><tr><th style="width:34px">NO</th><th style="width:127px">품목</th><th style="width:143px">규격</th><th style="width:54px">수량</th><th style="width:72px">단가(원)</th><th style="width:82px">금액(원)</th><th style="width:70px">출하일자</th><th style="width:136px">비고</th></tr></thead>
         <tbody>${dataRows}${blank}</tbody>
         <tfoot><tr><td colspan="5" style="text-align:right;padding:8px">합　계</td><td class="r">${fmt(sub)}</td><td colspan="2"></td></tr></tfoot>
       </table>
-      <div class="po-foot">
-        <div class="po-foot-row"><span class="po-foot-key">납 품 처</span><span class="po-foot-val"><input class="doc-inline-input" value="${escHtml(docFieldText(deliverDisp))}"></span></div>
-        <div class="po-foot-row"><span class="po-foot-key">소 재 지</span><span class="po-foot-val"><input class="doc-inline-input" value="${escHtml(docFieldText(di.addr))}"></span></div>
-        <div class="po-foot-row"><span class="po-foot-key">담 당 자</span><span class="po-foot-val"><input class="doc-inline-input" value="${escHtml(docFieldText(formatDocContact(di.contact||'')))}"></span></div>
-        <div class="po-foot-row po-foot-note"><span class="po-foot-key">특기사항</span><span class="po-foot-val"><textarea class="doc-note-input">${escHtml(note)}</textarea></span></div>
-      </div>
+      <table class="po-foot">
+        <colgroup><col style="width:70px"><col></colgroup>
+        <tr class="po-foot-row"><th class="po-foot-key">납 품 처</th><td class="po-foot-val"><input class="doc-inline-input" value="${escHtml(docFieldText(deliverDisp))}"></td></tr>
+        <tr class="po-foot-row"><th class="po-foot-key">소 재 지</th><td class="po-foot-val"><input class="doc-inline-input" value="${escHtml(docFieldText(di.addr))}"></td></tr>
+        <tr class="po-foot-row"><th class="po-foot-key">담 당 자</th><td class="po-foot-val"><input class="doc-inline-input" value="${escHtml(docFieldText(formatDocContact(di.contact||'')))}"></td></tr>
+        <tr class="po-foot-row po-foot-note"><th class="po-foot-key">특기사항</th><td class="po-foot-val"><textarea class="doc-note-input">${escHtml(note)}</textarea></td></tr>
+      </table>
     </div>`;
   });
   return {html, groups, items};
@@ -3449,32 +3476,38 @@ function buildQuotePageHtml({finalNo, customer, contact, contactInfo, date, vali
   return `<div class="a4-page quote-page">
     <div class="quote-title-band">견 적 서</div>
     <div class="quote-no">No. ${escHtml(finalNo)}</div>
-    <div class="po-meta">
-      <div class="po-side">
-        <div class="po-row"><span class="po-key">수 신 처</span><span class="po-val">${escHtml(customer)}</span></div>
-        <div class="po-row"><span class="po-key">담 당 자</span><span class="po-val">${escHtml(formatDocContact(contact))}${contactInfo?'　'+escHtml(contactInfo):''}</span></div>
-        <div class="po-row"><span class="po-key">견 적 일</span><span class="po-val">${escHtml(String(date).replace(/-/g,'.'))}</span></div>
-        <div class="po-row"><span class="po-key">유효기간</span><span class="po-val"><input class="doc-inline-input" value="${escHtml(docFieldText(valid))}"></span></div>
-      </div>
-      <div class="po-side">
-        <div class="po-row"><span class="po-key">상 호</span><span class="po-val">${escHtml(MY.name)}</span></div>
-        <div class="po-row"><span class="po-key">사업자번호</span><span class="po-val">${escHtml(MY.biz)}　대표: ${escHtml(MY.ceo)}</span></div>
-        <div class="po-row"><span class="po-key">소 재 지</span><span class="po-val">${escHtml(MY.addr)}</span></div>
-        <div class="po-row"><span class="po-key">담 당 자</span><span class="po-val">${escHtml(myContact)}</span></div>
-      </div>
-    </div>
+    <table class="po-meta">
+      <colgroup><col style="width:82px"><col><col style="width:82px"><col></colgroup>
+      <tr>
+        <th class="po-key">수 신 처</th><td class="po-val">${escHtml(customer)}</td>
+        <th class="po-key">상 호</th><td class="po-val">${escHtml(MY.name)}</td>
+      </tr>
+      <tr>
+        <th class="po-key">담 당 자</th><td class="po-val">${escHtml(formatDocContact(contact))}${contactInfo?'　'+escHtml(contactInfo):''}</td>
+        <th class="po-key">사업자번호</th><td class="po-val">${escHtml(MY.biz)}　대표: ${escHtml(MY.ceo)}</td>
+      </tr>
+      <tr>
+        <th class="po-key">견 적 일</th><td class="po-val">${escHtml(String(date).replace(/-/g,'.'))}</td>
+        <th class="po-key">소 재 지</th><td class="po-val">${escHtml(MY.addr)}</td>
+      </tr>
+      <tr>
+        <th class="po-key">유효기간</th><td class="po-val"><input class="doc-inline-input" value="${escHtml(docFieldText(valid))}"></td>
+        <th class="po-key">담 당 자</th><td class="po-val">${escHtml(myContact)}</td>
+      </tr>
+    </table>
     <div class="quote-lead"><span>아래와 같이 견적 드립니다.</span><span class="vat-hint">(부가가치세 별도)</span></div>
     <table class="po-tbl">
       <thead><tr><th style="width:34px">NO</th><th style="width:127px">품목</th><th style="width:143px">규격</th><th style="width:54px">수량</th><th style="width:72px">단가(원)</th><th style="width:82px">금액(원)</th><th style="width:70px">납기일</th><th style="width:136px">비고</th></tr></thead>
       <tbody>${dataRows}${blank}</tbody>
       <tfoot><tr><td colspan="5" style="text-align:right;padding:8px">합　계</td><td class="r">${fmt(sub)}</td><td colspan="2"></td></tr></tfoot>
     </table>
-    <div class="quote-foot">
-      <div class="po-foot-row"><span class="po-foot-key">지불조건</span><span class="po-foot-val"><input class="doc-inline-input" value="${escHtml(docFieldText(pay))}"></span></div>
-      <div class="po-foot-row"><span class="po-foot-key">납품장소</span><span class="po-foot-val"><input class="doc-inline-input" value="${escHtml(docFieldText(deliverVal))}"></span></div>
-      <div class="po-foot-row"><span class="po-foot-key">특이사항</span><span class="po-foot-val"><input class="doc-inline-input" value=""></span></div>
-      ${MY.bank?`<div class="po-foot-row"><span class="po-foot-key">입금계좌</span><span class="po-foot-val">${escHtml(MY.bank)}</span></div>`:''}
-    </div>
+    <table class="quote-foot">
+      <colgroup><col style="width:70px"><col></colgroup>
+      <tr class="po-foot-row"><th class="po-foot-key">지불조건</th><td class="po-foot-val"><input class="doc-inline-input" value="${escHtml(docFieldText(pay))}"></td></tr>
+      <tr class="po-foot-row"><th class="po-foot-key">납품장소</th><td class="po-foot-val"><input class="doc-inline-input" value="${escHtml(docFieldText(deliverVal))}"></td></tr>
+      <tr class="po-foot-row"><th class="po-foot-key">특이사항</th><td class="po-foot-val"><input class="doc-inline-input" value=""></td></tr>
+      ${MY.bank?`<tr class="po-foot-row"><th class="po-foot-key">입금계좌</th><td class="po-foot-val">${escHtml(MY.bank)}</td></tr>`:''}
+    </table>
     <div class="quote-note">
       <textarea class="doc-note-input">${escHtml(noteText||'')}</textarea>
     </div>
