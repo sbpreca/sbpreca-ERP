@@ -280,36 +280,75 @@ input[readonly]{background:#f5f5f5;color:#999}
   #doc-frame{width:100%!important;margin:0!important;border-radius:0!important}
   .doc-btns,.mail-panel,#sync-status{display:none!important}
   .app{display:none!important}
-  /* 인쇄 선: 소수 pt(0.75)는 Chrome 미리보기 배율에서 1~2px로 들쭉날쭉해짐.
-     정수 pt + 폭 직접 지정으로 발주서·견적·명세 모두 고정. 바깥 2pt / 안쪽 1pt */
+  /* 인쇄 선: Chrome이 border를 배율·서브픽셀에서 1~2px로 반올림해 가로선 굵기가 갈라짐.
+     안쪽 칸선은 border 대신 mm 두께의 배경 gradient / ::after 바로 그림. 바깥만 border. */
   .a4-page{
     page-break-after:always;width:210mm!important;height:297mm!important;padding:20mm 10mm!important;box-sizing:border-box;overflow:hidden;
-    --doc-line:1pt solid #111;--doc-frame:2pt solid #111;
+    --doc-line-w:0.4mm;--doc-frame-w:0.8mm;
+    --doc-line:0.4mm solid #111;--doc-frame:0.8mm solid #111;
     -webkit-print-color-adjust:exact;print-color-adjust:exact;
   }
   .a4-page.quote-page{padding-top:28mm!important}
   .a4-page:last-child{page-break-after:auto}
   .a4-page+.a4-page{border-top:none!important}
   .po-meta,.po-foot,.quote-foot,.ts-meta,.ts-note,.ts-amt-box{
-    border:2pt solid #111!important;
+    border:var(--doc-frame-w) solid #111!important;
     -webkit-print-color-adjust:exact;print-color-adjust:exact;
   }
-  .po-side+.po-side,.ts-side+.ts-side{border-left:1pt solid #111!important}
-  .po-row,.ts-row,.po-foot-row{border-bottom:1pt solid #111!important}
-  .po-row:last-child,.ts-row:last-child,.po-foot-row:last-child{border-bottom:none!important}
-  .po-key,.ts-key,.po-foot-key,.ts-note-key{border-right:1pt solid #111!important}
-  /* 표는 collapse로 칸 경계를 한 선으로 합쳐 배율·서브픽셀에서 굵기가 갈라지지 않게 함.
-     바깥 2pt + 칸 1pt → collapse 시 바깥은 2pt, 안쪽은 1pt로 일정 */
+  /* 메타·하단: 가로선은 행 ::after, 세로선은 key ::after (border 미사용) */
+  .po-side+.po-side,.ts-side+.ts-side{border-left:none!important;position:relative}
+  .po-side+.po-side::before,.ts-side+.ts-side::before{
+    content:'';position:absolute;left:0;top:0;bottom:0;width:var(--doc-line-w);background:#111;z-index:2;
+    -webkit-print-color-adjust:exact;print-color-adjust:exact;
+  }
+  .po-row,.ts-row,.po-foot-row{border-bottom:none!important;position:relative}
+  .po-row:not(:last-child)::after,.ts-row:not(:last-child)::after,.po-foot-row:not(:last-child)::after{
+    content:'';position:absolute;left:0;right:0;bottom:0;height:var(--doc-line-w);background:#111;z-index:2;
+    -webkit-print-color-adjust:exact;print-color-adjust:exact;
+  }
+  .po-key,.ts-key,.po-foot-key,.ts-note-key{border-right:none!important;position:relative}
+  .po-key::after,.ts-key::after,.po-foot-key::after,.ts-note-key::after{
+    content:'';position:absolute;top:0;right:0;bottom:0;width:var(--doc-line-w);background:#111;z-index:2;
+    -webkit-print-color-adjust:exact;print-color-adjust:exact;
+  }
+  /* 표: 칸 border 제거 → 메타와 동일하게 ::before(가로)·::after(세로) mm 바로 그림 */
   .po-tbl,.ts-tbl{
     border-collapse:collapse!important;border-spacing:0!important;
-    border:2pt solid #111!important;
+    border:var(--doc-frame-w) solid #111!important;
     -webkit-print-color-adjust:exact;print-color-adjust:exact;
   }
   .po-tbl th,.po-tbl td,.ts-tbl th,.ts-tbl td{
-    border:1pt solid #111!important;
+    border:none!important;
+    height:9mm!important;
+    position:relative;
+    -webkit-print-color-adjust:exact;print-color-adjust:exact;
   }
-  .quote-note,.po-note{border-top:1pt solid #111!important}
-  .ts-bank{border-top:2pt solid #111!important}
+  .po-tbl th,.po-tbl tfoot td,.ts-tbl th,.ts-tbl tfoot td{background-color:#1f3864!important}
+  .po-tbl tr.empty-row td,.ts-tbl tr.empty-row td{background-color:#fff!important}
+  .po-tbl tr:not(:last-child)>*::before,.ts-tbl tr:not(:last-child)>*::before{
+    content:'';position:absolute;left:0;right:0;bottom:0;height:var(--doc-line-w);background:#111;z-index:3;
+    -webkit-print-color-adjust:exact;print-color-adjust:exact;
+  }
+  .po-tbl tr>*:not(:last-child)::after,.ts-tbl tr>*:not(:last-child)::after{
+    content:'';position:absolute;top:0;right:0;bottom:0;width:var(--doc-line-w);background:#111;z-index:3;
+    -webkit-print-color-adjust:exact;print-color-adjust:exact;
+  }
+  .po-row,.ts-row{min-height:9mm!important;height:9mm!important}
+  .po-foot-row:not(.po-foot-note){min-height:9mm!important;height:9mm!important}
+  .quote-note,.po-note{
+    border-top:none!important;position:relative;
+  }
+  .quote-note::before,.po-note::before{
+    content:'';position:absolute;left:0;right:0;top:0;height:var(--doc-line-w);background:#111;
+    -webkit-print-color-adjust:exact;print-color-adjust:exact;
+  }
+  .ts-bank{
+    border-top:none!important;position:relative;
+  }
+  .ts-bank::before{
+    content:'';position:absolute;left:0;right:0;top:0;height:var(--doc-frame-w);background:#111;
+    -webkit-print-color-adjust:exact;print-color-adjust:exact;
+  }
   .ts-contact-input,.ts-addr-input,.doc-inline-input,.ts-no-input,.doc-note-input,.doc-memo-input{border:none!important;background:transparent!important;box-shadow:none!important;outline:none!important;overflow:hidden!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
   .ts-contact-input,.ts-addr-input,.doc-inline-input,.ts-no-input{padding:0!important}
   .report-tbl{border-collapse:collapse!important;border-spacing:0!important}
