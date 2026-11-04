@@ -4841,8 +4841,23 @@ function newOrderFromList(){
   initForm();
 }
 
+/** 발주 카드용: 납품현황과 같이 표시할 명세 문서번호 목록 */
+function listOrderTsDocs(order){
+  const pairs=[];
+  (order.items||[]).forEach(i=>{
+    const disp=resolveDisplayTsNo({...i, order_no:order.no});
+    const cur=String(disp.ts_no||'').trim();
+    if(!cur) return;
+    const orig=String(disp.ts_orig||resolveTsOrig(i, cur)||'').trim();
+    const key=cur+'|'+orig;
+    if(!pairs.some(p=>p.key===key)) pairs.push({key, cur, orig, inherited:!!disp.inherited});
+  });
+  return pairs;
+}
 /* ── 발주 목록 ── */
 function renderList(){
+  // 납품현황과 동일: 형제 품목에 있는 명세 번호를 채운 뒤 표시
+  backfillTsNosInOrders();
   const fm=document.getElementById('fl-month').value,fb=document.getElementById('fl-buyer').value;
   const fs=(document.getElementById('fl-search')||{value:''}).value.trim().toLowerCase();
   const months=[...new Set(orders.map(o=>ym(o.date)).filter(Boolean))].sort().reverse();
@@ -4852,8 +4867,16 @@ function renderList(){
   const filtered=orders.filter(o=>{
     if(fm&&ym(o.date)!==fm)return false;
     if(fb&&!o.items.some(i=>i.buyer===fb))return false;
-    if(fs&&!o.no.toLowerCase().includes(fs)&&!o.items.some(i=>(i.item||'').toLowerCase().includes(fs)||(i.buyer||'').toLowerCase().includes(fs)||String(i.ts_no||'').toLowerCase().includes(fs)||String(i.ts_orig||'').toLowerCase().includes(fs)))return false;
-    return true;
+    if(!fs) return true;
+    const poDoc=String(resolvePoDocNo(o)||'').toLowerCase();
+    if(o.no.toLowerCase().includes(fs)||poDoc.includes(fs)) return true;
+    if(o.items.some(i=>{
+      if((i.item||'').toLowerCase().includes(fs)||(i.buyer||'').toLowerCase().includes(fs)) return true;
+      if(String(i.ts_no||'').toLowerCase().includes(fs)||String(i.ts_orig||'').toLowerCase().includes(fs)) return true;
+      const disp=resolveDisplayTsNo(i);
+      return String(disp.ts_no||'').toLowerCase().includes(fs)||String(disp.ts_orig||'').toLowerCase().includes(fs);
+    })) return true;
+    return false;
   }).sort((a,b)=>{
     // 미납품이 있는 발주를 상단, 같은 그룹 안에서는 최근 발주일 순
     const ap=a.items.some(i=>i.status==='미납품')?0:1;
@@ -4866,17 +4889,14 @@ function renderList(){
     const bs=[...new Set(o.items.map(i=>i.buyer).filter(Boolean))].join(', ');
     const its=[...new Set(o.items.map(i=>i.item).filter(Boolean))].join(', ');
     const pend=o.items.filter(i=>i.status==='미납품').length;
-    const tsPairs=[];
-    o.items.forEach(i=>{
-      const cur=String(i.ts_no||'').trim();
-      if(!cur) return;
-      const orig=resolveTsOrig(i);
-      const key=cur+'|'+orig;
-      if(!tsPairs.some(p=>p.key===key)) tsPairs.push({key, cur, orig});
-    });
+    const tsPairs=listOrderTsDocs(o);
     const tsLabel=tsPairs.length
-      ? tsPairs.map(p=>tsNoStackHtml(p.cur, p.orig)).join('<span style="color:#ccc;margin:0 4px">·</span>')
-      : '<span style="color:#bbb">명세 미발급</span>';
+      ? tsPairs.map(p=>{
+          const tip=p.inherited?` title="같은 출하일 형제 품목 번호"`:'';
+          const color=p.inherited?'#64748b':'#111';
+          return `<span style="color:${color};font-variant-numeric:tabular-nums"${tip}>${tsNoStackHtml(p.cur, p.orig)}${p.inherited?'<span style="font-size:9px;color:#94a3b8;margin-left:2px">형제</span>':''}</span>`;
+        }).join('<span style="color:#ccc;margin:0 4px">·</span>')
+      : '<span style="color:#bbb">—</span>';
     return `<div class="card">
       <div class="card-top">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
@@ -4887,9 +4907,9 @@ function renderList(){
       </div>
       <div class="card-name">${bs||'미지정'}</div>
       <div class="card-items-txt">${its}</div>
-      <div style="font-size:12px;color:#444;margin:6px 0 2px;display:flex;gap:6px;align-items:baseline;flex-wrap:wrap">
+      <div style="font-size:12px;color:#444;margin:6px 0 2px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
         <span style="color:#888;font-size:11px;flex-shrink:0">문서번호</span>
-        <span style="font-variant-numeric:tabular-nums">${tsLabel}</span>
+        <span style="font-variant-numeric:tabular-nums;min-height:1.2em">${tsLabel}</span>
       </div>
       <div class="card-amts">
         <div class="card-amt"><span class="card-amt-lbl">매입</span><span class="card-amt-val">${fmtW(o.total_buy)}</span></div>
