@@ -280,13 +280,27 @@ input[readonly]{background:#f5f5f5;color:#999}
   #doc-frame{width:100%!important;margin:0!important;border-radius:0!important}
   .doc-btns,.mail-panel{display:none!important}
   .app{display:none!important}
-  .a4-page{page-break-after:always;width:210mm!important;height:297mm!important;padding:20mm 10mm!important;box-sizing:border-box;overflow:hidden}
+  /* 인쇄 선은 pt로 고정 — px는 미리보기 배율·프린터 DPI에 따라 굵기가 들쭉날쭉해짐.
+     화면 1px≈0.75pt, 2px≈1.5pt 에 맞춰 바깥이 안쪽보다 굵게 유지 */
+  .a4-page{
+    page-break-after:always;width:210mm!important;height:297mm!important;padding:20mm 10mm!important;box-sizing:border-box;overflow:hidden;
+    --doc-line:0.75pt solid #111;--doc-frame:1.5pt solid #111;
+    -webkit-print-color-adjust:exact;print-color-adjust:exact;
+  }
   .a4-page.quote-page{padding-top:28mm!important}
   .a4-page:last-child{page-break-after:auto}
   .a4-page+.a4-page{border-top:none!important}
+  .po-meta,.po-tbl,.po-foot,.quote-foot,.ts-meta,.ts-tbl,.ts-note,.ts-amt-box{
+    border-color:#111!important;
+    -webkit-print-color-adjust:exact;print-color-adjust:exact;
+  }
+  .po-side+.po-side,.po-row,.po-key,.po-foot-row,.po-foot-key,.po-tbl th,.po-tbl td,
+  .ts-side+.ts-side,.ts-row,.ts-key,.ts-tbl th,.ts-tbl td,.ts-note-key,.quote-note{
+    border-color:#111!important;
+  }
   .ts-contact-input,.ts-addr-input,.doc-inline-input,.ts-no-input,.doc-note-input,.doc-memo-input{border:none!important;background:transparent!important;box-shadow:none!important;outline:none!important;overflow:hidden!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
   .ts-contact-input,.ts-addr-input,.doc-inline-input,.ts-no-input{padding:0!important}
-  /* 인쇄·PDF: 서류 표는 화면과 같이 separate(바깥 2px·안쪽 1px). 보고서는 collapse 유지 */
+  /* 인쇄·PDF: 서류 표는 separate(바깥·안쪽 구분). 보고서는 collapse 유지 */
   .po-tbl,.ts-tbl{border-collapse:separate!important;border-spacing:0!important}
   .report-tbl{border-collapse:collapse!important;border-spacing:0!important}
   @page{size:A4 portrait;margin:0}
