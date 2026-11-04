@@ -4481,7 +4481,7 @@ function tsPageHtml({company, seller, contact, addr, its, dy, dm, dd, tsNo, tsOr
         <div class="ts-row"><span class="ts-key">상　호</span><span class="ts-val">${company}</span></div>
         <div class="ts-row"><span class="ts-key">담 당 자</span><span class="ts-val"><input class="ts-contact-input" data-company="${escHtml(company)}" data-site="${escHtml(siteName)}" value="${escHtml(docFieldText(contactText==='　'?'':contactText))}"></span></div>
         <div class="ts-row"><span class="ts-key">사업장주소</span><span class="ts-val"><input class="ts-addr-input" value="${escHtml(docFieldText(addrText))}"></span></div>
-        <div class="ts-row"><span class="ts-key">업　태</span><span class="ts-val">${si.btype||'　'}</span></div>
+        <div class="ts-row"><span class="ts-key">업　종</span><span class="ts-val">${si.btype||'　'}</span></div>
       </div>
       <div class="ts-side">
         <div class="ts-side-hd">공급자</div>
