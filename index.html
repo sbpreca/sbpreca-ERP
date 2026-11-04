@@ -278,30 +278,40 @@ input[readonly]{background:#f5f5f5;color:#999}
   body{background:#fff!important}
   #overlay{position:static!important;background:none!important;padding:0!important;display:block!important;overflow:visible!important}
   #doc-frame{width:100%!important;margin:0!important;border-radius:0!important}
-  .doc-btns,.mail-panel{display:none!important}
+  .doc-btns,.mail-panel,#sync-status{display:none!important}
   .app{display:none!important}
-  /* 인쇄 선은 pt로 고정 — px는 미리보기 배율·프린터 DPI에 따라 굵기가 들쭉날쭉해짐.
-     화면 1px≈0.75pt, 2px≈1.5pt 에 맞춰 바깥이 안쪽보다 굵게 유지 */
+  /* 인쇄 선: 소수 pt(0.75)는 Chrome 미리보기 배율에서 1~2px로 들쭉날쭉해짐.
+     정수 pt + 폭 직접 지정으로 발주서·견적·명세 모두 고정. 바깥 2pt / 안쪽 1pt */
   .a4-page{
     page-break-after:always;width:210mm!important;height:297mm!important;padding:20mm 10mm!important;box-sizing:border-box;overflow:hidden;
-    --doc-line:0.75pt solid #111;--doc-frame:1.5pt solid #111;
+    --doc-line:1pt solid #111;--doc-frame:2pt solid #111;
     -webkit-print-color-adjust:exact;print-color-adjust:exact;
   }
   .a4-page.quote-page{padding-top:28mm!important}
   .a4-page:last-child{page-break-after:auto}
   .a4-page+.a4-page{border-top:none!important}
-  .po-meta,.po-tbl,.po-foot,.quote-foot,.ts-meta,.ts-tbl,.ts-note,.ts-amt-box{
-    border-color:#111!important;
+  .po-meta,.po-foot,.quote-foot,.ts-meta,.ts-note,.ts-amt-box{
+    border:2pt solid #111!important;
     -webkit-print-color-adjust:exact;print-color-adjust:exact;
   }
-  .po-side+.po-side,.po-row,.po-key,.po-foot-row,.po-foot-key,.po-tbl th,.po-tbl td,
-  .ts-side+.ts-side,.ts-row,.ts-key,.ts-tbl th,.ts-tbl td,.ts-note-key,.quote-note{
-    border-color:#111!important;
+  .po-side+.po-side,.ts-side+.ts-side{border-left:1pt solid #111!important}
+  .po-row,.ts-row,.po-foot-row{border-bottom:1pt solid #111!important}
+  .po-row:last-child,.ts-row:last-child,.po-foot-row:last-child{border-bottom:none!important}
+  .po-key,.ts-key,.po-foot-key,.ts-note-key{border-right:1pt solid #111!important}
+  /* 표는 collapse로 칸 경계를 한 선으로 합쳐 배율·서브픽셀에서 굵기가 갈라지지 않게 함.
+     바깥 2pt + 칸 1pt → collapse 시 바깥은 2pt, 안쪽은 1pt로 일정 */
+  .po-tbl,.ts-tbl{
+    border-collapse:collapse!important;border-spacing:0!important;
+    border:2pt solid #111!important;
+    -webkit-print-color-adjust:exact;print-color-adjust:exact;
   }
+  .po-tbl th,.po-tbl td,.ts-tbl th,.ts-tbl td{
+    border:1pt solid #111!important;
+  }
+  .quote-note,.po-note{border-top:1pt solid #111!important}
+  .ts-bank{border-top:2pt solid #111!important}
   .ts-contact-input,.ts-addr-input,.doc-inline-input,.ts-no-input,.doc-note-input,.doc-memo-input{border:none!important;background:transparent!important;box-shadow:none!important;outline:none!important;overflow:hidden!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
   .ts-contact-input,.ts-addr-input,.doc-inline-input,.ts-no-input{padding:0!important}
-  /* 인쇄·PDF: 서류 표는 separate(바깥·안쪽 구분). 보고서는 collapse 유지 */
-  .po-tbl,.ts-tbl{border-collapse:separate!important;border-spacing:0!important}
   .report-tbl{border-collapse:collapse!important;border-spacing:0!important}
   @page{size:A4 portrait;margin:0}
 }
@@ -3996,15 +4006,14 @@ async function saveDocOverlay(){
   }
 }
 async function printDocOverlay(){
+  /* 인쇄만 수행. 발주 내용 DB 저장·「저장됨」토스트는 저장 버튼에서만.
+     거래명세표 채번·견적 순번은 인쇄 시점 확정이 필요해 메모리/시퀀스만 반영 */
   try{
     if(currentDocKind()==='ts') await finalizeTsIssue();
-    else{
-      if(currentDocKind()==='po') persistPoFromOverlay();
-      await syncOverlayDocSeq();
-    }
-    clearTimeout(_persistTimer);
-    await saveOrdersToDb();
+    else if(currentDocKind()==='quote') await syncOverlayDocSeq();
   }catch(e){ console.warn(e); }
+  const sync=document.getElementById('sync-status');
+  if(sync){ sync.textContent=''; sync.style.opacity='0'; }
   window.print();
 }
 async function closeDocOverlay(){
