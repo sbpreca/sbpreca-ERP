@@ -6,6 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
+<meta name="doc-print-fix" content="2026-11-04c">
 <title>상보프레카 발주 관리</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -276,29 +277,28 @@ input[readonly]{background:#f5f5f5;color:#999}
 #page-annual .an-cat{font-size:11px;color:#666}
 
 @media print{
-  body{background:#fff!important}
+  /* 화면 미리보기와 1:1. A4(mm)로 다시 맞추면 Chrome이 미세 스케일하며 가로선이 굵어짐 */
+  html,body{width:794px!important;margin:0!important;padding:0!important;background:#fff!important}
   #overlay{position:static!important;background:none!important;padding:0!important;display:block!important;overflow:visible!important}
-  #doc-frame{width:100%!important;margin:0!important;border-radius:0!important}
+  #doc-frame{width:794px!important;max-width:794px!important;margin:0!important;border-radius:0!important}
   .doc-btns,.mail-panel,#sync-status{display:none!important}
   .app{display:none!important}
-  /* 화면과 같은 정수 px 레이아웃·선(--doc-line 1px / --doc-frame 2px)을 그대로 씀.
-     mm 패딩은 소수 좌표를 만들어 1px 가로선이 번져 굵어 보임 */
   .a4-page{
-    page-break-after:always;width:794px!important;height:1123px!important;min-height:1123px!important;padding:76px 38px!important;box-sizing:border-box;overflow:hidden;
+    page-break-after:always;
+    /* width/height/padding은 화면 규칙 그대로 — 여기서 덮어쓰지 않음 */
     -webkit-print-color-adjust:exact;print-color-adjust:exact;
   }
-  .a4-page.quote-page{padding-top:106px!important}
   .a4-page:last-child{page-break-after:auto}
   .a4-page+.a4-page{border-top:none!important}
   .po-meta,.po-tbl,.po-foot,.quote-foot,.ts-meta,.ts-tbl,.ts-note,.ts-amt-box,
   .po-row,.po-key,.po-foot-row,.po-foot-key,.po-tbl th,.po-tbl td,
-  .ts-row,.ts-key,.ts-tbl th,.ts-tbl td,.ts-note-key,.quote-note{
+  .ts-row,.ts-key,.ts-tbl th,.ts-tbl td,.ts-note-key,.quote-note,.ts-meta-hd,.ts-side-hd{
     -webkit-print-color-adjust:exact;print-color-adjust:exact;
   }
   .ts-contact-input,.ts-addr-input,.doc-inline-input,.ts-no-input,.doc-note-input,.doc-memo-input{border:none!important;background:transparent!important;box-shadow:none!important;outline:none!important;overflow:hidden!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
   .ts-contact-input,.ts-addr-input,.doc-inline-input,.ts-no-input{padding:0!important}
   .report-tbl{border-collapse:collapse!important;border-spacing:0!important}
-  @page{size:A4 portrait;margin:0}
+  @page{size:794px 1123px;margin:0}
 }
 </style>
 <style id="dynamic-page-style"></style>
