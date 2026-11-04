@@ -186,7 +186,6 @@ input[readonly]{background:#f5f5f5;color:#999}
 .quote-lead .vat-hint{color:#555;font-size:11px}
 .quote-foot{border:var(--doc-frame);margin-top:12px;margin-bottom:0;flex:0 0 auto;box-sizing:border-box}
 .quote-note{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;font-size:12px;color:#333;line-height:1.55;padding-top:8px;border-top:var(--doc-line);margin-top:8px}
-.quote-note .quote-sign{flex:0 0 auto;margin-top:8px;color:#333}
 .doc-note-input{flex:1 1 auto;width:100%;min-height:0;height:auto;border:none;background:transparent;resize:none;font-family:inherit;font-size:12px;line-height:1.55;color:#111;padding:0;margin:0;box-sizing:border-box;overflow:hidden;white-space:pre-wrap}
 .po-foot-note .doc-note-input,.ts-note .doc-note-input{height:100%}
 .doc-note-input:hover{background:#fffde7}
@@ -1135,8 +1134,18 @@ const DEFAULT_CFG={
   po_docs:{},
   quote_pay:'세금계산서 발행 후 익월 말일 현금 지급',
   quote_valid:'견적일로부터 30일',
-  quote_note:'• 견적을 요청해주셔서 대단히 감사드리며 상기 견적가를 참고하여 주시기 바랍니다.\n• 상기 금액은 부가세(VAT) 별도입니다.\n• 본 견적의 유효기간이 지난 뒤에는 단가·납기가 변경될 수 있습니다.\n• 위 견적 검토 후 발주 시 확인 날인본·발주서·사업자등록증을 보내 주시기 바랍니다.\n• 납품장소·운송비 부담은 별도 협의에 따릅니다. 기타 문의는 담당자에게 연락 부탁드립니다.'
+  quote_note:'※ 발주서 접수 시 계약이 성립된 것으로 봅니다.\n※ 납품장소·운송비 부담은 별도 협의에 따릅니다.\n※ 품질·규격은 귀사 승인 사양 및 관련 규격에 따릅니다.'
 };
+/** 견적 하단 멘트: 지정 3문장만 유지 (구버전 기본 멘트·담당자 줄 등 정리) */
+function normalizeQuoteNote(note){
+  const keep=DEFAULT_CFG.quote_note;
+  const n=String(note||'').replace(/\u3000/g,' ').trim();
+  if(!n) return keep;
+  if(/견적을 요청해주셔서|부가세\s*\(\s*VAT\s*\)|유효기간이 지난|확인 날인본|기타 문의는 담당자|^담당자\s*:/.test(n)) return keep;
+  // 계약·운송 기본 멘트가 있으면 지정 3문장으로 통일
+  if(n.includes('발주서 접수 시 계약이 성립') && n.includes('납품장소·운송비 부담')) return keep;
+  return n;
+}
 let MY=JSON.parse(JSON.stringify(DEFAULT_CFG));
 
 // 매입처/매출처 (담당자 별도 관리)
@@ -2110,7 +2119,9 @@ async function loadConfigFromDb(){
   if(!cfg.ts_item_docs||typeof cfg.ts_item_docs!=='object') cfg.ts_item_docs={};
   if(!cfg.quote_pay) cfg.quote_pay=DEFAULT_CFG.quote_pay;
   if(!cfg.quote_valid) cfg.quote_valid=DEFAULT_CFG.quote_valid;
-  if(!cfg.quote_note) cfg.quote_note=DEFAULT_CFG.quote_note;
+  const rawQuoteNote=String(cfg.quote_note||'').trim();
+  cfg.quote_note=normalizeQuoteNote(cfg.quote_note);
+  if(cfg.quote_note!==rawQuoteNote) cfg.__persistQuoteNote=true;
   return cfg;
 }
 
@@ -2204,6 +2215,10 @@ async function loadAll(){
   showSyncStatus('불러오는 중...');
   try{
     MY = await loadConfigFromDb();
+    if(MY && MY.__persistQuoteNote){
+      delete MY.__persistQuoteNote;
+      saveConfigToDb().catch(e=>console.warn('quote_note normalize save', e));
+    }
     BUYERS = await loadBuyersFromDb();
     SELLERS = await loadSellersFromDb();
     ensureDeliverySites();
@@ -2340,7 +2355,7 @@ async function saveConfig(){
   });
   MY.quote_pay=(document.getElementById('cfg-quote-pay')||{}).value||DEFAULT_CFG.quote_pay;
   MY.quote_valid=(document.getElementById('cfg-quote-valid')||{}).value||DEFAULT_CFG.quote_valid;
-  MY.quote_note=(document.getElementById('cfg-quote-note')||{}).value||DEFAULT_CFG.quote_note;
+  MY.quote_note=normalizeQuoteNote((document.getElementById('cfg-quote-note')||{}).value||DEFAULT_CFG.quote_note);
   // 관리자별 연락처
   if(!MY.managers) MY.managers={};
   const m1tel=document.getElementById('cfg-mgr1-tel').value;
@@ -2363,7 +2378,7 @@ function loadConfig(){
   const qn=document.getElementById('cfg-quote-note');
   if(qp) qp.value=MY.quote_pay||DEFAULT_CFG.quote_pay;
   if(qv) qv.value=MY.quote_valid||DEFAULT_CFG.quote_valid;
-  if(qn) qn.value=MY.quote_note||DEFAULT_CFG.quote_note;
+  if(qn) qn.value=normalizeQuoteNote(MY.quote_note||DEFAULT_CFG.quote_note);
   const mgrs=MY.managers||{};
   document.getElementById('cfg-mgr1-tel').value=(mgrs['이은진']||{}).tel||'010-5501-4883';
   document.getElementById('cfg-mgr1-email').value=(mgrs['이은진']||{}).email||'flyingej@naver.com';
@@ -3353,6 +3368,7 @@ function buildQuotePageHtml({finalNo, customer, contact, contactInfo, date, vali
   const si=SELLERS[customer]||{};
   const mgrInfo=(MY.managers&&MY.managers[manager])||{};
   const myContact=manager+(mgrInfo.tel?'　'+mgrInfo.tel:'')+(mgrInfo.email?' / '+mgrInfo.email:'');
+  const noteText=normalizeQuoteNote(note);
   const FIXED_ROWS=DOC_LINE_ROWS;
   const sub=items.reduce((s,r)=>s+(+r.amt||0),0);
   const dataRows=items.map((r,i)=>`<tr>
@@ -3397,8 +3413,7 @@ function buildQuotePageHtml({finalNo, customer, contact, contactInfo, date, vali
       ${MY.bank?`<div class="po-foot-row"><span class="po-foot-key">입금계좌</span><span class="po-foot-val">${escHtml(MY.bank)}</span></div>`:''}
     </div>
     <div class="quote-note">
-      <textarea class="doc-note-input">${escHtml(note||'')}</textarea>
-      <div class="quote-sign">담당자 : ${escHtml(manager)}${mgrInfo.tel?' / '+escHtml(mgrInfo.tel):''}${mgrInfo.email?' / '+escHtml(mgrInfo.email):''}</div>
+      <textarea class="doc-note-input">${escHtml(noteText||'')}</textarea>
     </div>
   </div>`;
 }
