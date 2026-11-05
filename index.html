@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="doc-print-fix" content="2026-11-05a">
+<meta name="doc-print-fix" content="2026-11-05b">
 <title>상보프레카 발주 관리</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -4294,7 +4294,9 @@ function docPdfCaptureOpts(){
       backgroundColor:'#ffffff',
       width:794,
       height:1123,
-      windowWidth:794,
+      /* windowWidth를 794로 고정하면 복제 화면에서는 문서가 왼쪽 끝(0)에 놓이는데,
+         자르는 위치는 실제 화면의 위치(가운데 정렬된 left)를 써서 그만큼 왼쪽이 잘렸다.
+         실제 창 너비를 그대로 쓰게 두어 화면 위치와 자르는 위치를 맞춘다. */
       scrollX:0,
       scrollY:0
     },
