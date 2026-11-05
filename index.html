@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="doc-print-fix" content="2026-11-05c">
+<meta name="doc-print-fix" content="2026-11-05d">
 <title>상보프레카 발주 관리</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -4004,6 +4004,15 @@ function suggestDocPdfFilename(){
   const safeNo=(nos[0]||'doc').replace(/[^\w.\-]+/g,'_').replace(/_+/g,'_')||'doc';
   return `${docNoPrefix(kind)}_${safeNo}.pdf`;
 }
+/** 저장할 PDF 파일 이름을 입력받는다. 취소하면 null. 확장자 .pdf는 자동으로 붙임 */
+function askDocPdfFilename(defaultName){
+  const base=String(defaultName||'doc.pdf').replace(/\.pdf$/i,'');
+  const raw=prompt('저장할 파일 이름', base);
+  if(raw===null) return null;
+  // 파일 이름에 쓸 수 없는 문자는 _ 로 바꾸고, 비우면 기본 이름 사용
+  const name=String(raw).trim().replace(/\.pdf$/i,'').replace(/[\\/:*?"<>|\x00-\x1f]+/g,'_').trim()||base;
+  return name+'.pdf';
+}
 async function printDocOverlay(){
   /* Chrome window.print()는 CSS border를 다시 그려 화면과 선 굵기가 달라짐.
      화면 DOM을 html2pdf(html2canvas)로 그대로 찍어 PDF로 연다. */
@@ -4014,12 +4023,15 @@ async function printDocOverlay(){
   const sync=document.getElementById('sync-status');
   if(sync){ sync.textContent=''; sync.style.opacity='0'; }
 
+  // 저장할 파일 이름을 먼저 묻는다 (기본값: 문서번호). 취소하면 저장하지 않음
+  const filename=askDocPdfFilename(suggestDocPdfFilename());
+  if(!filename) return;
+
   const btn=[...document.querySelectorAll('.doc-print')].find(b=>b.offsetParent!==null)||document.querySelector('.doc-print');
   const prev=btn?btn.textContent:'';
   try{
     if(btn){ btn.disabled=true; btn.textContent='PDF 만드는 중…'; }
     const blob=await buildDocPdfBlob();
-    const filename=suggestDocPdfFilename();
     const url=URL.createObjectURL(blob);
     const a=document.createElement('a');
     a.href=url; a.download=filename; a.rel='noopener';
@@ -4869,14 +4881,6 @@ function renderList(){
     const bs=[...new Set(o.items.map(i=>i.buyer).filter(Boolean))].join(', ');
     const its=[...new Set(o.items.map(i=>i.item).filter(Boolean))].join(', ');
     const pend=o.items.filter(i=>i.status==='미납품').length;
-    const tsPairs=listOrderTsDocs(o);
-    const tsLabel=tsPairs.length
-      ? tsPairs.map(p=>{
-          const tip=p.inherited?` title="같은 납품일 형제 품목 번호"`:'';
-          const color=p.inherited?'#64748b':'#111';
-          return `<span style="color:${color};font-variant-numeric:tabular-nums"${tip}>${tsNoStackHtml(p.cur, p.orig)}${p.inherited?'<span style="font-size:9px;color:#94a3b8;margin-left:2px">형제</span>':''}</span>`;
-        }).join('<span style="color:#ccc;margin:0 4px">·</span>')
-      : '<span style="color:#bbb">—</span>';
     return `<div class="card">
       <div class="card-top">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
@@ -4887,10 +4891,6 @@ function renderList(){
       </div>
       <div class="card-name">${bs||'미지정'}</div>
       <div class="card-items-txt">${its}</div>
-      <div style="font-size:12px;color:#444;margin:6px 0 2px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-        <span style="color:#888;font-size:11px;flex-shrink:0">문서번호</span>
-        <span style="font-variant-numeric:tabular-nums;min-height:1.2em">${tsLabel}</span>
-      </div>
       <div class="card-amts">
         <div class="card-amt"><span class="card-amt-lbl">매입</span><span class="card-amt-val">${fmtW(o.total_buy)}</span></div>
       </div>
