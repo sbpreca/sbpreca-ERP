@@ -377,7 +377,7 @@ input[readonly]{background:#f5f5f5;color:#999}
           <th style="width:52px;text-align:right">판매수량</th>
           <th style="width:80px;text-align:right">판매단가</th>
           <th style="width:82px;text-align:right">공급가액</th>
-          <th style="width:100px">출하일</th>
+          <th style="width:100px">납품일</th>
           <th style="width:72px;text-align:center">납품상태</th>
           <th style="width:24px"></th>
         </tr></thead>
@@ -421,7 +421,7 @@ input[readonly]{background:#f5f5f5;color:#999}
         <thead><tr>
           <th style="width:70px">상태</th><th style="width:80px">발주일</th><th>매입처</th><th>품목</th>
           <th class="r" style="width:60px">수량</th><th class="r" style="width:80px">매입단가</th><th class="r" style="width:100px">매입금액</th>
-          <th style="width:80px">출하일</th><th>매출처</th><th class="r" style="width:100px">공급가액</th>
+          <th style="width:80px">납품일</th><th>매출처</th><th class="r" style="width:100px">공급가액</th>
         </tr></thead>
         <tbody id="order-upload-review-body"></tbody>
       </table>
@@ -466,7 +466,7 @@ input[readonly]{background:#f5f5f5;color:#999}
           <th style="width:50px" class="r">수량</th>
           <th style="width:75px" class="r">판매단가</th>
           <th style="width:80px" class="r">공급가액</th>
-          <th style="width:100px">출하일</th>
+          <th style="width:100px">납품일</th>
           <th style="width:74px" class="c">납품상태</th>
           <th style="width:110px" class="c">문서번호</th>
           <th style="width:108px" class="c">명세</th>
@@ -3266,7 +3266,7 @@ function buildPOHtml(order){
         <div class="po-row"><span class="po-key">　</span><span class="po-val">　</span><span class="po-key">담 당 자</span><span class="po-val">${escHtml(manager)}　${escHtml((MY.managers&&MY.managers[manager])?(MY.managers[manager].tel||'')+(MY.managers[manager].email?' / '+MY.managers[manager].email:''): (MY.contact||''))}</span></div>
       </div>
       <table class="po-tbl">
-        <thead><tr><th style="width:34px">NO</th><th style="width:127px">품목</th><th style="width:143px">규격</th><th style="width:54px">수량</th><th style="width:72px">단가(원)</th><th style="width:82px">금액(원)</th><th style="width:70px">출하일자</th><th style="width:136px">비고</th></tr></thead>
+        <thead><tr><th style="width:34px">NO</th><th style="width:127px">품목</th><th style="width:143px">규격</th><th style="width:54px">수량</th><th style="width:72px">단가(원)</th><th style="width:82px">금액(원)</th><th style="width:70px">납품일</th><th style="width:136px">비고</th></tr></thead>
         <tbody>${dataRows}${blank}</tbody>
         <tfoot><tr><td colspan="5" style="text-align:right;padding:8px">합　계</td><td class="r">${fmt(sub)}</td><td colspan="2"></td></tr></tfoot>
       </table>
@@ -3289,32 +3289,7 @@ async function showPO(){
   const committed=commitFormOrder();
   if(!committed){alert('날짜와 품목을 입력해주세요');return;}
   const order=cloneOrder(committed);
-  const byBuyer={};
-  (order.items||[]).forEach(i=>{if(i&&i.buyer)(byBuyer[i.buyer]=byBuyer[i.buyer]||[]).push(i);});
-  for(const [,its] of Object.entries(byBuyer)){
-    const sample=its.find(i=>i.seller||i.deliver_addr!=null||i.deliver_label!=null)||its[0]||{};
-    const def=resolveDeliverInfo(sample.seller||'', sample);
-    const overridden=promptDeliverOverrideIfWanted(def.company||sellerCompany(sample.seller||''), def);
-    its.forEach(i=>{
-      i.deliver_label=overridden.label!=null?overridden.label:'';
-      i.deliver_addr=overridden.addr!=null?overridden.addr:'';
-      i.deliver_contact=overridden.contact!=null?overridden.contact:'';
-      if(overridden.label && def.company){
-        i.seller=encodeSeller(def.company, overridden.label);
-      }
-    });
-  }
-  const live=orders.find(o=>o.no===order.no);
-  if(live&&Array.isArray(live.items)){
-    order.items.forEach((it,idx)=>{
-      const tgt=live.items[idx];
-      if(!tgt) return;
-      tgt.deliver_label=it.deliver_label!=null?it.deliver_label:null;
-      tgt.deliver_addr=it.deliver_addr!=null?it.deliver_addr:null;
-      tgt.deliver_contact=it.deliver_contact!=null?it.deliver_contact:null;
-      if(it.seller) tgt.seller=it.seller;
-    });
-  }
+  // 배송지·담당자 확인창 없이 등록/저장된 값 사용 (미리보기에서 수정 가능)
   // 문서번호: 상보 접두 SBPO-YYMMDD-순번 (발주번호 order.no 와 별개). 구형·기발급 번호는 유지
   let poDocNo=resolvePoDocNo(order);
   const metaPo=getPoDocMeta(order.no);
@@ -3489,19 +3464,25 @@ function resolveSellerContact(seller){
   return formatDocContact((si&&si.contact)||'');
 }
 function promptTsContact(company, seller){
-  const def=resolveSellerContact(seller)||'담당자';
-  const v=prompt(`${company} 담당자를 확인/수정해주세요\n(이번 명세표에만 반영 · 필요하면 미리보기에서 다시 고칠 수 있어요)`, def);
-  if(v===null) return null;
-  return v.trim()||'　';
+  /* 발행 안내창 제거 — 등록/저장된 담당자만 사용 */
+  return resolveSellerContact(seller)||'　';
 }
 function promptTsTradeDate(defaultDate){
-  const def=(defaultDate||new Date().toISOString().slice(0,10)).slice(0,10);
-  const v=prompt('거래명세표 거래일자를 입력해주세요 (YYYY-MM-DD)\n※ 발주서·납품현황의 출하일은 바뀌지 않아요', def);
-  if(v===null) return null;
-  let s=String(v).trim().replace(/[./]/g,'-');
-  if(/^\d{8}$/.test(s)) s=s.slice(0,4)+'-'+s.slice(4,6)+'-'+s.slice(6,8);
-  if(!/^\d{4}-\d{2}-\d{2}$/.test(s)){ alert('날짜 형식은 YYYY-MM-DD 로 입력해주세요'); return null; }
-  return s;
+  /* 발행 안내창 제거 — 납품일(또는 오늘)을 거래일자로 사용 */
+  return (defaultDate||new Date().toISOString().slice(0,10)).slice(0,10);
+}
+/** 발행 시 배송지·담당자 맵 (확인창 없이 등록값 사용). keyMode: 'seller'|'company' */
+function tsDeliverMapsFromGroups(groups, keyMode){
+  const contactMap={}, addrMap={};
+  Object.entries(groups).forEach(([key,its])=>{
+    const raw=(its[0]&&its[0].seller)||key;
+    const company=sellerCompany(raw||key);
+    const def=resolveDeliverInfo(raw, its[0]);
+    const mapKey=keyMode==='company'?company:key;
+    contactMap[mapKey]=def.contact||resolveSellerContact(raw)||'　';
+    addrMap[mapKey]=def.addr||'';
+  });
+  return {contactMap, addrMap};
 }
 function tsDateKey(tradeDate){
   return String(tradeDate||'').replace(/-/g,'').slice(2,8); // YYMMDD
@@ -4501,7 +4482,7 @@ function tsPageHtml({company, seller, contact, addr, its, dy, dm, dd, tsNo, tsOr
       <span style="font-size:11px;color:#888">(공급가액 ${fmt(totS)} + 부가세 ${fmt(totV)})</span>
     </div>
     <table class="ts-tbl">
-      <thead><tr><th style="width:52px">일자</th><th style="width:119px">품명</th><th style="width:139px">규격</th><th style="width:50px">수량</th><th style="width:72px">단가</th><th style="width:82px">공급가액</th><th style="width:70px">부가세</th><th style="width:134px">비고</th></tr></thead>
+      <thead><tr><th style="width:52px">납품일</th><th style="width:119px">품명</th><th style="width:139px">규격</th><th style="width:50px">수량</th><th style="width:72px">단가</th><th style="width:82px">공급가액</th><th style="width:70px">부가세</th><th style="width:134px">비고</th></tr></thead>
       <tbody>${dataRows}${blank}</tbody>
       <tfoot><tr>
         <td>합계</td><td colspan="2"></td>
@@ -4533,33 +4514,8 @@ async function buildTS(selectedItems, issueDate){
   if(!Object.keys(groups).length){alert('매출처가 있는 항목을 선택해주세요');return;}
   const ships=[...new Set(selectedItems.map(i=>i.ship).filter(Boolean))];
   const tradeDate=promptTsTradeDate(issueDate||(ships.length===1?ships[0]:new Date().toISOString().slice(0,10)));
-  if(tradeDate===null) return;
   const dy=tradeDate.slice(0,4),dm=tradeDate.slice(5,7),dd=tradeDate.slice(8,10);
-  const contactMap={};
-  const addrMap={};
-  for(const [seller,its] of Object.entries(groups)){
-    const company=sellerCompany(seller);
-    const raw=its[0]&&its[0].seller||seller;
-    const def=resolveDeliverInfo(raw, its[0]);
-    const useManual=confirm(`${company} 배송지를 직접 입력할까요?\n\n확인 = 직접 입력\n취소 = 등록 배송지 사용`);
-    if(useManual){
-      const man=promptManualDeliver({label:def.label||'직접입력', addr:def.addr||'', contact:def.contact||''});
-      if(man===null) return;
-      contactMap[seller]=man.contact||'　';
-      addrMap[seller]=man.addr||'';
-      its.forEach(i=>{
-        i.deliver_label=man.label||'';
-        i.deliver_addr=man.addr||'';
-        i.deliver_contact=man.contact||'';
-        if(man.label) i.seller=encodeSeller(company, man.label);
-      });
-    }else{
-      const c=promptTsContact(company, raw);
-      if(c===null) return;
-      contactMap[seller]=c;
-      addrMap[seller]=def.addr||'';
-    }
-  }
+  const {contactMap, addrMap}=tsDeliverMapsFromGroups(groups, 'seller');
   const reuseNos=[...new Set(selectedItems.map(i=>String(i.ts_no||'').trim()).filter(Boolean))];
   const isEdit=reuseNos.length>0;
   const reuseNo=pickTsReuseNo(selectedItems);
@@ -4625,38 +4581,14 @@ async function showTSfromDeliver(){
   const ships=[...new Set(checked.map(r=>r.ship).filter(Boolean))];
   const defaultTrade=ships.length===1?ships[0]:new Date().toISOString().slice(0,10);
   const tradeDate=promptTsTradeDate(defaultTrade);
-  if(tradeDate===null)return;
-  // 매출처(회사)별로 묶고, 문서·품목 일자는 지정한 거래일자 사용 (출하일은 변경 없음)
+  // 매출처(회사)별로 묶고, 문서·품목 일자는 납품일(거래일자) 사용
   const groups={};
   checked.forEach(i=>{
     const k=sellerCompany(i.seller);
     if(!k)return;
     (groups[k]=groups[k]||[]).push(i);
   });
-  const contactMap={};
-  const addrMap={};
-  for(const [co,items] of Object.entries(groups)){
-    const raw=(items[0]&&items[0].seller)||co;
-    const def=resolveDeliverInfo(raw, items[0]);
-    const useManual=confirm(`${co} 배송지를 직접 입력할까요?\n\n확인 = 직접 입력\n취소 = 등록 배송지 사용`);
-    if(useManual){
-      const man=promptManualDeliver({label:def.label||'직접입력', addr:def.addr||'', contact:def.contact||''});
-      if(man===null) return;
-      contactMap[co]=man.contact||'　';
-      addrMap[co]=man.addr||'';
-      items.forEach(i=>{
-        i.deliver_label=man.label||'';
-        i.deliver_addr=man.addr||'';
-        i.deliver_contact=man.contact||'';
-        if(man.label) i.seller=encodeSeller(co, man.label);
-      });
-    }else{
-      const c=promptTsContact(co, raw);
-      if(c===null) return;
-      contactMap[co]=c;
-      addrMap[co]=def.addr||'';
-    }
-  }
+  const {contactMap, addrMap}=tsDeliverMapsFromGroups(groups, 'company');
   const reuseNos=[...new Set(checked.map(i=>String(i.ts_no||'').trim()).filter(Boolean))];
   const isEdit=reuseNos.length>0;
   const reuseNo=pickTsReuseNo(checked);
@@ -4707,40 +4639,15 @@ async function quickTS(idx, mode){
     items=collectItemsForTsEdit(r);
   }else if(isReissue){
     const sameGroup=collectItemsForTsShipGroup(r);
-    items=sameGroup.length>1&&confirm(`같은 출하일(${r.ship||'-'}) ${sellerCompany(r.seller)} 납품 ${sameGroup.length}건을 함께 재발행할까요?`)?sameGroup:[r];
+    items=sameGroup.length?sameGroup:[r];
   }else{
     const sameGroup=collectItemsForTsShipGroup(r, {requireEmptyTsNo:true});
-    items=sameGroup.length>1&&confirm(`같은 출하일(${r.ship||'-'}) ${sellerCompany(r.seller)} 납품 ${sameGroup.length}건을 함께 발행할까요?`)?sameGroup:[r];
+    items=sameGroup.length?sameGroup:[r];
   }
   const tradeDate=promptTsTradeDate(r.ship||today);
-  if(tradeDate===null)return;
   const groups={};
   items.forEach(i=>{const k=sellerCompany(i.seller);if(k)(groups[k]=groups[k]||[]).push(i);});
-  const contactMap={};
-  const addrMap={};
-  for(const [seller,its] of Object.entries(groups)){
-    const company=sellerCompany(seller);
-    const raw=its[0]&&its[0].seller||seller;
-    const def=resolveDeliverInfo(raw, its[0]);
-    const useManual=confirm(`${company} 배송지를 직접 입력할까요?\n\n확인 = 직접 입력\n취소 = 등록 배송지 사용`);
-    if(useManual){
-      const man=promptManualDeliver({label:def.label||'직접입력', addr:def.addr||'', contact:def.contact||''});
-      if(man===null) return;
-      contactMap[company]=man.contact||'　';
-      addrMap[company]=man.addr||'';
-      its.forEach(i=>{
-        i.deliver_label=man.label||'';
-        i.deliver_addr=man.addr||'';
-        i.deliver_contact=man.contact||'';
-        if(man.label) i.seller=encodeSeller(company, man.label);
-      });
-    }else{
-      const c=promptTsContact(company, raw);
-      if(c===null) return;
-      contactMap[company]=c;
-      addrMap[company]=def.addr||'';
-    }
-  }
+  const {contactMap, addrMap}=tsDeliverMapsFromGroups(groups, 'company');
   // edit: 묶음 안 기존 번호 우선 표시 후 -R 제안 / reissue·new: 다음 순번
   // 확인한 번호는 품목에 즉시 저장 (공유 채번만 프린트/메일 때 확정)
   const reuseNo=isEdit?pickTsReuseNo(items, r.ts_no):'';
@@ -4820,7 +4727,7 @@ function renderDeliver(){
       const disp=resolveDisplayTsNo(r);
       const dispNo=disp.ts_no||'';
       const dispTip=dispNo
-        ?(disp.inherited?`같은 출하일 형제 품목 번호 ${dispNo}`:`거래명세표 ${dispNo}`)
+        ?(disp.inherited?`같은 납품일 형제 품목 번호 ${dispNo}`:`거래명세표 ${dispNo}`)
         :'미발급';
       return `<tr class="${!isPend?'done-row':''}">
         <td class="c" style="color:#999;font-size:11px">${idx+1}</td>
@@ -4938,7 +4845,7 @@ function renderList(){
     const tsPairs=listOrderTsDocs(o);
     const tsLabel=tsPairs.length
       ? tsPairs.map(p=>{
-          const tip=p.inherited?` title="같은 출하일 형제 품목 번호"`:'';
+          const tip=p.inherited?` title="같은 납품일 형제 품목 번호"`:'';
           const color=p.inherited?'#64748b':'#111';
           return `<span style="color:${color};font-variant-numeric:tabular-nums"${tip}>${tsNoStackHtml(p.cur, p.orig)}${p.inherited?'<span style="font-size:9px;color:#94a3b8;margin-left:2px">형제</span>':''}</span>`;
         }).join('<span style="color:#ccc;margin:0 4px">·</span>')
@@ -7448,7 +7355,7 @@ async function confirmOrderUpload(){
 }
 
 function exportOrdersExcel(){
-  const rows=[['발주번호','발주일','매입처','품목','규격','매입수량','매입단가','매입금액','출하일','매출처','판매수량','판매단가','공급가액','상태']];
+  const rows=[['발주번호','발주일','매입처','품목','규격','매입수량','매입단가','매입금액','납품일','매출처','판매수량','판매단가','공급가액','상태']];
   orders.forEach(o=>{
     o.items.forEach(it=>{
       rows.push([o.no,o.date,it.buyer,it.item,it.spec||'',it.bqty||0,it.bprice||0,it.bamt||0,
