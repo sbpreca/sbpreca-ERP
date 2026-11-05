@@ -3282,15 +3282,12 @@ function buildPOHtml(order){
 }
 async function showPO(){
   if(!getRows().length){alert('품목을 입력해주세요');return;}
-  const defaultNo=document.getElementById('f-no').value;
-  const noRaw=prompt('발주 번호', defaultNo);
-  if(noRaw===null)return;
-  document.getElementById('f-no').value=String(noRaw).trim()||defaultNo;
   const committed=commitFormOrder();
   if(!committed){alert('날짜와 품목을 입력해주세요');return;}
   const order=cloneOrder(committed);
   // 배송지·담당자 확인창 없이 등록/저장된 값 사용 (미리보기에서 수정 가능)
-  // 문서번호: 상보 접두 SBPO-YYMMDD-순번 (발주번호 order.no 와 별개). 구형·기발급 번호는 유지
+  // 문서번호: 상보 접두 SBPO-YYMMDD-순번 (발주번호 order.no 와 별개). 발급해 둔 번호가 있으면 그것을, 없으면 새 번호를 먼저 보여주고
+  // 사용자가 고친 번호를 그대로 발주서에 찍고 기억한다 (예전에는 이 창이 발주번호만 바꿔서 문서번호는 옛 번호가 그대로 나왔음)
   let poDocNo=resolvePoDocNo(order);
   const metaPo=getPoDocMeta(order.no);
   if(!parseDocNoParts('po', poDocNo)){
@@ -3298,9 +3295,12 @@ async function showPO(){
       poDocNo=await suggestPoDocNo(order.date);
     }
   }
-  rememberPoDoc(order.no, poDocNo);
-  order.po_doc_no=poDocNo;
-  await commitDocSeqFromNos('po', [poDocNo], quoteDateKey(order.date));
+  const typed=prompt('발주서 문서번호', poDocNo);
+  if(typed===null) return;
+  const finalNo=String(typed).trim()||poDocNo;
+  rememberPoDoc(order.no, finalNo, finalNo!==poDocNo?{orig:finalNo}:{});
+  order.po_doc_no=finalNo;
+  await commitDocSeqFromNos('po', [finalNo], quoteDateKey(order.date));
   persist(order.no);
   clearTimeout(_persistTimer);
   try{ await saveOrdersToDb(); }catch(e){ console.warn(e); }
