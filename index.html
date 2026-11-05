@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="doc-print-fix" content="2026-11-04c">
+<meta name="doc-print-fix" content="2026-11-05a">
 <title>상보프레카 발주 관리</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -4017,16 +4017,45 @@ async function saveDocOverlay(){
     if(btn) btn.disabled=false;
   }
 }
+function suggestDocPdfFilename(){
+  const kind=currentDocKind()||'ts';
+  const nos=collectDocNos(kind);
+  const safeNo=(nos[0]||'doc').replace(/[^\w.\-]+/g,'_').replace(/_+/g,'_')||'doc';
+  return `${docNoPrefix(kind)}_${safeNo}.pdf`;
+}
 async function printDocOverlay(){
-  /* 인쇄만 수행. 발주 내용 DB 저장·「저장됨」토스트는 저장 버튼에서만.
-     거래명세표 채번·견적 순번은 인쇄 시점 확정이 필요해 메모리/시퀀스만 반영 */
+  /* Chrome window.print()는 CSS border를 다시 그려 화면과 선 굵기가 달라짐.
+     화면 DOM을 html2pdf(html2canvas)로 그대로 찍어 PDF로 연다. */
   try{
     if(currentDocKind()==='ts') await finalizeTsIssue();
     else if(currentDocKind()==='quote') await syncOverlayDocSeq();
   }catch(e){ console.warn(e); }
   const sync=document.getElementById('sync-status');
   if(sync){ sync.textContent=''; sync.style.opacity='0'; }
-  window.print();
+
+  const btn=[...document.querySelectorAll('.doc-print')].find(b=>b.offsetParent!==null)||document.querySelector('.doc-print');
+  const prev=btn?btn.textContent:'';
+  try{
+    if(btn){ btn.disabled=true; btn.textContent='PDF 만드는 중…'; }
+    const blob=await buildDocPdfBlob();
+    const filename=suggestDocPdfFilename();
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url; a.download=filename; a.rel='noopener';
+    document.body.appendChild(a); a.click(); a.remove();
+    const w=window.open(url, '_blank');
+    if(w){
+      const tryPrint=()=>{ try{ w.focus(); w.print(); }catch(e){} };
+      setTimeout(tryPrint, 700);
+      setTimeout(tryPrint, 1500);
+    }
+    setTimeout(()=>URL.revokeObjectURL(url), 60000);
+  }catch(e){
+    console.warn(e);
+    alert((e&&e.message)||'PDF를 만들지 못했습니다. 팝업 차단을 해제한 뒤 다시 시도해주세요.');
+  }finally{
+    if(btn){ btn.disabled=false; btn.textContent=prev||'프린트 / PDF 저장'; }
+  }
 }
 async function closeDocOverlay(){
   // 거래명세표: 닫아도 품목 ts_no는 저장 (공유 채번 doc_seq만 프린트/메일에서 확정)
@@ -4271,61 +4300,60 @@ function bytesToBase64(bytes){
   }
   return btoa(binary);
 }
-async function buildDocPdfBase64(){
+function docPdfCaptureOpts(){
+  /* 화면에서 보이는 .a4-page를 그대로 캔버스에 찍음 — Chrome 인쇄 CSS border 재해석을 우회 */
+  return {
+    margin:0,
+    image:{type:'jpeg', quality:0.98},
+    html2canvas:{
+      scale:2,
+      useCORS:true,
+      letterRendering:true,
+      logging:false,
+      backgroundColor:'#ffffff',
+      width:794,
+      height:1123,
+      windowWidth:794,
+      scrollX:0,
+      scrollY:0
+    },
+    jsPDF:{unit:'px', format:[794,1123], orientation:'portrait', hotfixes:['px_scaling']}
+  };
+}
+async function buildDocPdfBlob(){
   if(typeof html2pdf==='undefined') throw new Error('PDF 라이브러리를 불러오지 못했습니다');
   const root=document.getElementById('doc-content');
   const pages=[...root.querySelectorAll('.a4-page')];
-  if(!pages.length) throw new Error('발송할 문서가 없습니다');
-
-  const host=document.createElement('div');
-  host.setAttribute('data-mail-pdf-host','1');
-  host.style.cssText='position:fixed;left:-10000px;top:0;width:794px;background:#fff;z-index:-1;';
-  pages.forEach((p,i)=>{
-    const clone=p.cloneNode(true);
-    clone.style.borderTop='none';
-    clone.style.pageBreakAfter=(i<pages.length-1)?'always':'auto';
-    clone.style.breakAfter=(i<pages.length-1)?'page':'auto';
-    clone.querySelectorAll('input.ts-contact-input, input.ts-addr-input, input.doc-inline-input').forEach(inp=>{
-      const span=document.createElement('span');
-      span.textContent=inp.value||'　';
-      span.style.cssText='display:inline-block;min-width:4em;width:100%';
-      inp.replaceWith(span);
-    });
-    clone.querySelectorAll('textarea.doc-note-input').forEach(inp=>{
-      const div=document.createElement('div');
-      div.textContent=inp.value||'';
-      div.style.cssText='white-space:pre-wrap;font-size:12px;line-height:1.55;width:100%;height:100%';
-      inp.replaceWith(div);
-    });
-    clone.querySelectorAll('textarea.doc-memo-input').forEach(inp=>{
-      const div=document.createElement('div');
-      div.textContent=inp.value||'';
-      const fs=inp.style.fontSize||'12px';
-      div.style.cssText=`white-space:pre-wrap;word-break:break-all;font-size:${fs};line-height:1.15;width:100%;height:100%;overflow:hidden;text-align:center;display:flex;align-items:center;justify-content:center`;
-      inp.replaceWith(div);
-    });
-    host.appendChild(clone);
-  });
-  document.body.appendChild(host);
+  if(!pages.length) throw new Error('문서가 없습니다');
+  const opt=docPdfCaptureOpts();
+  const overlay=document.getElementById('overlay');
+  const prevScroll=overlay?overlay.scrollTop:0;
 
   try{
-    const opt={
-      margin:0,
-      image:{type:'jpeg', quality:0.92},
-      html2canvas:{scale:2, useCORS:true, letterRendering:true, logging:false, windowWidth:794},
-      jsPDF:{unit:'mm', format:'a4', orientation:'portrait'},
-      pagebreak:{mode:['css','legacy'], after:'.a4-page'}
-    };
-    const blob=await html2pdf().set(opt).from(host).outputPdf('blob');
-    const buf=await blob.arrayBuffer();
-    const bytes=new Uint8Array(buf);
-    if(bytes.length<100 || bytes[0]!==0x25 || bytes[1]!==0x50 || bytes[2]!==0x44 || bytes[3]!==0x46){
+    pages[0].scrollIntoView({block:'start'});
+    await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+    const pdf=await html2pdf().set(opt).from(pages[0]).toPdf().get('pdf');
+    for(let i=1;i<pages.length;i++){
+      pages[i].scrollIntoView({block:'start'});
+      await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+      const canvas=await html2pdf().set(opt).from(pages[i]).toCanvas().get('canvas');
+      pdf.addPage([794,1123],'portrait');
+      pdf.addImage(canvas.toDataURL('image/jpeg',0.98),'JPEG',0,0,794,1123);
+    }
+    const blob=pdf.output('blob');
+    const bytes=new Uint8Array(await blob.arrayBuffer());
+    if(bytes.length<5000 || bytes[0]!==0x25 || bytes[1]!==0x50 || bytes[2]!==0x44 || bytes[3]!==0x46){
       throw new Error('PDF 생성에 실패했습니다. 다시 시도해 주세요.');
     }
-    return bytesToBase64(bytes);
+    return new Blob([bytes],{type:'application/pdf'});
   }finally{
-    host.remove();
+    if(overlay) overlay.scrollTop=prevScroll;
   }
+}
+async function buildDocPdfBase64(){
+  const blob=await buildDocPdfBlob();
+  const buf=await blob.arrayBuffer();
+  return bytesToBase64(new Uint8Array(buf));
 }
 async function sendDocMail(){
   try{
