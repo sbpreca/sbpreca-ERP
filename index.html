@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="doc-print-fix" content="2026-11-05b">
+<meta name="doc-print-fix" content="2026-11-05c">
 <title>상보프레카 발주 관리</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -1017,7 +1017,7 @@ input[readonly]{background:#f5f5f5;color:#999}
   <div id="doc-frame">
     <div class="doc-btns">
       <button id="doc-save-btn" class="doc-close" style="display:none;color:#111;border-color:#111;font-weight:600" onclick="saveDocOverlay()">저장</button>
-      <button class="doc-print" onclick="printDocOverlay()">프린트 / PDF 저장</button>
+      <button class="doc-print" onclick="printDocOverlay()">PDF 저장</button>
       <button id="mail-open-btn" class="doc-close" style="display:none;color:#0f766e;border-color:#99f6e4" onclick="toggleMailPanel()">메일 보내기</button>
       <label id="mail-sent-wrap" class="mail-sent-wrap" title="발송하면 자동으로 체크됩니다. 직접 고쳐도 됩니다.">
         <input type="checkbox" id="mail-sent-chk" onchange="toggleDocMailSent(this.checked)">
@@ -4024,18 +4024,15 @@ async function printDocOverlay(){
     const a=document.createElement('a');
     a.href=url; a.download=filename; a.rel='noopener';
     document.body.appendChild(a); a.click(); a.remove();
-    const w=window.open(url, '_blank');
-    if(w){
-      const tryPrint=()=>{ try{ w.focus(); w.print(); }catch(e){} };
-      setTimeout(tryPrint, 700);
-      setTimeout(tryPrint, 1500);
-    }
+    /* 새 탭(blob)으로 열어 자동 인쇄하던 것은 뺐다. Acrobat 확장 등이 blob PDF를 열면
+       모양이 틀어지거나 인쇄 미리보기가 검게 나왔고, 다운로드 파일까지 PDF가 두 번 열렸다.
+       PDF 파일 저장만 한다. */
     setTimeout(()=>URL.revokeObjectURL(url), 60000);
   }catch(e){
     console.warn(e);
-    alert((e&&e.message)||'PDF를 만들지 못했습니다. 팝업 차단을 해제한 뒤 다시 시도해주세요.');
+    alert((e&&e.message)||'PDF를 만들지 못했습니다. 다시 시도해주세요.');
   }finally{
-    if(btn){ btn.disabled=false; btn.textContent=prev||'프린트 / PDF 저장'; }
+    if(btn){ btn.disabled=false; btn.textContent=prev||'PDF 저장'; }
   }
 }
 async function closeDocOverlay(){
