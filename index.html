@@ -4301,7 +4301,75 @@ function docPdfCaptureOpts(){
     jsPDF:{unit:'px', format:[794,1123], orientation:'portrait', hotfixes:['px_scaling']}
   };
 }
+/* ── PDF 표 선(테두리)을 이미지가 아니라 직선으로 그리기 ──
+   이전: 화면 전체를 JPEG 이미지로 찍어 PDF에 붙임 → 미리보기·인쇄에서 이미지가 줄었다 커질 때 1~2px 선이 곳에 따라 굵게/가늘게 보임.
+         (표 위치가 소수점이면 이미지 안에서도 선이 두 칸에 걸쳐 흐려짐)
+   지금: solid 테두리는 이미지에서 빼고(투명), 정수 픽셀에 맞춘 직선으로 PDF에 직접 그림 → 확대·축소·인쇄해도 굵기가 같음 */
+function parseCssColor(c){
+  const m=/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s/]+([\d.]+%?))?\s*\)/.exec(c||'');
+  if(!m) return null;
+  let a=1;
+  if(m[4]!==undefined) a=String(m[4]).endsWith('%')?parseFloat(m[4])/100:parseFloat(m[4]);
+  if(!(a>0)) return null;
+  return [Math.round(+m[1]),Math.round(+m[2]),Math.round(+m[3])];
+}
+function collectDocBorders(page, getCS){
+  getCS=getCS||(el=>getComputedStyle(el));
+  const pr=page.getBoundingClientRect();
+  const W=pr.width, H=pr.height;
+  const segs=[], hide=[];
+  const sides=[['Top','border-top-color'],['Right','border-right-color'],['Bottom','border-bottom-color'],['Left','border-left-color']];
+  [page,...page.querySelectorAll('*')].forEach(el=>{
+    const cs=getCS(el);
+    if(!cs || cs.display==='none' || cs.visibility==='hidden') return;
+    // 둥근 모서리는 직선으로 대신할 수 없으니 이미지 그대로 둔다
+    if(['TopLeft','TopRight','BottomLeft','BottomRight'].some(k=>parseFloat(cs['border'+k+'Radius'])>0)) return;
+    const r=el.getBoundingClientRect();
+    if(!(r.width>0 && r.height>0)) return;
+    const x=r.left-pr.left, y=r.top-pr.top;
+    if(x>=W || y>=H || x+r.width<=0 || y+r.height<=0) return;
+    const X0=Math.round(x), X1=Math.round(x+r.width), Y0=Math.round(y), Y1=Math.round(y+r.height);
+    sides.forEach(([side,prop])=>{
+      const rawW=parseFloat(cs['border'+side+'Width'])||0;
+      if(!(rawW>0) || cs['border'+side+'Style']!=='solid') return;
+      const rgb=parseCssColor(cs['border'+side+'Color']);
+      if(!rgb) return;
+      const bw=Math.max(1,Math.round(rawW));
+      let x1,y1,x2,y2;
+      if(side==='Top'){ x1=X0; x2=X1; y1=y2=Y0+bw/2; }
+      else if(side==='Bottom'){ x1=X0; x2=X1; y1=y2=Y1-bw/2; }
+      else if(side==='Left'){ y1=Y0; y2=Y1; x1=x2=X0+bw/2; }
+      else { y1=Y0; y2=Y1; x1=x2=X1-bw/2; }
+      segs.push({x1,y1,x2,y2,bw,rgb});
+      hide.push([el,prop]);
+    });
+  });
+  return {segs,hide};
+}
+// 이미지 캡처 동안만 해당 테두리를 투명하게 (두께는 그대로라 배치는 변하지 않음). 반환값을 호출하면 원래대로 복구
+function hideDocBorders(hide){
+  const saved=hide.map(([el,prop])=>[el,prop,el.style.getPropertyValue(prop),el.style.getPropertyPriority(prop)]);
+  hide.forEach(([el,prop])=>el.style.setProperty(prop,'transparent','important'));
+  return ()=>saved.forEach(([el,prop,v,pri])=>{ if(v) el.style.setProperty(prop,v,pri); else el.style.removeProperty(prop); });
+}
+function drawDocBorders(pdf, segs){
+  pdf.setLineCap(0);
+  segs.forEach(s=>{
+    pdf.setDrawColor(s.rgb[0],s.rgb[1],s.rgb[2]);
+    pdf.setLineWidth(s.bw);
+    pdf.line(s.x1,s.y1,s.x2,s.y2);
+  });
+}
 async function buildDocPdfBlob(){
+  // 선을 직선으로 그리는 방식을 먼저 쓰고, 어떤 이유로든 실패하면 예전 방식(이미지만)으로 다시 만든다
+  try{
+    return await buildDocPdfBlobImpl(true);
+  }catch(e){
+    console.warn('선을 직선으로 그리지 못해 이미지 방식으로 다시 만듭니다', e);
+    return await buildDocPdfBlobImpl(false);
+  }
+}
+async function buildDocPdfBlobImpl(vectorLines){
   if(typeof html2pdf==='undefined') throw new Error('PDF 라이브러리를 불러오지 못했습니다');
   const root=document.getElementById('doc-content');
   const pages=[...root.querySelectorAll('.a4-page')];
@@ -4309,17 +4377,34 @@ async function buildDocPdfBlob(){
   const opt=docPdfCaptureOpts();
   const overlay=document.getElementById('overlay');
   const prevScroll=overlay?overlay.scrollTop:0;
+  const nextFrame=()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
 
   try{
-    pages[0].scrollIntoView({block:'start'});
-    await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
-    const pdf=await html2pdf().set(opt).from(pages[0]).toPdf().get('pdf');
-    for(let i=1;i<pages.length;i++){
+    let pdf=null;
+    for(let i=0;i<pages.length;i++){
       pages[i].scrollIntoView({block:'start'});
-      await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
-      const canvas=await html2pdf().set(opt).from(pages[i]).toCanvas().get('canvas');
-      pdf.addPage([794,1123],'portrait');
-      pdf.addImage(canvas.toDataURL('image/jpeg',0.98),'JPEG',0,0,794,1123);
+      await nextFrame();
+      let segs=[], restore=null;
+      if(vectorLines){
+        const c=collectDocBorders(pages[i]);
+        segs=c.segs;
+        restore=hideDocBorders(c.hide);
+      }
+      try{
+        if(i===0){
+          pdf=await html2pdf().set(opt).from(pages[0]).toPdf().get('pdf');
+        }else{
+          const canvas=await html2pdf().set(opt).from(pages[i]).toCanvas().get('canvas');
+          pdf.addPage([794,1123],'portrait');
+          pdf.addImage(canvas.toDataURL('image/jpeg',0.98),'JPEG',0,0,794,1123);
+        }
+      }finally{
+        if(restore) restore();
+      }
+      if(vectorLines){
+        pdf.setPage(i+1);
+        drawDocBorders(pdf,segs);
+      }
     }
     const blob=pdf.output('blob');
     const bytes=new Uint8Array(await blob.arrayBuffer());
