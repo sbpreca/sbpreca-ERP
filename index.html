@@ -4833,19 +4833,6 @@ function newOrderFromList(){
   initForm();
 }
 
-/** 발주 카드용: 납품현황과 같이 표시할 명세 문서번호 목록 */
-function listOrderTsDocs(order){
-  const pairs=[];
-  (order.items||[]).forEach(i=>{
-    const disp=resolveDisplayTsNo({...i, order_no:order.no});
-    const cur=String(disp.ts_no||'').trim();
-    if(!cur) return;
-    const orig=String(disp.ts_orig||resolveTsOrig(i, cur)||'').trim();
-    const key=cur+'|'+orig;
-    if(!pairs.some(p=>p.key===key)) pairs.push({key, cur, orig, inherited:!!disp.inherited});
-  });
-  return pairs;
-}
 /* ── 발주 목록 ── */
 function renderList(){
   // 납품현황과 동일: 형제 품목에 있는 명세 번호를 채운 뒤 표시
