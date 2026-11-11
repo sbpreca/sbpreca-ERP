@@ -406,6 +406,7 @@ input[readonly]{background:#f5f5f5;color:#999}
   <div id="page-list" class="page on">
     <div class="filter-row">
       <button class="btn btn-save" onclick="newOrderFromList()">+ 새 발주</button>
+      <button class="btn btn-po" onclick="openQuoteForm()">견적서 작성</button>
       <input id="fl-search" type="text" placeholder="🔍 품목·발주번호·문서번호 검색" style="width:220px;padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px" oninput="renderList()">
       <select id="fl-month" onchange="renderList()"><option value="">전체 월</option></select>
       <select id="fl-buyer" onchange="renderList()"><option value="">전체 매입처</option></select>
@@ -429,6 +430,43 @@ input[readonly]{background:#f5f5f5;color:#999}
       </table>
     </div>
     <div id="list-area"></div>
+  </div>
+
+  <!-- 견적서 작성 (발주 없이 바로) -->
+  <div id="page-quote" class="page">
+    <div class="form-grid" style="grid-template-columns:160px 160px 1fr 1fr">
+      <div class="field"><label>견적일</label><input type="date" id="q-date"></div>
+      <div class="field"><label>담당자</label><select id="q-manager"><option value="이은진">이은진</option><option value="김은희">김은희</option></select></div>
+      <div class="field"><label>수신처 (매출처)</label><input id="q-customer" list="q-customer-list" placeholder="등록된 매출처를 고르거나 새 업체명을 입력" onchange="onQuoteCustomerChange()"><datalist id="q-customer-list"></datalist></div>
+      <div class="field"><label>수신 담당자</label><input id="q-contact" oninput="this.dataset.auto=''" placeholder="예: 홍길동 과장"></div>
+      <div class="field" style="grid-column:1/-1"><label>납품장소</label><input id="q-deliver" oninput="this.dataset.auto=''" placeholder="비워두면 견적서에서 직접 적을 수 있어요"></div>
+    </div>
+    <div class="section-box">
+      <div class="section-title">견적 품목</div>
+      <table class="items-table">
+        <thead><tr>
+          <th style="width:190px">품목</th>
+          <th style="width:150px">규격</th>
+          <th style="width:80px;text-align:right">수량</th>
+          <th style="width:100px;text-align:right">단가</th>
+          <th style="width:110px;text-align:right">금액</th>
+          <th style="width:130px">납기일</th>
+          <th>비고</th>
+          <th style="width:24px"></th>
+        </tr></thead>
+        <tbody id="quote-items-body"></tbody>
+      </table>
+      <datalist id="q-item-list"></datalist>
+    </div>
+    <div class="actions">
+      <button class="btn" onclick="go('list')">← 목록으로</button>
+      <button class="btn" onclick="addQuoteRow()">+ 품목 추가</button>
+      <button class="btn" onclick="resetQuoteForm()">새로 작성</button>
+      <button class="btn btn-po" onclick="showStandaloneQuote()">견적서 PDF</button>
+    </div>
+    <div class="sum-bar">
+      <div class="sum-item"><span class="sum-lbl">견적 합계 (VAT 별도)</span><span class="sum-val g" id="q-total">0원</span></div>
+    </div>
   </div>
 
   <!-- 납품 현황 -->
@@ -3478,6 +3516,120 @@ function buildQuotePageHtml({finalNo, customer, contact, contactInfo, date, vali
     </div>
   </div>`;
 }
+/** 견적 번호를 제안·확인받고 순번을 기록한다. 취소하면 null */
+async function issueQuoteNo(date){
+  const defaultNo=await suggestQuoteNo(date);
+  const no=prompt('견적 번호를 확인/수정해주세요', defaultNo);
+  if(no===null) return null;
+  const finalNo=String(no).trim()||defaultNo;
+  await commitQuoteDocNo(finalNo, date);
+  return finalNo;
+}
+
+/* ── 견적서 단독 작성: 발주를 만들지 않고 발주 목록에서 바로 ── */
+function openQuoteForm(){
+  go('quote');
+  const sel=document.getElementById('q-manager');
+  const mgrs=Object.keys(MY.managers||{});
+  if(mgrs.length){
+    const cur=sel.value;
+    sel.innerHTML=mgrs.map(m=>`<option value="${escHtml(m)}">${escHtml(m)}</option>`).join('');
+    if(mgrs.includes(cur)) sel.value=cur;
+  }
+  document.getElementById('q-customer-list').innerHTML=Object.keys(SELLERS).sort((a,b)=>a.localeCompare(b,'ko'))
+    .map(k=>`<option value="${escHtml(k)}"></option>`).join('');
+  document.getElementById('q-item-list').innerHTML=catalogItems().map(k=>`<option value="${escHtml(k)}"></option>`).join('');
+  if(!document.getElementById('q-date').value) document.getElementById('q-date').value=new Date().toISOString().slice(0,10);
+  if(!document.querySelector('#quote-items-body tr')){ addQuoteRow(); addQuoteRow(); }
+  calcQuoteTotal();
+}
+function resetQuoteForm(){
+  const hasInput=getQuoteRows().length||document.getElementById('q-customer').value.trim();
+  if(hasInput && !confirm('작성 중인 견적 내용을 지우고 새로 시작할까요?')) return;
+  ['q-customer','q-contact','q-deliver'].forEach(id=>{ document.getElementById(id).value=''; });
+  document.getElementById('q-date').value=new Date().toISOString().slice(0,10);
+  document.getElementById('quote-items-body').innerHTML='';
+  addQuoteRow(); addQuoteRow();
+  calcQuoteTotal();
+}
+/** 등록된 매출처를 고르면 담당자·납품장소를 채운다 (직접 적어둔 값은 유지) */
+function onQuoteCustomerChange(){
+  const customer=document.getElementById('q-customer').value.trim();
+  if(!customer||!SELLERS[customer]) return;
+  const di=resolveDeliverInfo(customer, {});
+  const si=SELLERS[customer]||{};
+  const c=document.getElementById('q-contact'), d=document.getElementById('q-deliver');
+  if(!c.value.trim()||c.dataset.auto==='1'){ c.value=di.contact||si.contact||''; c.dataset.auto='1'; }
+  if(!d.value.trim()||d.dataset.auto==='1'){ d.value=di.addr||si.addr||''; d.dataset.auto='1'; }
+}
+function addQuoteRow(){
+  const tr=document.createElement('tr');
+  tr.innerHTML=`
+    <td><input type="text" class="qi" list="q-item-list" placeholder="품목 선택 또는 직접 입력" onchange="onQuoteItemChange(this)"></td>
+    <td><input type="text" class="qs"></td>
+    <td><input type="number" class="qq" style="text-align:right" oninput="calcQuoteRow(this)"></td>
+    <td><input type="number" class="qp" style="text-align:right" oninput="calcQuoteRow(this)"></td>
+    <td class="amt qa">-</td>
+    <td><input type="date" class="qd" style="font-size:11px"></td>
+    <td><input type="text" class="qm"></td>
+    <td><button class="del-btn" onclick="this.closest('tr').remove();calcQuoteTotal()">×</button></td>`;
+  document.getElementById('quote-items-body').appendChild(tr);
+}
+/** 단가표에 있는 품목이면 규격·판매단가를 채운다 (이미 적은 값은 유지) */
+function onQuoteItemChange(inp){
+  const tr=inp.closest('tr');
+  const name=inp.value.trim();
+  const spec=tr.querySelector('.qs'), price=tr.querySelector('.qp');
+  if(!spec.value){ const s=itemSpecOf(name); if(s) spec.value=s; }
+  if(!price.value){ const f=ITEM_PRICES[name]; if(f&&f.sell){ price.value=f.sell; calcQuoteRow(price); } }
+}
+function calcQuoteRow(inp){
+  const tr=inp.closest('tr');
+  const q=+tr.querySelector('.qq').value||0, p=+tr.querySelector('.qp').value||0;
+  tr.querySelector('.qa').textContent=q&&p?fmt(q*p):'-';
+  calcQuoteTotal();
+}
+function calcQuoteTotal(){
+  const sum=getQuoteRows().reduce((s,r)=>s+r.amt,0);
+  document.getElementById('q-total').textContent=fmtW(sum);
+}
+function getQuoteRows(){
+  return Array.from(document.querySelectorAll('#quote-items-body tr')).map(tr=>{
+    const qty=+tr.querySelector('.qq').value||0, price=+tr.querySelector('.qp').value||0;
+    return {
+      item:tr.querySelector('.qi').value.trim(),
+      spec:tr.querySelector('.qs').value.trim(),
+      qty, price, amt:qty*price,
+      due:tr.querySelector('.qd').value||'',
+      memo:tr.querySelector('.qm').value.trim()
+    };
+  }).filter(r=>r.item);
+}
+async function showStandaloneQuote(){
+  const items=getQuoteRows();
+  if(!items.length){ alert('품목을 입력해주세요'); return; }
+  const customer=document.getElementById('q-customer').value.trim();
+  if(!customer){ alert('견적서를 받을 수신처(매출처)를 입력해주세요'); return; }
+  const date=document.getElementById('q-date').value||new Date().toISOString().slice(0,10);
+  const manager=document.getElementById('q-manager').value||'이은진';
+  const finalNo=await issueQuoteNo(date);
+  if(finalNo===null) return;
+  const si=SELLERS[customer]||{};
+  const html=buildQuotePageHtml({
+    finalNo, customer,
+    contact:document.getElementById('q-contact').value.trim()||si.contact||'담당자',
+    contactInfo:si.email||'',
+    date,
+    valid:MY.quote_valid||DEFAULT_CFG.quote_valid||'',
+    pay:MY.quote_pay||DEFAULT_CFG.quote_pay||'',
+    deliver:document.getElementById('q-deliver').value.trim()||si.addr||'',
+    note:(MY.quote_note||DEFAULT_CFG.quote_note||'').trim(),
+    manager, items
+  });
+  setDocMailMeta('quote', [{name:customer, role:'seller'}], items);
+  openDocOverlay(html);
+}
+
 async function showQuote(){
   const rows=getRows().filter(r=>r.item);
   if(!rows.length){ alert('품목을 입력해주세요'); return; }
@@ -3492,11 +3644,8 @@ async function showQuote(){
 
   const date=document.getElementById('f-date').value||new Date().toISOString().slice(0,10);
   const manager=document.getElementById('f-manager').value||'이은진';
-  const defaultNo=await suggestQuoteNo(date);
-  const no=prompt('견적 번호를 확인/수정해주세요', defaultNo);
-  if(no===null) return;
-  const finalNo=String(no).trim()||defaultNo;
-  await commitQuoteDocNo(finalNo, date);
+  const finalNo=await issueQuoteNo(date);
+  if(finalNo===null) return;
 
   const pay=MY.quote_pay||DEFAULT_CFG.quote_pay||'';
   const valid=MY.quote_valid||DEFAULT_CFG.quote_valid||'';
@@ -4912,13 +5061,13 @@ function renderDeliver(){
 /* ── 탭 전환 ── */
 function go(p){
   const navIds=['list','deliver','closing','cashflow','pl','hometax','balance','txclass','annual','settings'];
-  const allIds=['list','deliver','closing','cashflow','hometax','pl','balance','txclass','annual','new','settings'];
+  const allIds=['list','deliver','closing','cashflow','hometax','pl','balance','txclass','annual','new','quote','settings'];
   allIds.forEach(id=>{
     const el=document.getElementById('page-'+id);
     if(el) el.classList.toggle('on',id===p);
   });
   document.querySelectorAll('.nav-btn').forEach((btn,i)=>{
-    const navP=(p==='new')?'list':p; // 새 발주 화면일 땐 발주목록 탭 강조
+    const navP=(p==='new'||p==='quote')?'list':p; // 새 발주·견적서 작성 화면일 땐 발주목록 탭 강조
     btn.classList.toggle('on',navIds[i]===navP);
   });
   if(p==='list')renderList();
