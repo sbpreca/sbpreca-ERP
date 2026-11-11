@@ -4290,6 +4290,21 @@ function bytesToBase64(bytes){
   }
   return btoa(binary);
 }
+/* html2canvas는 textarea 내용을 줄바꿈 없이 한 줄로만 그려서, 여러 줄로 쓴 특기사항·비고가
+   PDF에서 첫 줄만 보였다. 찍기 직전 복제본에서만 textarea를 같은 모양의 div로 바꿔
+   줄바꿈이 그대로 그려지게 한다 (실제 화면의 입력칸은 건드리지 않음). */
+function replaceDocTextareasForCapture(clonedDoc){
+  clonedDoc.querySelectorAll('textarea.doc-note-input, textarea.doc-memo-input').forEach(ta=>{
+    const div=clonedDoc.createElement('div');
+    div.className=ta.className;
+    div.style.cssText=ta.style.cssText;
+    div.style.whiteSpace='pre-wrap';
+    div.style.overflowWrap='break-word';
+    div.style.textAlign=div.style.textAlign||'left';
+    div.textContent=ta.value;
+    ta.replaceWith(div);
+  });
+}
 function docPdfCaptureOpts(){
   /* 화면에서 보이는 .a4-page를 그대로 캔버스에 찍음 — Chrome 인쇄 CSS border 재해석을 우회 */
   return {
@@ -4307,7 +4322,8 @@ function docPdfCaptureOpts(){
          자르는 위치는 실제 화면의 위치(가운데 정렬된 left)를 써서 그만큼 왼쪽이 잘렸다.
          실제 창 너비를 그대로 쓰게 두어 화면 위치와 자르는 위치를 맞춘다. */
       scrollX:0,
-      scrollY:0
+      scrollY:0,
+      onclone:replaceDocTextareasForCapture
     },
     jsPDF:{unit:'px', format:[794,1123], orientation:'portrait', hotfixes:['px_scaling']}
   };
