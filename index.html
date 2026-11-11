@@ -4298,9 +4298,13 @@ function replaceDocTextareasForCapture(clonedDoc){
     const div=clonedDoc.createElement('div');
     div.className=ta.className;
     div.style.cssText=ta.style.cssText;
+    /* textarea는 브라우저 기본값으로 정렬·굵기 등을 부모에게서 물려받지 않는다. div로 바꾸면
+       칸(td)의 가운데 정렬·굵기를 물려받아 모양이 달라지므로, 화면에 보이던 값을 그대로 옮긴다. */
+    const cs=(clonedDoc.defaultView||window).getComputedStyle(ta);
+    ['textAlign','fontFamily','fontSize','fontWeight','fontStyle','lineHeight','letterSpacing',
+     'wordSpacing','textIndent','textTransform','color','wordBreak'].forEach(p=>{ div.style[p]=cs[p]; });
     div.style.whiteSpace='pre-wrap';
     div.style.overflowWrap='break-word';
-    div.style.textAlign=div.style.textAlign||'left';
     div.textContent=ta.value;
     ta.replaceWith(div);
   });
