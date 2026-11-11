@@ -147,6 +147,9 @@ input[readonly]{background:#f5f5f5;color:#999}
 /* 발주서·견적서 서식 */
 .po-title-band{background:#1f3864;color:#fff;text-align:center;font-size:26px;font-weight:700;letter-spacing:14px;padding:20px 0;margin-bottom:2px}
 .po-no{text-align:right;font-size:12px;color:#333;margin-bottom:18px;padding:4px 2px}
+.po-no-block{display:flex;flex-direction:column;align-items:flex-end;gap:2px;margin-bottom:18px;padding:4px 2px}
+.po-no-block .po-no{margin:0;padding:0;line-height:1.4}
+.po-no-orig{font-size:11px;color:#888;line-height:1.3;font-variant-numeric:tabular-nums}
 /* 상단 정보는 한 행이 좌·우를 같이 감싸 가로선을 한 번만 그림(좌우 각자 border-bottom → 인쇄 시 어긋나 굵어 보임 방지) */
 .po-meta{display:flex;flex-direction:column;border:var(--doc-frame);margin-bottom:14px;box-sizing:border-box}
 .po-meta .po-key{background:#dbe4f0}
@@ -197,7 +200,6 @@ input[readonly]{background:#f5f5f5;color:#999}
 .ts-no-block{display:flex;flex-direction:column;align-items:flex-end;width:100%;margin:0 0 14px;gap:2px;box-sizing:border-box}
 .ts-no-orig{font-size:11px;color:#888;line-height:1.3;font-variant-numeric:tabular-nums}
 .ts-no{display:flex;justify-content:flex-end;align-items:baseline;gap:3px;width:100%;font-size:12px;color:#333;margin:0;padding:0;box-sizing:border-box}
-.ts-no-label{flex:0 0 auto;white-space:nowrap;line-height:1.4}
 .ts-no-input{border:1px solid transparent;background:transparent;width:auto!important;min-width:0!important;max-width:100%;flex:0 0 auto;text-align:left;font:inherit;font-size:12px;color:#333;padding:0;margin:0;border-radius:3px;box-sizing:content-box;line-height:1.4}
 .ts-no-input:hover{background:#fffde7;border-color:#fde68a;padding:1px 3px;margin:-1px -3px}
 .ts-no-input:focus{background:#fff9c4;border-color:#f59e0b;outline:none;padding:1px 3px;margin:-1px -3px}
@@ -3044,7 +3046,10 @@ async function refreshOrderFromDb(no){
   }
 }
 async function saveOrder(){
-  if(!commitFormOrder()){alert('날짜와 품목을 입력해주세요');return;}
+  const saved=commitFormOrder();
+  if(!saved){alert('날짜와 품목을 입력해주세요');return;}
+  // [저장]을 직접 눌렀을 때만 발주서 수정 여부를 판단한다
+  markPoRevisionIfChanged(saved.no);
   const msg=document.getElementById('save-msg');
   if(msg) msg.textContent='저장 중...';
   clearTimeout(_persistTimer);
@@ -3175,26 +3180,91 @@ function isPoIssued(orderNo){
   const doc=o?resolvePoDocNo(o):String(orderNo||'');
   return isDocMailSent(orderNo) || (!!doc && isDocMailSent(doc));
 }
+/** 발주서에 찍히는 내용만 모아 만든 짧은 지문. 발급 뒤 내용이 실제로 바뀌었는지 비교하는 데 쓴다.
+ *  buildPOHtml 이 보여 주는 값(매입처별 품목·수량·단가·납기·비고, 납품처, 특기사항 등)과 같은 기준. */
+function poContentSig(order){
+  if(!order) return '';
+  const s=v=>String(v==null?'':v).replace(/\r\n/g,'\n').replace(/\u3000/g,' ').trim();
+  const groups={};
+  (order.items||[]).forEach(i=>{ if(i&&i.buyer)(groups[i.buyer]=groups[i.buyer]||[]).push(i); });
+  const parts=[s(order.date), s(order.manager||'이은진'), s(order.note)];
+  Object.entries(groups).forEach(([buyer,its])=>{
+    const sample=its.find(i=>i.seller||i.deliver_addr!=null||i.deliver_label!=null)||its[0]||{};
+    const di=resolveDeliverInfo(sample.seller||'', sample);
+    parts.push([buyer, di.company, di.label, di.addr, formatDocContact(di.contact||'')].map(s).join('\u241f'));
+    its.forEach(r=>parts.push([r.item, r.spec, +r.bqty||0, +r.bprice||0, +r.bamt||0, r.ship, r.memo].map(s).join('\u241f')));
+  });
+  const text=parts.join('\u241e');
+  let h=0x811c9dc5;
+  for(let i=0;i<text.length;i++){ h^=text.charCodeAt(i); h=Math.imul(h, 0x01000193); }
+  return (h>>>0).toString(16)+'-'+text.length;
+}
 function rememberPoDoc(orderNo, docNo, opts={}){
   ensurePoDocs();
   const doc=String(docNo||'').trim();
   if(!orderNo || !doc) return;
   const prev=MY.po_docs[orderNo]||{};
   const orig=stripTsRevSuffix(String(opts.orig||prev.orig||doc).trim())||stripTsRevSuffix(doc);
-  MY.po_docs[orderNo]={doc_no:doc, orig, issued:true, at:new Date().toISOString()};
   const o=orders.find(x=>x.no===orderNo);
+  // sig: 이 번호를 정한 시점의 내용. 이후 [저장]으로 내용이 달라지면 수정본 번호를 제안한다
+  MY.po_docs[orderNo]={doc_no:doc, orig, issued:true, at:new Date().toISOString(), sig:o?poContentSig(o):(prev.sig||'')};
   if(o) o.po_doc_no=doc;
   scheduleSavePoDocs();
 }
+/** [저장] 버튼을 눌렀을 때만 호출: 발급한 발주서의 내용이 발급 당시와 달라졌으면 '수정본 대기'로 표시.
+ *  자동저장·미리보기 닫기에서는 부르지 않는다 (저장 버튼을 누르지 않은 변경은 수정으로 보지 않음). */
+function markPoRevisionIfChanged(orderNo){
+  const m=getPoDocMeta(orderNo);
+  if(!m || !m.issued) return false;
+  const o=orders.find(x=>x.no===orderNo);
+  if(!o) return false;
+  const sig=poContentSig(o);
+  if(!m.sig){ m.sig=sig; scheduleSavePoDocs(); return false; }
+  const pending=sig!==m.sig;
+  if(!!m.rev!==pending){
+    if(pending) m.rev=true; else delete m.rev;
+    scheduleSavePoDocs();
+  }
+  return pending;
+}
+/** 발주서를 열 때 찍을 문서번호를 정한다. 사용자가 입력창을 취소하면 null.
+ *  - 발급 전: issueIfNew 일 때만 새 번호를 제안해 묻는다 (아니면 현재 번호 그대로)
+ *  - 발급 후 [저장]으로 내용이 바뀜: 수정본 번호(-R1, 다음엔 -R2)를 제안해 묻고, 처음 번호는 원번호로 남긴다
+ *  - 발급 후 그대로: 묻지 않고 기존 번호 */
+async function resolvePoDocNoForOpen(order, opts={}){
+  const meta=getPoDocMeta(order.no);
+  let cur=resolvePoDocNo(order);
+  if(meta && meta.issued && cur){
+    if(!meta.rev) return cur;
+    const typed=prompt(`발주서 내용이 수정되었어요. 수정본 문서번호를 확인해주세요\n현재 번호: ${cur}`, nextTsRevNo(cur));
+    if(typed===null) return null;
+    const finalNo=String(typed).trim()||cur;
+    rememberPoDoc(order.no, finalNo, {orig:meta.orig||cur});
+    await commitDocSeqFromNos('po', [finalNo], quoteDateKey(order.date));
+    return finalNo;
+  }
+  if(!opts.issueIfNew) return cur||order.no;
+  // 문서번호: 상보 접두 SBPO-YYMMDD순번 (발주번호 order.no 와 별개)
+  if(!parseDocNoParts('po', cur)) cur=await suggestPoDocNo(order.date);
+  const typed=prompt('발주서 문서번호', cur);
+  if(typed===null) return null;
+  const finalNo=String(typed).trim()||cur;
+  rememberPoDoc(order.no, finalNo, {orig:finalNo});
+  await commitDocSeqFromNos('po', [finalNo], quoteDateKey(order.date));
+  return finalNo;
+}
 function hydratePoDocsOntoOrders(){
   ensurePoDocs();
-  let n=0;
+  let n=0, baselined=false;
   orders.forEach(o=>{
     const m=MY.po_docs[o.no];
     if(!m||!m.doc_no) return;
     o.po_doc_no=m.doc_no;
+    // 이 기능 이전에 발급해 지문이 없는 발주서는 지금 내용을 기준으로 삼는다
+    if(m.issued && !m.sig){ m.sig=poContentSig(o); baselined=true; }
     n++;
   });
+  if(baselined) scheduleSavePoDocs();
   return n;
 }
 /** 목록「발주서」: 저장된 발주서를 바로 보여 준다 (확인 창·수정 화면 없음) */
@@ -3213,7 +3283,10 @@ async function viewPoDoc(no){
   }
   if(!order) order=cloneOrder(orders.find(x=>x.no===no));
   if(!order){alert('발주를 찾을 수 없어요');return;}
-  order.po_doc_no=resolvePoDocNo(order)||order.no;
+  // 발급 뒤 [저장]으로 내용이 바뀐 경우에만 수정본 번호를 묻는다. 그 외에는 묻지 않고 그대로 보여 준다
+  const docNo=await resolvePoDocNoForOpen(order);
+  if(docNo===null) return;
+  order.po_doc_no=docNo||order.no;
   const built=buildPOHtml(order);
   if(!built.html){alert('발주서에 넣을 품목이 없어요 (매입처를 확인해주세요)');return;}
   setDocMailMeta('po', Object.keys(built.groups).map(name=>({name, role:'buyer'})), built.items);
@@ -3226,6 +3299,9 @@ function buildPOHtml(order){
   if(!order) return '';
   const no=order.no;
   const docBase=String(order.po_doc_no||resolvePoDocNo(order)||no||'').trim();
+  // 수정본(-R1…)이면 처음 번호를 윗줄에 함께 보여 준다 (거래명세표와 같은 방식)
+  const origBase=resolvePoOrig(order);
+  const showOrig=!!(origBase && origBase!==docBase);
   const date=order.date||'';
   const note=order.note||'';
   const manager=order.manager||'이은진';
@@ -3240,6 +3316,7 @@ function buildPOHtml(order){
     const sub=its.reduce((s,i)=>s+(+i.bamt||0),0);
     // 매입처가 하나면 발급번호 그대로. 여러 장이면 -01, -02 구분
     const poNo=buyerCount===1?docBase:`${docBase}-${String(idx+1).padStart(2,'0')}`;
+    const poOrigNo=showOrig?(buyerCount===1?origBase:`${origBase}-${String(idx+1).padStart(2,'0')}`):'';
     const sample=its.find(i=>i.seller||i.deliver_addr!=null||i.deliver_label!=null)||its[0]||{};
     const di=resolveDeliverInfo(sample.seller||'', sample);
     const deliverName=di.company||'';
@@ -3258,7 +3335,10 @@ function buildPOHtml(order){
     const blank=emptyRows(its.length, Math.max(FIXED_ROWS, its.length), 8, 'empty-row');
     html+=`<div class="a4-page" data-po-order="${escHtml(no)}" data-po-buyer="${escHtml(buyer)}">
       <div class="po-title-band">발 주 서</div>
-      <div class="po-no">No. ${escHtml(poNo)}</div>
+      <div class="po-no-block">
+        ${showOrig?`<div class="po-no-orig">${escHtml(poOrigNo)}</div>`:''}
+        <div class="po-no">${escHtml(poNo)}</div>
+      </div>
       <div class="po-meta">
         <div class="po-row"><span class="po-key">수 신 처</span><span class="po-val">${escHtml(buyer)}</span><span class="po-key">상 호</span><span class="po-val">${escHtml(MY.name)}</span></div>
         <div class="po-row"><span class="po-key">담 당 자</span><span class="po-val">${escHtml(docFieldText(formatDocContact(bi.contact||'')))}</span><span class="po-key">사업자번호</span><span class="po-val">${escHtml(MY.biz)}　대표: ${escHtml(MY.ceo)}</span></div>
@@ -3286,21 +3366,11 @@ async function showPO(){
   if(!committed){alert('날짜와 품목을 입력해주세요');return;}
   const order=cloneOrder(committed);
   // 배송지·담당자 확인창 없이 등록/저장된 값 사용 (미리보기에서 수정 가능)
-  // 문서번호: 상보 접두 SBPO-YYMMDD-순번 (발주번호 order.no 와 별개). 발급해 둔 번호가 있으면 그것을, 없으면 새 번호를 먼저 보여주고
-  // 사용자가 고친 번호를 그대로 발주서에 찍고 기억한다 (예전에는 이 창이 발주번호만 바꿔서 문서번호는 옛 번호가 그대로 나왔음)
-  let poDocNo=resolvePoDocNo(order);
-  const metaPo=getPoDocMeta(order.no);
-  if(!parseDocNoParts('po', poDocNo)){
-    if(!(metaPo && metaPo.issued && poDocNo)){
-      poDocNo=await suggestPoDocNo(order.date);
-    }
-  }
-  const typed=prompt('발주서 문서번호', poDocNo);
-  if(typed===null) return;
-  const finalNo=String(typed).trim()||poDocNo;
-  rememberPoDoc(order.no, finalNo, finalNo!==poDocNo?{orig:finalNo}:{});
+  // 이미 발급한 발주서는 번호를 다시 묻지 않는다 (열어 보기만 해도 번호가 바뀌던 문제).
+  // 처음 발급할 때, 그리고 발급 뒤 [저장]으로 내용이 바뀌었을 때만 번호 입력창이 뜬다.
+  const finalNo=await resolvePoDocNoForOpen(order, {issueIfNew:true});
+  if(finalNo===null) return;
   order.po_doc_no=finalNo;
-  await commitDocSeqFromNos('po', [finalNo], quoteDateKey(order.date));
   persist(order.no);
   clearTimeout(_persistTimer);
   try{ await saveOrdersToDb(); }catch(e){ console.warn(e); }
@@ -3494,15 +3564,16 @@ function docNoPrefix(kind){
   return DOC_NO_PREFIX[kind]||DOC_NO_PREFIX.ts;
 }
 function formatDocNo(kind, ymd, seq){
-  return `${docNoPrefix(kind)}-${ymd}-${String(seq).padStart(2,'0')}`;
+  // 날짜와 순번 사이 하이픈 없이 붙여 쓴다: SBPO-26110501 (수정본은 SBPO-26110501-R1)
+  return `${docNoPrefix(kind)}-${ymd}${String(seq).padStart(2,'0')}`;
 }
-/** SBTS|SBQT|SBPO-YYMMDD-NN (구형 TS|QT|PO- 도 인식). 뒤에 -R1 등 있어도 본번 인식 */
+/** SBTS|SBQT|SBPO-YYMMDDNN. 예전 형식 …-YYMMDD-NN 과 구형 접두 TS|QT|PO- 도 인식. 뒤에 -R1 등 있어도 본번 인식 */
 function parseDocNoParts(kind, docNo){
   const s=String(docNo||'').trim();
   const cur=docNoPrefix(kind);
   const leg=DOC_NO_PREFIX_LEGACY[kind]||'';
-  let m=s.match(new RegExp(`^${cur}-(\\d{6})-(\\d+)`, 'i'));
-  if(!m && leg) m=s.match(new RegExp(`^${leg}-(\\d{6})-(\\d+)`, 'i'));
+  let m=s.match(new RegExp(`^${cur}-(\\d{6})-?(\\d+)`, 'i'));
+  if(!m && leg) m=s.match(new RegExp(`^${leg}-(\\d{6})-?(\\d+)`, 'i'));
   if(!m) return null;
   return {ymd:m[1], seq:parseInt(m[2],10)};
 }
@@ -3649,8 +3720,8 @@ async function commitDocSeqFromNos(kind, nos, fallbackYmd){
     if(!parts && fallbackYmd){
       const cur=docNoPrefix(kind);
       const leg=DOC_NO_PREFIX_LEGACY[kind]||'';
-      let m=String(no||'').trim().match(new RegExp(`^${cur}-${fallbackYmd}-(\\d+)`, 'i'));
-      if(!m && leg) m=String(no||'').trim().match(new RegExp(`^${leg}-${fallbackYmd}-(\\d+)`, 'i'));
+      let m=String(no||'').trim().match(new RegExp(`^${cur}-${fallbackYmd}-?(\\d+)`, 'i'));
+      if(!m && leg) m=String(no||'').trim().match(new RegExp(`^${leg}-${fallbackYmd}-?(\\d+)`, 'i'));
       if(m) parts={ymd:fallbackYmd, seq:parseInt(m[1],10)};
     }
     if(!parts || !(parts.seq>0)) return;
@@ -3847,7 +3918,7 @@ async function confirmTsDocNo(tradeDate, opts={}){
         `\n※ 공유 채번 확정은 프린트/메일 발송 시입니다.`;
     }else{
       tip='품목에 저장된 문서번호가 없어요.\n'+
-        '기존에 쓴 번호(예: SBTS-YYMMDD-순번)를 입력해주세요.\n'+
+        '기존에 쓴 번호(예: SBTS-YYMMDD순번)를 입력해주세요.\n'+
         '※ 확인하면 해당 번호가 이 품목들에 저장됩니다.';
     }
   }else{
@@ -3858,7 +3929,7 @@ async function confirmTsDocNo(tradeDate, opts={}){
   const finalNo=String(userDocNo).trim();
   if(!finalNo){ alert('문서번호를 입력해주세요'); return null; }
   if(!parseDocNoParts('ts', finalNo) && !parseTsDocSeq(finalNo, ymd)){
-    if(!confirm(`문서번호 형식을 인식하지 못했어요 (권장: SBTS-YYMMDD-순번 또는 …-Rn).\n그래도 "${finalNo}" 로 진행할까요?`)) return null;
+    if(!confirm(`문서번호 형식을 인식하지 못했어요 (권장: SBTS-YYMMDD순번 또는 …-Rn).\n그래도 "${finalNo}" 로 진행할까요?`)) return null;
   }
   return finalNo;
 }
@@ -3972,6 +4043,22 @@ function persistTsNosFromOverlay(){
   touched.forEach(n=>persist(n));
 }
 /** 서류 오버레이 전용 저장 (인쇄/PDF와 별개) */
+/** 발주서 미리보기에서 [저장]을 눌렀을 때: 발급 당시와 내용이 달라졌으면 수정본 번호를 묻고
+ *  화면의 문서번호를 바로 바꿔 준다 (닫았다 다시 열 필요 없이 그대로 PDF 저장 가능). */
+async function revisePoInOverlayIfChanged(){
+  const page=document.querySelector('#doc-content .a4-page[data-po-order]');
+  const orderNo=page?String(page.dataset.poOrder||'').trim():'';
+  if(!orderNo || !markPoRevisionIfChanged(orderNo)) return;
+  const order=cloneOrder(orders.find(x=>x.no===orderNo));
+  if(!order) return;
+  const docNo=await resolvePoDocNoForOpen(order);
+  if(docNo===null) return; // 취소: 번호는 그대로 두고, 다음에 열 때 다시 묻는다
+  order.po_doc_no=docNo;
+  const built=buildPOHtml(order);
+  if(!built.html) return;
+  setDocMailMeta('po', Object.keys(built.groups).map(name=>({name, role:'buyer'})), built.items);
+  openDocOverlay(built.html);
+}
 async function saveDocOverlay(){
   const kind=currentDocKind();
   const msg=document.getElementById('doc-save-msg');
@@ -3986,6 +4073,7 @@ async function saveDocOverlay(){
     }
     clearTimeout(_persistTimer);
     await saveOrdersToDb();
+    if(kind==='po') await revisePoInOverlayIfChanged();
     showSyncStatus('저장됨');
     if(msg){ msg.textContent='저장됨'; msg.style.color='#166534'; }
     setTimeout(()=>{ if(msg && msg.textContent==='저장됨'){ msg.textContent=''; msg.style.display='none'; } }, 2000);
@@ -4001,8 +4089,12 @@ async function saveDocOverlay(){
 function suggestDocPdfFilename(){
   const kind=currentDocKind()||'ts';
   const nos=collectDocNos(kind);
-  const safeNo=(nos[0]||'doc').replace(/[^\w.\-]+/g,'_').replace(/_+/g,'_')||'doc';
-  return `${docNoPrefix(kind)}_${safeNo}.pdf`;
+  return docPdfBaseName(kind, nos[0])+'.pdf';
+}
+/** PDF 기본 이름은 문서번호 그대로 (예: SBPO-261105-01-R1). 번호가 없을 때만 문서 접두어를 쓴다 */
+function docPdfBaseName(kind, docNo){
+  const safeNo=String(docNo||'').trim().replace(/[^\w.\-]+/g,'_').replace(/_+/g,'_').replace(/^_+|_+$/g,'');
+  return safeNo||docNoPrefix(kind);
 }
 /** 저장할 PDF 파일 이름을 입력받는다. 취소하면 null. 확장자 .pdf는 자동으로 붙임 */
 function askDocPdfFilename(defaultName){
@@ -4278,8 +4370,7 @@ function docMailContext(){
   const lines=[fromName];
   if(mgr.tel) lines.push(mgr.tel);
   lines.push('(주) 상보프레카', fromEmail);
-  const safeNo=(nos[0]||'doc').replace(/[^\w.\-]+/g,'_').replace(/_+/g,'_')||'doc';
-  const filename=`${docNoPrefix(kind==='po'?'po':(kind==='quote'?'quote':'ts'))}_${safeNo}.pdf`;
+  const filename=docPdfBaseName(kind==='po'?'po':(kind==='quote'?'quote':'ts'), nos[0])+'.pdf';
   return {fromEmail, fromName, toEmail, toName, subject, body:lines.join('\r\n'), filename, docLabel};
 }
 function bytesToBase64(bytes){
@@ -4518,8 +4609,8 @@ function tsPageHtml({company, seller, contact, addr, its, dy, dm, dd, tsNo, tsOr
   return `<div class="a4-page${sepClass||''}">
     <div class="ts-title">거 래 명 세 표</div>
     <div class="ts-no-block">
-      ${showOrig?`<div class="ts-no-orig">원 No. ${escHtml(origNo)}</div>`:''}
-      <div class="ts-no"><span class="ts-no-label">No.</span><input class="ts-no-input" data-ts-orig="${escHtml(origNo)}" size="${Math.max(curNo.length, 8)}" value="${escHtml(curNo)}" title="클릭해서 문서번호 수정" oninput="onTsDocNoInput(this)"></div>
+      ${showOrig?`<div class="ts-no-orig">${escHtml(origNo)}</div>`:''}
+      <div class="ts-no"><input class="ts-no-input" data-ts-orig="${escHtml(origNo)}" size="${Math.max(curNo.length, 8)}" value="${escHtml(curNo)}" title="클릭해서 문서번호 수정" oninput="onTsDocNoInput(this)"></div>
     </div>
     <div class="ts-meta">
       <div class="ts-meta-hd"><div class="ts-side-hd">공급받는자</div><div class="ts-side-hd">공급자</div></div>
