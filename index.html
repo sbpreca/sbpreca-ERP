@@ -1621,6 +1621,74 @@ function queueOrderDelete(no){
   _persistTimer=setTimeout(()=>{ saveOrdersToDb(); }, 300);
 }
 
+/**
+ * 다른 창·다른 사람이 고친 발주를 다시 불러온다.
+ * 저장 대기 중인 변경이 있거나 불러오는 사이 화면에서 무언가 바뀌면 덮어쓰지 않고 그만둔다.
+ * 반환: 내용이 달라졌으면 true
+ */
+let _ordersRefreshJob=null;
+function refreshOrdersIfClean(canApply){
+  if(_ordersRefreshJob) return _ordersRefreshJob;
+  _ordersRefreshJob=(async()=>{
+    try{
+      if(!_ordersReady) return false;
+      await _saveQueue;
+      if(_dirtyOrderNos.size || _pendingOrderDeletes.size) return false;
+      const before=JSON.stringify(orders);
+      const {data:dbOrders, error:e1}=await sb.from('orders').select('*').order('date',{ascending:true});
+      if(e1) return false;
+      const {data:dbItems, error:e2}=await sb.from('order_items').select('*').order('sort_order',{ascending:true}).order('id',{ascending:true});
+      if(e2) return false;
+      const fresh=buildOrdersFromDbRows(dbOrders, dbItems);
+      // 불러오는 동안 이 화면에서 고친 것이 있으면 그쪽이 우선
+      if(_dirtyOrderNos.size || _pendingOrderDeletes.size || JSON.stringify(orders)!==before) return false;
+      // 바꿔 넣으면 화면도 바로 다시 그려야 한다(행 번호가 어긋남). 지금 그릴 수 없으면 바꾸지 않는다
+      if(canApply && !canApply()) return false;
+      const sigOf=list=>JSON.stringify(list.map(o=>({...o, saved_at:undefined})));
+      const oldSig=sigOf(orders);
+      orders=fresh;
+      orders.forEach(o=>_knownOrderNos.add(o.no));
+      hydrateTsNosFromConfig();
+      hydratePoMemosFromConfig();
+      hydratePoDocsOntoOrders();
+      return sigOf(orders)!==oldSig;
+    }catch(e){
+      console.warn('refreshOrdersIfClean', e);
+      return false;
+    }finally{
+      _ordersRefreshJob=null;
+    }
+  })();
+  return _ordersRefreshJob;
+}
+/** 지금 보고 있는 화면이 발주 데이터를 쓰면 최신으로 다시 그린다 */
+let _currentPage='list';
+const ORDER_PAGE_RENDER={
+  list:()=>renderList(), deliver:()=>renderDeliver(), closing:()=>renderClosing(),
+  cashflow:()=>renderCashflow(), pl:()=>renderPL(), annual:()=>renderAnnual()
+};
+async function refreshCurrentPageOrders(){
+  const p=_currentPage;
+  if(!ORDER_PAGE_RENDER[p]) return;
+  const ov=document.getElementById('overlay');
+  const canApply=()=>{
+    if(_currentPage!==p) return false;
+    if(ov && ov.style.display==='block') return false; // 서류 미리보기 중에는 건드리지 않음
+    if(document.querySelector('.dl-chk:checked')) return false; // 명세서 발행하려고 골라 둔 항목 유지
+    // 납품현황에서 날짜·상태를 고치는 중이면 다음 기회에
+    const ae=document.activeElement;
+    return !(ae && ae.closest && ae.closest('#deliver-body'));
+  };
+  if(!canApply()) return;
+  const changed=await refreshOrdersIfClean(canApply);
+  if(!changed) return;
+  ORDER_PAGE_RENDER[p]();
+  if(p==='list') checkDeliveryAlerts();
+}
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='visible') refreshCurrentPageOrders();
+});
+
 function saveOrdersToDb(){
   const job=_saveQueue.then(()=>saveDirtyOrdersNow());
   _saveQueue=job.catch(()=>{});
@@ -1915,8 +1983,10 @@ async function loadOrdersFromDb(){
   if(e1){ console.error(e1); return []; }
   const {data:dbItems, error:e2}=await sb.from('order_items').select('*').order('sort_order',{ascending:true}).order('id',{ascending:true});
   if(e2){ console.error(e2); return []; }
-
-  return dbOrders.map(o=>{
+  return buildOrdersFromDbRows(dbOrders, dbItems);
+}
+function buildOrdersFromDbRows(dbOrders, dbItems){
+  return (dbOrders||[]).map(o=>{
     const raw=normalizeDbItems((dbItems||[]).filter(it=>it.order_id===o.id));
     const items=raw.map(it=>({
       buyer:it.buyer, item:it.item, spec:it.spec,
@@ -2927,9 +2997,9 @@ function addRow(it={}){
   const selectedSite=extraLabel||site||(sites.length===1?sites[0].name:'');
   tr.innerHTML=`
     <td><select class="bsel" onchange="calcS();autoBPrice(this)" style="width:100%;font-size:12px;border:1px solid #e8e8e8;padding:4px 5px;border-radius:4px"><option></option>${bOpts}</select></td>
-    <td><select class="isel" onchange="autoSpec(this);autoBPrice(this);autoSPrice(this)" style="width:100%;font-size:12px;border:1px solid #e8e8e8;padding:4px 5px;border-radius:4px"><option></option>${iOpts}</select></td>
+    <td><select class="isel" onchange="onItemChange(this)" style="width:100%;font-size:12px;border:1px solid #e8e8e8;padding:4px 5px;border-radius:4px"><option></option>${iOpts}</select></td>
     <td><input type="text" class="spin" value="${it.spec||''}" style="width:100%"></td>
-    <td><input type="number" class="bq" value="${it.bqty||''}" style="width:100%;text-align:right" oninput="calcRow(this);calcS()"></td>
+    <td><input type="number" class="bq" value="${it.bqty||''}" style="width:100%;text-align:right" oninput="syncSellQty(this);calcRow(this);calcS()"></td>
     <td><input type="number" class="bp" value="${it.bprice||''}" style="width:100%;text-align:right" oninput="calcRow(this);calcS()"></td>
     <td class="amt ba">${it.bamt?fmt(it.bamt):'-'}</td>
     <td><select class="ssel" onchange="onSellerCompanyChange(this)" style="width:100%;font-size:12px;border:1px solid #e8e8e8;padding:4px 5px;border-radius:4px"><option></option>${sOpts}</select></td>
@@ -2945,9 +3015,54 @@ function addRow(it={}){
     tr.dataset.deliverContact=it.deliver_contact!=null?String(it.deliver_contact):'';
     tr.dataset.deliverLabel=it.deliver_label||site||'직접입력';
   }
+  // 수량·품목을 바꿀 때 딸린 값(판매수량·규격·단가)을 함께 맞추기 위한 직전 값
+  tr.dataset.prevBq=it.bqty||'';
+  tr.dataset.prevItem=it.item||'';
   document.getElementById('items-body').appendChild(tr);
+  markQtyDiff(tr);
 }
 function autoSpec(sel){const tr=sel.closest('tr'),s=itemSpecOf(sel.value);if(s)tr.querySelector('.spin').value=s;}
+/**
+ * 수량(매입)을 바꾸면 판매수량도 같이 바꾼다 — 납품현황·거래명세표·마감은 판매수량을 쓴다.
+ * 판매수량을 일부러 다르게 적어 둔 행(직전 수량과 다른 값)은 건드리지 않는다.
+ */
+function syncSellQty(inp){
+  const tr=inp.closest('tr');
+  const sq=tr.querySelector('.sq');
+  if((+sq.value||0)===(+tr.dataset.prevBq||0)) sq.value=inp.value;
+  tr.dataset.prevBq=inp.value;
+}
+/** 판매수량이 수량(매입)과 다르면 눈에 띄게 표시 */
+function markQtyDiff(tr){
+  const sq=tr.querySelector('.sq');
+  if(!sq) return;
+  const b=+tr.querySelector('.bq').value||0, q=+sq.value||0;
+  const diff=!!q && !!b && q!==b;
+  sq.style.background=diff?'#fff7ed':'';
+  sq.style.borderColor=diff?'#fdba74':'';
+  sq.title=diff?`수량(매입) ${b}와 다릅니다. 납품현황·거래명세표에는 판매수량 ${q}이 나옵니다.`:'';
+}
+/**
+ * 품목을 바꾸면 규격·매입단가·판매단가도 새 품목 기준으로 바꾼다.
+ * 이전 품목의 등록값 그대로였던 칸(또는 빈 칸)만 바꾸고, 직접 고쳐 적은 값은 남긴다.
+ */
+function onItemChange(sel){
+  const tr=sel.closest('tr');
+  const prev=tr.dataset.prevItem||'';
+  const cur=sel.value;
+  const spin=tr.querySelector('.spin');
+  const newSpec=itemSpecOf(cur);
+  if(newSpec) spin.value=newSpec;
+  else if(prev && spin.value===itemSpecOf(prev)) spin.value='';
+  const oldP=ITEM_PRICES[prev]||{}, newP=ITEM_PRICES[cur]||{};
+  [['.bp','buy'],['.sp2','sell']].forEach(([cls,k])=>{
+    const inp=tr.querySelector(cls);
+    const wasReg=prev && oldP[k] && (+inp.value||0)===(+oldP[k]||0);
+    if(!inp.value || wasReg) inp.value=newP[k]||'';
+  });
+  tr.dataset.prevItem=cur;
+  calcRow(spin);calcS();
+}
 // 품목이 정해지면 등록된 매입/매출 단가를 자동으로 채움 (이미 값이 있으면 안 건드림, 업체는 무관하게 품목 기준)
 function autoBPrice(el){
   const tr=el.closest('tr');
@@ -2971,6 +3086,7 @@ function calcRow(inp){
   const sq=+tr.querySelector('.sq').value||0,sp=+tr.querySelector('.sp2').value||0;
   tr.querySelector('.ba').textContent=bq&&bp?fmt(bq*bp):'-';
   tr.querySelector('.sa').textContent=sq&&sp?fmt(sq*sp):'-';
+  markQtyDiff(tr);
 }
 function calcS(){
   let tb=0,ts=0;
@@ -5070,6 +5186,7 @@ function go(p){
     const navP=(p==='new'||p==='quote')?'list':p; // 새 발주·견적서 작성 화면일 땐 발주목록 탭 강조
     btn.classList.toggle('on',navIds[i]===navP);
   });
+  _currentPage=p;
   if(p==='list')renderList();
   if(p==='deliver')renderDeliver();
   if(p==='closing')renderClosing();
@@ -5082,6 +5199,8 @@ function go(p){
   if(p==='txclass')renderTxSummary();
   if(p==='annual')renderAnnual();
   if(p==='settings')loadConfig();
+  // 다른 창·다른 사람이 고친 발주가 있으면 받아와 다시 그린다
+  refreshCurrentPageOrders();
 }
 
 function newOrderFromList(){
