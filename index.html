@@ -5209,6 +5209,31 @@ function newOrderFromList(){
 }
 
 /* ── 발주 목록 ── */
+/**
+ * 미납품 품목의 납품일을 빠른 날짜부터 나열한다.
+ * 같은 날이 여러 품목이면 건수를 붙이고, 납품일이 없는 품목은 맨 뒤에 '미정'으로 표시.
+ */
+function pendingShipDatesHtml(o){
+  const pend=(o.items||[]).filter(i=>i.status==='미납품');
+  if(!pend.length) return '';
+  const counts={};
+  let noDate=0;
+  pend.forEach(i=>{
+    const d=String(i.ship||'').slice(0,10);
+    if(/^\d{4}-\d{2}-\d{2}$/.test(d)) counts[d]=(counts[d]||0)+1;
+    else noDate++;
+  });
+  const thisYear=String(new Date().getFullYear());
+  const today=new Date().toISOString().slice(0,10);
+  const parts=Object.keys(counts).sort().map(d=>{
+    const label=d.slice(0,4)===thisYear?`${+d.slice(5,7)}/${+d.slice(8,10)}`:`${d.slice(2,4)}/${+d.slice(5,7)}/${+d.slice(8,10)}`;
+    const n=counts[d]>1?`<span style="color:#a16207;font-weight:400">(${counts[d]})</span>`:'';
+    const late=d<today; // 납품일이 지났는데 아직 미납품
+    return `<span style="${late?'color:#dc2626':''}" title="${d}${late?' · 납품일 지남':''}">${label}${n}</span>`;
+  });
+  if(noDate) parts.push(`<span style="color:#999">미정${noDate>1?`(${noDate})`:''}</span>`);
+  return `<span style="font-size:11px;color:#854d0e;font-variant-numeric:tabular-nums" title="미납품 품목의 납품일">납품 ${parts.join('<span style="color:#ccc"> · </span>')}</span>`;
+}
 function renderList(){
   // 납품현황과 동일: 형제 품목에 있는 명세 번호를 채운 뒤 표시
   backfillTsNosInOrders();
@@ -5243,11 +5268,12 @@ function renderList(){
     const bs=[...new Set(o.items.map(i=>i.buyer).filter(Boolean))].join(', ');
     const its=[...new Set(o.items.map(i=>i.item).filter(Boolean))].join(', ');
     const pend=o.items.filter(i=>i.status==='미납품').length;
+    const pendDates=pendingShipDatesHtml(o);
     return `<div class="card">
       <div class="card-top">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <span class="card-no">${o.no}</span>
-          ${pend?`<span class="badge badge-pend" style="cursor:pointer;text-decoration:underline" title="클릭하면 납품현황으로 이동" onclick="goToDeliver('${o.no}')">미납품 ${pend}건</span>`:`<span class="badge badge-done">전체 납품완료</span>`}
+          ${pend?`<span class="badge badge-pend" style="cursor:pointer;text-decoration:underline" title="클릭하면 납품현황으로 이동" onclick="goToDeliver('${o.no}')">미납품 ${pend}건</span>${pendDates}`:`<span class="badge badge-done">전체 납품완료</span>`}
         </div>
         <span class="card-date">${o.date}</span>
       </div>
