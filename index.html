@@ -203,16 +203,7 @@ input[readonly]{background:#f5f5f5;color:#999}
 .ts-no-input{border:1px solid transparent;background:transparent;width:auto!important;min-width:0!important;max-width:100%;flex:0 0 auto;text-align:left;font:inherit;font-size:12px;color:#333;padding:0;margin:0;border-radius:3px;box-sizing:content-box;line-height:1.4}
 .ts-no-input:hover{background:#fffde7;border-color:#fde68a;padding:1px 3px;margin:-1px -3px}
 .ts-no-input:focus{background:#fff9c4;border-color:#f59e0b;outline:none;padding:1px 3px;margin:-1px -3px}
-.mail-sent-wrap{display:none;align-items:center;gap:5px;align-self:center;margin-left:6px;font-size:12px;color:#0f766e;white-space:nowrap}
-.mail-sent-wrap.on{display:inline-flex}
-.mail-sent-wrap input{width:auto!important;margin:0}
-.mail-sent-info{font-size:11px;color:#64748b}
 .ts-dateno{font-size:12px;color:#111;margin-bottom:16px}
-.mail-panel{display:none;width:100%;padding:10px 16px;background:#f8fafc;border-bottom:1px solid #e2e8f0;gap:8px;flex-wrap:wrap;align-items:center;box-sizing:border-box}
-.mail-panel.on{display:flex}
-.mail-panel label{font-size:12px;color:#555;display:flex;align-items:center;gap:6px}
-.mail-panel select,.mail-panel input{border:1px solid #ddd;border-radius:4px;padding:5px 8px;font-size:12px;background:#fff}
-.mail-panel .mail-hint{font-size:11px;color:#64748b;width:100%}
 /* 거래명세표 메타도 한 행에 좌·우를 묶어 가로선 1회 */
 .ts-meta{display:flex;flex-direction:column;border:var(--doc-frame);margin-bottom:12px;box-sizing:border-box}
 .ts-meta-hd{display:grid;grid-template-columns:1fr 1fr;border-bottom:var(--doc-line)}
@@ -283,7 +274,7 @@ input[readonly]{background:#f5f5f5;color:#999}
   html,body{width:794px!important;margin:0!important;padding:0!important;background:#fff!important}
   #overlay{position:static!important;background:none!important;padding:0!important;display:block!important;overflow:visible!important}
   #doc-frame{width:794px!important;max-width:794px!important;margin:0!important;border-radius:0!important}
-  .doc-btns,.mail-panel,#sync-status{display:none!important}
+  .doc-btns,#sync-status{display:none!important}
   .app{display:none!important}
   .a4-page{
     page-break-after:always;
@@ -1058,29 +1049,11 @@ input[readonly]{background:#f5f5f5;color:#999}
     <div class="doc-btns">
       <button id="doc-save-btn" class="doc-close" style="display:none;color:#111;border-color:#111;font-weight:600" onclick="saveDocOverlay()">저장</button>
       <button class="doc-print" onclick="printDocOverlay()">PDF 저장</button>
-      <button id="mail-open-btn" class="doc-close" style="display:none;color:#0f766e;border-color:#99f6e4" onclick="toggleMailPanel()">메일 보내기</button>
-      <label id="mail-sent-wrap" class="mail-sent-wrap" title="발송하면 자동으로 체크됩니다. 직접 고쳐도 됩니다.">
-        <input type="checkbox" id="mail-sent-chk" onchange="toggleDocMailSent(this.checked)">
-        메일 발송됨
-        <span id="mail-sent-info" class="mail-sent-info"></span>
-      </label>
       <button class="doc-close" onclick="closeDocOverlay()">닫기</button>
-      <button id="ts-save-contact-btn" class="doc-close" style="display:none;color:#1d4ed8;border-color:#bfdbfe" onclick="saveTsContactsToSettings()">담당자 설정 저장</button>
       <button id="doc-load-reg-btn" class="doc-close" style="display:none;color:#b45309;border-color:#fde68a" title="이 서류에 따로 적힌 납품 담당자·주소를 설정에 등록된 값으로 바꿉니다" onclick="loadRegisteredDeliverToDoc()">설정 담당자 불러오기</button>
       <span id="ts-edit-hint" style="display:none;font-size:11px;color:#b45309;align-self:center;margin-left:8px">담당자·주소·납품처 입력칸에서 바로 수정할 수 있어요</span>
       <span id="doc-save-msg" style="display:none;font-size:11px;color:#166534;align-self:center;margin-left:8px"></span>
       <span style="font-size:11px;color:#999;align-self:center;margin-left:8px">※ A4 용지로 인쇄해주세요</span>
-    </div>
-    <div id="mail-panel" class="mail-panel">
-      <label>발신인
-        <select id="mail-from"></select>
-      </label>
-      <label>수신인
-        <select id="mail-to" onchange="onMailToChange()"></select>
-      </label>
-      <input id="mail-to-custom" type="email" placeholder="수신 이메일 직접 입력" style="display:none;width:220px">
-      <button id="mail-send-btn" class="doc-print" style="background:#0f766e" onclick="sendDocMail()">PDF 첨부하여 발송</button>
-      <div class="mail-hint">※ 선택한 발신인 주소로 PDF가 첨부되어 발송됩니다. 거래처 회신도 그 주소로 옵니다. (다운로드·별도 첨부 불필요)</div>
     </div>
     <div id="doc-content"></div>
   </div>
@@ -4334,7 +4307,6 @@ async function confirmTsDocNo(tradeDate, opts={}){
 function onTsDocNoInput(el){
   if(el){
     el.size=Math.max((el.value||'').length, 8);
-    refreshMailSentUi();
   }
   // 채번은 프린트·메일 발송 시에만 — 입력 중/닫기만으로는 순번을 올리지 않음
 }
@@ -4464,6 +4436,8 @@ async function saveDocOverlay(){
   if(btn) btn.disabled=true;
   try{
     if(kind==='ts'){
+      // 고친 담당자는 설정에도 저장 (data-reg가 새 값이 되어 품목은 설정을 따르게 된다)
+      try{ await saveTsContactsToSettings(); }catch(e){ console.warn(e); }
       try{ persistTsNosFromOverlay(); }catch(e){ console.warn(e); }
     }else if(kind==='po'){
       persistPoFromOverlay();
@@ -4578,205 +4552,15 @@ function currentDocKind(){
 function ensureDocMailLog(){
   if(!MY.doc_mail||typeof MY.doc_mail!=='object') MY.doc_mail={};
 }
-function pruneDocMailLog(){
-  ensureDocMailLog();
-  const keys=Object.keys(MY.doc_mail);
-  if(keys.length<=300) return;
-  keys.sort((a,b)=>String((MY.doc_mail[b]&&MY.doc_mail[b].at)||'').localeCompare(String((MY.doc_mail[a]&&MY.doc_mail[a].at)||'')));
-  keys.slice(300).forEach(k=>delete MY.doc_mail[k]);
-}
-function currentOverlayDocNos(){
-  return collectDocNos(currentDocKind()||'ts');
-}
 function isDocMailSent(no){
   ensureDocMailLog();
   return !!(no && MY.doc_mail[no] && MY.doc_mail[no].sent);
 }
-function docsMailSentState(){
-  const nos=currentOverlayDocNos();
-  if(!nos.length) return {sent:false, partial:false, nos:[]};
-  const sentCount=nos.filter(isDocMailSent).length;
-  return {sent:sentCount===nos.length, partial:sentCount>0&&sentCount<nos.length, nos};
-}
-function formatMailSentAt(iso){
-  if(!iso) return '';
-  const d=new Date(iso);
-  if(isNaN(d.getTime())) return String(iso).slice(0,16).replace('T',' ');
-  const p=n=>String(n).padStart(2,'0');
-  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-}
-function refreshMailSentUi(){
-  const wrap=document.getElementById('mail-sent-wrap');
-  const chk=document.getElementById('mail-sent-chk');
-  const info=document.getElementById('mail-sent-info');
-  if(!wrap||!chk) return;
-  const isDoc=!!document.querySelector('.po-title-band, .quote-title-band, .ts-title');
-  wrap.classList.toggle('on', isDoc);
-  if(!isDoc){ chk.checked=false; if(info) info.textContent=''; return; }
-  const st=docsMailSentState();
-  chk.checked=st.sent;
-  chk.indeterminate=st.partial;
-  if(info){
-    if(st.sent||st.partial){
-      const hit=st.nos.map(n=>MY.doc_mail[n]).find(x=>x&&x.at);
-      const when=hit?formatMailSentAt(hit.at):'';
-      const who=hit&&hit.to?` → ${hit.to}`:'';
-      info.textContent=(st.partial?'일부 발송':'')+(when?(st.partial?' · ':'')+when:'')+who;
-    }else{
-      info.textContent='미발송';
-    }
-  }
-}
-async function markDocsMailSent({fromEmail, toEmail}={}){
-  ensureDocMailLog();
-  const nos=currentOverlayDocNos();
-  if(!nos.length) return;
-  const at=new Date().toISOString();
-  nos.forEach(no=>{
-    MY.doc_mail[no]={sent:true, at, from:fromEmail||'', to:toEmail||'', type:_docMailMeta.type||''};
-  });
-  pruneDocMailLog();
-  await saveConfigToDb();
-  refreshMailSentUi();
-}
-async function toggleDocMailSent(checked){
-  ensureDocMailLog();
-  const nos=currentOverlayDocNos();
-  if(!nos.length){
-    alert('문서번호가 없습니다');
-    refreshMailSentUi();
-    return;
-  }
-  if(checked){
-    await markDocsMailSent({});
-  }else{
-    nos.forEach(no=>{ delete MY.doc_mail[no]; });
-    await saveConfigToDb();
-    refreshMailSentUi();
-  }
-}
+// 지금 열린 서류의 품목 목록 (거래명세표 [저장] 때 어느 품목에 반영할지 쓴다. 이름은 예전 메일 기능에서 온 것)
 let _docMailMeta={type:'', parties:[], items:[], nos:[]};
 
-function managerMailList(){
-  const mgrs=MY.managers||{};
-  return [
-    {name:'이은진', email:(mgrs['이은진']&&mgrs['이은진'].email)||'flyingej@naver.com'},
-    {name:'김은희', email:(mgrs['김은희']&&mgrs['김은희'].email)||'okehkim@naver.com'}
-  ];
-}
-function partyEmail(name, role){
-  if(!name) return '';
-  if(role==='buyer'){
-    const b=BUYERS[name];
-    if(b&&b.email) return b.email;
-  }
-  const co=sellerCompany(name);
-  const s=SELLERS[name]||SELLERS[co];
-  if(s&&s.email) return s.email;
-  const b2=BUYERS[name];
-  return (b2&&b2.email)||'';
-}
 function setDocMailMeta(type, parties, items){
   _docMailMeta={type:type||'', parties:parties||[], items:items||[], nos:[]};
-}
-function fillMailPanel(){
-  const fromSel=document.getElementById('mail-from');
-  const toSel=document.getElementById('mail-to');
-  if(!fromSel||!toSel) return;
-  const senders=managerMailList();
-  fromSel.innerHTML=senders.map(s=>`<option value="${escHtml(s.email)}" data-name="${escHtml(s.name)}">${escHtml(s.name)} (${escHtml(s.email)})</option>`).join('');
-  const me=(_currentUserEmail||'').toLowerCase();
-  const meIdx=senders.findIndex(s=>(s.email||'').toLowerCase()===me);
-  if(meIdx>=0) fromSel.selectedIndex=meIdx;
-  // 현재 문서 관련 수신 우선, 없으면 전체 거래처 중 이메일 있는 곳
-  const opts=[];
-  const seen=new Set();
-  (_docMailMeta.parties||[]).forEach(p=>{
-    const name=p.name||p;
-    const role=p.role||(_docMailMeta.type==='po'?'buyer':'seller');
-    const email=partyEmail(name, role);
-    const key=name+'|'+email;
-    if(seen.has(key)) return;
-    seen.add(key);
-    opts.push({name, email, role, preferred:true});
-  });
-  Object.keys(BUYERS||{}).forEach(name=>{
-    const email=partyEmail(name,'buyer');
-    if(!email) return;
-    const key=name+'|'+email;
-    if(seen.has(key)) return;
-    seen.add(key);
-    opts.push({name, email, role:'buyer', preferred:false});
-  });
-  Object.keys(SELLERS||{}).forEach(name=>{
-    const email=partyEmail(name,'seller');
-    if(!email) return;
-    const key=name+'|'+email;
-    if(seen.has(key)) return;
-    seen.add(key);
-    opts.push({name, email, role:'seller', preferred:false});
-  });
-  opts.sort((a,b)=>(b.preferred-a.preferred)||a.name.localeCompare(b.name,'ko'));
-  toSel.innerHTML=
-    opts.map(o=>`<option value="${escHtml(o.email||'')}" data-name="${escHtml(o.name)}">${escHtml(o.name)}${o.email?' — '+escHtml(o.email):' — (이메일 없음)'}</option>`).join('')+
-    `<option value="__custom__">직접 입력...</option>`;
-  document.getElementById('mail-to-custom').style.display='none';
-  document.getElementById('mail-to-custom').value='';
-  // 문서 관련 첫 수신 선택
-  if(opts.length) toSel.selectedIndex=0;
-}
-function toggleMailPanel(){
-  const panel=document.getElementById('mail-panel');
-  if(!panel) return;
-  const on=panel.classList.toggle('on');
-  if(on) fillMailPanel();
-}
-function onMailToChange(){
-  const toSel=document.getElementById('mail-to');
-  const custom=document.getElementById('mail-to-custom');
-  const isCustom=toSel.value==='__custom__';
-  custom.style.display=isCustom?'':'none';
-  if(isCustom) custom.focus();
-}
-function docMailContext(){
-  const fromSel=document.getElementById('mail-from');
-  const toSel=document.getElementById('mail-to');
-  const custom=document.getElementById('mail-to-custom');
-  if(!fromSel||!toSel) return null;
-  const fromEmail=(fromSel.value||'').trim();
-  const fromName=fromSel.options[fromSel.selectedIndex]?.dataset?.name||'';
-  let toEmail=toSel.value;
-  let toName=toSel.options[toSel.selectedIndex]?.dataset?.name||'';
-  if(toEmail==='__custom__'){
-    toEmail=(custom.value||'').trim();
-    toName=toName||toEmail;
-  }
-  if(!toEmail){
-    const typed=prompt(`${toName||'수신인'} 이메일 주소를 입력해주세요`, '');
-    if(typed===null) return null;
-    toEmail=typed.trim();
-  }
-  if(!fromEmail||!fromEmail.includes('@')){ alert('발신인을 선택해 주세요'); return null; }
-  if(!toEmail||!toEmail.includes('@')){ alert('수신 이메일을 확인해 주세요'); return null; }
-  const kind=_docMailMeta.type||currentDocKind()||'ts';
-  const docLabel=kind==='po'?'발주서':(kind==='quote'?'견적서':'거래명세표');
-  const nos=collectDocNos(kind==='po'?true:(kind==='quote'?'quote':false));
-  const noText=nos.length?nos.join(', '):'';
-  const subject=`[상보프레카] ${docLabel}${noText?' '+noText:''}`;
-  const mgr=(MY.managers&&MY.managers[fromName])||{};
-  const lines=[fromName];
-  if(mgr.tel) lines.push(mgr.tel);
-  lines.push('(주) 상보프레카', fromEmail);
-  const filename=docPdfBaseName(kind==='po'?'po':(kind==='quote'?'quote':'ts'), nos[0])+'.pdf';
-  return {fromEmail, fromName, toEmail, toName, subject, body:lines.join('\r\n'), filename, docLabel};
-}
-function bytesToBase64(bytes){
-  let binary='';
-  const chunk=0x8000;
-  for(let i=0;i<bytes.length;i+=chunk){
-    binary+=String.fromCharCode.apply(null, bytes.subarray(i, i+chunk));
-  }
-  return btoa(binary);
 }
 /* html2canvas는 textarea 내용을 줄바꿈 없이 한 줄로만 그려서, 여러 줄로 쓴 특기사항·비고가
    PDF에서 첫 줄만 보였다. 찍기 직전 복제본에서만 textarea를 같은 모양의 div로 바꿔
@@ -4846,65 +4630,6 @@ async function buildDocPdfBlob(){
     if(overlay) overlay.scrollTop=prevScroll;
   }
 }
-async function buildDocPdfBase64(){
-  const blob=await buildDocPdfBlob();
-  const buf=await blob.arrayBuffer();
-  return bytesToBase64(new Uint8Array(buf));
-}
-async function sendDocMail(){
-  try{
-    if(currentDocKind()==='ts') await finalizeTsIssue();
-    else{
-      if(currentDocKind()==='po') persistPoFromOverlay();
-      await syncOverlayDocSeq();
-    }
-    clearTimeout(_persistTimer);
-    await saveOrdersToDb();
-  }catch(e){ console.warn(e); }
-  const ctx=docMailContext();
-  if(!ctx) return;
-  const btn=document.getElementById('mail-send-btn');
-  const prev=btn?btn.textContent:'';
-  try{
-    if(btn){ btn.disabled=true; btn.textContent='PDF 생성 중...'; }
-    const pdfBase64=await buildDocPdfBase64();
-    if(!pdfBase64||pdfBase64.length<200) throw new Error('PDF가 비어 있습니다. 문서 미리보기를 다시 열어 주세요.');
-    if(btn) btn.textContent='발송 중...';
-    const {data, error}=await sb.functions.invoke('send-doc-mail', {
-      body:{
-        fromEmail:ctx.fromEmail,
-        fromName:ctx.fromName,
-        toEmail:ctx.toEmail,
-        toName:ctx.toName,
-        subject:ctx.subject,
-        body:ctx.body,
-        pdfBase64,
-        filename:ctx.filename
-      }
-    });
-    if(error){
-      let detail=(data&&data.error)||error.message||'발송 실패';
-      try{
-        if(!data&&error.context&&typeof error.context.json==='function'){
-          const body=await error.context.json();
-          if(body&&body.error) detail=body.error;
-        }
-      }catch(_){}
-      if(/Failed to send a request|Function not found|404/i.test(detail)){
-        detail='메일 발송 서버(함수)가 아직 배포되지 않았습니다. Supabase에 send-doc-mail 함수와 네이버 SMTP 비밀번호를 등록해 주세요.';
-      }
-      throw new Error(detail);
-    }
-    if(data&&data.error) throw new Error(data.error);
-    await markDocsMailSent({fromEmail:ctx.fromEmail, toEmail:ctx.toEmail});
-    const size=data&&data.bytes?`\n첨부: ${data.filename||ctx.filename} (${Math.round(data.bytes/1024)}KB)`:'';
-    alert(`${ctx.docLabel} 메일을 발송했습니다.\n발신: ${ctx.fromName} <${ctx.fromEmail}>\n수신: ${ctx.toName||''} <${ctx.toEmail}>${size}`);
-  }catch(e){
-    alert((e&&e.message)||'메일 발송에 실패했습니다');
-  }finally{
-    if(btn){ btn.disabled=false; btn.textContent=prev||'PDF 첨부하여 발송'; }
-  }
-}
 function openDocOverlay(html, opts){
   document.getElementById('doc-content').innerHTML=html;
   document.getElementById('dynamic-page-style').textContent='';
@@ -4912,15 +4637,9 @@ function openDocOverlay(html, opts){
   document.getElementById('overlay').style.display='block';
   fitDocOverflowCells();
   requestAnimationFrame(()=>fitDocOverflowCells());
-  const hasTs=!!document.querySelector('.ts-contact-input');
   const hint=document.getElementById('ts-edit-hint');
-  const btn=document.getElementById('ts-save-contact-btn');
-  // 안내문은 숨김 — 입력칸·버튼만으로 충분
+  // 안내문은 숨김 — 입력칸만으로 충분
   if(hint) hint.style.display='none';
-  if(btn) btn.style.display=hasTs?'':'none';
-  if(opts&&opts.hideTsEdit){
-    if(btn) btn.style.display='none';
-  }
   const kind=currentDocKind();
   const saveBtn=document.getElementById('doc-save-btn');
   const saveMsg=document.getElementById('doc-save-msg');
@@ -4928,16 +4647,11 @@ function openDocOverlay(html, opts){
   if(saveBtn) saveBtn.style.display=(kind==='po'||kind==='ts')?'':'none';
   if(saveMsg){ saveMsg.textContent=''; saveMsg.style.display='none'; }
   refreshLoadRegBtn();
-  const mailBtn=document.getElementById('mail-open-btn');
-  const mailPanel=document.getElementById('mail-panel');
-  if(mailPanel) mailPanel.classList.remove('on');
-  if(mailBtn) mailBtn.style.display=kind?'':'none';
   // nos는 렌더 후 DOM에서 다시 수집
   if(_docMailMeta){
     _docMailMeta.nos=collectDocNos(kind||'ts');
     if(!_docMailMeta.type) _docMailMeta.type=kind||'';
   }
-  refreshMailSentUi();
 }
 /** 서류의 납품 담당자·주소 입력칸 중 설정 등록값과 다른 칸 */
 function docDeliverInputsOffReg(){
@@ -4966,15 +4680,21 @@ async function loadRegisteredDeliverToDoc(){
   document.querySelectorAll('#doc-content input[data-reg]').forEach(inp=>{ inp.dataset.orig=(inp.value||'').trim(); });
   refreshLoadRegBtn();
 }
+/**
+ * 거래명세표 [저장]: 담당자 칸을 고쳤으면 설정(배송지 또는 매출처 담당자)에도 저장한다.
+ * 다음 서류부터 같은 담당자가 나오고, 이 서류의 품목은 다시 설정값을 따른다.
+ */
 async function saveTsContactsToSettings(){
   const els=[...document.querySelectorAll('.ts-contact-input')];
-  if(!els.length){alert('저장할 담당자가 없어요');return;}
   let saved=0;
   for(const el of els){
     const company=el.dataset.company||'';
     const siteName=el.dataset.site||'';
     const contact=(el.value||'').replace(/\u3000/g,' ').trim();
     if(!company||!contact) continue;
+    // 고치지 않았거나 이미 설정과 같으면 건너뜀
+    if(('orig' in el.dataset) && contact===el.dataset.orig) continue;
+    if(('reg' in el.dataset) && sameDocText(contact, el.dataset.reg)) continue;
     const site=findDeliverySite(company, siteName);
     const olds=[el.dataset.reg, contact];
     const done=()=>{
@@ -5004,10 +4724,11 @@ async function saveTsContactsToSettings(){
       done();
     }
   }
-  alert(saved?`담당자 ${saved}건을 설정에 저장했어요`:'저장할 매출처/배송지를 찾지 못했어요');
-  if(typeof renderDeliver==='function') renderDeliver();
-  if(typeof renderSellerContacts==='function') renderSellerContacts();
-  if(typeof renderDeliverySites==='function') renderDeliverySites();
+  if(saved){
+    if(typeof renderSellerContacts==='function') renderSellerContacts();
+    if(typeof renderDeliverySites==='function') renderDeliverySites();
+  }
+  return saved;
 }
 
 /* ── 거래명세표: 선택 품목, A4 고정 ── */
