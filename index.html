@@ -1834,6 +1834,30 @@ function hydratePoMemosFromConfig(){
   return n;
 }
 /** 발주서 오버레이에서 고친 특기사항·납품정보·비고를 발주에 반영 */
+/**
+ * 발주 입력 화면에 같은 발주가 열려 있으면, 발주서에서 고친 납품처·주소·담당자를 화면 행에도 옮긴다.
+ * (화면 행이 예전 값을 들고 있어 [저장]이나 목록의 [발주서]가 고친 값을 되돌리던 문제)
+ */
+function syncFormDeliverFromOrder(o){
+  if(!o) return;
+  const formNo=String((document.getElementById('f-no')||{}).value||'').trim();
+  if(formNo!==o.no && _formSourceNo!==o.no) return;
+  // getRows와 같은 기준으로 행을 골라 o.items와 순서를 맞춘다
+  const rows=[...document.querySelectorAll('#items-body tr')].filter(tr=>{
+    const b=tr.querySelector('.bsel'), i=tr.querySelector('.isel');
+    return (b&&b.value)||(i&&i.value);
+  });
+  if(rows.length!==(o.items||[]).length) return;
+  rows.forEach((tr,idx)=>{
+    const it=o.items[idx];
+    if(!it || (tr.querySelector('.bsel')||{}).value!==it.buyer) return;
+    [['deliverAddr','deliver_addr'],['deliverContact','deliver_contact']].forEach(([dk,ik])=>{
+      if(it[ik]==null) delete tr.dataset[dk]; else tr.dataset[dk]=String(it[ik]);
+    });
+    if(it.deliver_label) tr.dataset.deliverLabel=it.deliver_label;
+    else if(it.deliver_addr==null && it.deliver_contact==null) delete tr.dataset.deliverLabel;
+  });
+}
 function persistPoFromOverlay(){
   const pages=[...document.querySelectorAll('#doc-content .a4-page[data-po-order]')];
   if(!pages.length) return;
@@ -1862,7 +1886,7 @@ function persistPoFromOverlay(){
       const inp=row.querySelector('input.doc-inline-input');
       if(!inp) return;
       const value=(inp.value||'').trim();
-      const k=key==='납품처'?'disp':key==='소재지'?'addr':key==='담당자'?'contact':'';
+      const k=key==='납품처'?'disp':key==='소재지'?'addr':(key==='담당자'||key==='인수담당')?'contact':'';
       if(!k) return;
       f[k]={
         value,
@@ -1905,6 +1929,7 @@ function persistPoFromOverlay(){
         memoChanged=true;
       }
     });
+    syncFormDeliverFromOrder(o);
     touched.add(orderNo);
   });
   touched.forEach(n=>persist(n));
@@ -3559,10 +3584,12 @@ function buildPOHtml(order){
     const deliverDisp=deliverLabel?`${deliverName} (${deliverLabel})`:deliverName;
     // data-orig: 화면에 처음 보인 값(고쳤는지 판단), data-reg: 설정에 등록된 값
     const reg=registeredDeliverInfo(sample.seller||'');
-    const footInp=(val, regVal)=>{
+    const footInp=(val, regVal, extra='')=>{
       const v=docFieldText(val);
-      return `<input class="doc-inline-input" value="${escHtml(v)}" data-orig="${escHtml(v)}"${regVal!=null?` data-reg="${escHtml(regVal)}"`:''}>`;
+      return `<input class="doc-inline-input${extra}" value="${escHtml(v)}" data-orig="${escHtml(v)}"${regVal!=null?` data-reg="${escHtml(regVal)}"`:''}>`;
     };
+    const coAttr=escHtml(sellerCompany(sample.seller||''));
+    const siteAttr=escHtml(di.label||sellerSite(sample.seller||'')||'');
     const dataRows=its.map((r,i)=>`<tr data-po-item-idx="${i}">
       <td>${i+1}</td>
       ${docFitHtml(r.item||'', 'l')}
@@ -3592,9 +3619,9 @@ function buildPOHtml(order){
         <tfoot><tr><td colspan="5" style="text-align:right;padding:8px">합　계</td><td class="r">${fmt(sub)}</td><td colspan="2"></td></tr></tfoot>
       </table>
       <div class="po-foot">
-        <div class="po-foot-row"><span class="po-foot-key">납 품 처</span><span class="po-foot-val">${footInp(deliverDisp, null)}</span></div>
+        <div class="po-foot-row"><span class="po-foot-key">납 품 처</span><span class="po-foot-val">${footInp(deliverDisp, null, ' po-deliver-input')}</span></div>
         <div class="po-foot-row"><span class="po-foot-key">소 재 지</span><span class="po-foot-val">${footInp(di.addr, reg.addr)}</span></div>
-        <div class="po-foot-row"><span class="po-foot-key">담 당 자</span><span class="po-foot-val">${footInp(formatDocContact(di.contact||''), reg.contact)}</span></div>
+        <div class="po-foot-row"><span class="po-foot-key" title="납품처에서 물건을 받는 사람">인수 담당</span><span class="po-foot-val">${footInp(formatDocContact(di.contact||''), reg.contact, ' po-contact-input').replace('<input ', `<input data-company="${coAttr}" data-site="${siteAttr}" `)}</span></div>
         <div class="po-foot-row po-foot-note"><span class="po-foot-key">특기사항</span><span class="po-foot-val"><textarea class="doc-note-input">${escHtml(note)}</textarea></span></div>
       </div>
     </div>`;
@@ -4421,6 +4448,8 @@ async function saveDocOverlay(){
       try{ await saveTsContactsToSettings(); }catch(e){ console.warn(e); }
       try{ persistTsNosFromOverlay(); }catch(e){ console.warn(e); }
     }else if(kind==='po'){
+      // 고친 인수 담당자는 설정에도 저장 (data-reg가 새 값이 되어 품목은 설정을 따르게 된다)
+      try{ await savePoContactsToSettings(); }catch(e){ console.warn(e); }
       persistPoFromOverlay();
     }
     clearTimeout(_persistTimer);
@@ -4666,11 +4695,33 @@ async function loadRegisteredDeliverToDoc(){
   refreshLoadRegBtn();
 }
 /**
- * 거래명세표 [저장]: 담당자 칸을 고쳤으면 설정(배송지 또는 매출처 담당자)에도 저장한다.
- * 다음 서류부터 같은 담당자가 나오고, 이 서류의 품목은 다시 설정값을 따른다.
+ * 서류에서 고친 납품 담당자를 설정에 저장한다: 등록 배송지 → (배송지가 하나뿐이면) 그 배송지 → 매출처 담당자 순.
+ * 예전 값을 그대로 복사해 둔 품목은 복사본을 지워 다시 설정을 따르게 한다. 저장했으면 true.
  */
-async function saveTsContactsToSettings(){
-  const els=[...document.querySelectorAll('.ts-contact-input')];
+async function saveDeliverContactToSettings(company, siteName, contact, oldReg){
+  const olds=[oldReg, contact];
+  const site=findDeliverySite(company, siteName);
+  const sites=getDeliverySites(company);
+  const target=site || ((!siteName && sites.length===1) ? sites[0] : null);
+  if(target){
+    olds.push(target.contact);
+    target.contact=contact;
+    await saveConfigToDb();
+  }else{
+    // 매출처는 '회사_품목'처럼 여러 이름으로 등록돼 있을 수 있어 같은 회사는 모두 바꾼다
+    const keys=Object.keys(SELLERS).filter(k=>k===company || sellerCompany(k)===company);
+    if(!keys.length) return false;
+    for(const k of keys){
+      olds.push(SELLERS[k].contact);
+      SELLERS[k].contact=contact;
+      await saveSellerToDb(k, SELLERS[k]);
+    }
+  }
+  releaseDeliverSnapshots(company, {contact:olds});
+  return true;
+}
+/** 서류 입력칸(data-company·data-site)에서 고친 담당자만 설정에 저장. 저장한 칸 수를 돌려준다 */
+async function saveDocContactInputsToSettings(els){
   let saved=0;
   for(const el of els){
     const company=el.dataset.company||'';
@@ -4680,33 +4731,9 @@ async function saveTsContactsToSettings(){
     // 고치지 않았거나 이미 설정과 같으면 건너뜀
     if(('orig' in el.dataset) && contact===el.dataset.orig) continue;
     if(('reg' in el.dataset) && sameDocText(contact, el.dataset.reg)) continue;
-    const site=findDeliverySite(company, siteName);
-    const olds=[el.dataset.reg, contact];
-    const done=()=>{
-      saved++;
+    if(await saveDeliverContactToSettings(company, siteName, contact, el.dataset.reg)){
       el.dataset.reg=contact;
-      releaseDeliverSnapshots(company, {contact:olds});
-    };
-    if(site){
-      olds.push(site.contact);
-      site.contact=contact;
-      await saveConfigToDb();
-      done();
-      continue;
-    }
-    const sites=getDeliverySites(company);
-    if(!siteName&&sites.length===1){
-      olds.push(sites[0].contact);
-      sites[0].contact=contact;
-      await saveConfigToDb();
-      done();
-      continue;
-    }
-    if(SELLERS[company]){
-      olds.push(SELLERS[company].contact);
-      SELLERS[company].contact=contact;
-      await saveSellerToDb(company, SELLERS[company]);
-      done();
+      saved++;
     }
   }
   if(saved){
@@ -4714,6 +4741,21 @@ async function saveTsContactsToSettings(){
     if(typeof renderDeliverySites==='function') renderDeliverySites();
   }
   return saved;
+}
+/** 거래명세표 [저장]: 고친 담당자를 설정에도 저장 */
+async function saveTsContactsToSettings(){
+  return saveDocContactInputsToSettings([...document.querySelectorAll('.ts-contact-input')]);
+}
+/** 발주서 [저장]: 하단 인수 담당자를 고쳤으면 설정에도 저장 (같은 장에서 납품처를 바꾼 경우는 제외) */
+async function savePoContactsToSettings(){
+  const els=[];
+  document.querySelectorAll('#doc-content .a4-page[data-po-order]').forEach(page=>{
+    const disp=page.querySelector('input.po-deliver-input');
+    if(disp && ('orig' in disp.dataset) && (disp.value||'').trim()!==disp.dataset.orig) return;
+    const inp=page.querySelector('input.po-contact-input');
+    if(inp) els.push(inp);
+  });
+  return saveDocContactInputsToSettings(els);
 }
 
 /* ── 거래명세표: 선택 품목, A4 고정 ── */
@@ -4744,8 +4786,10 @@ function tsPageHtml({company, seller, contact, addr, its, dy, dm, dd, tsNo, tsOr
   const reg=registeredDeliverInfo(seller||company);
   const regContact=reg.contact||docFieldText(resolveSellerContact(seller||company));
   const regAddr=reg.addr||docFieldText(si.addr||'');
-  const myContact=(MY.managers&&MY.managers['이은진'])
-    ?`이은진 ${(MY.managers['이은진'].tel||'')}`.trim()
+  // 공급자 담당자: 발주서처럼 전화번호 뒤에 메일 주소도 적는다
+  const myMgr=(MY.managers&&MY.managers['이은진'])||null;
+  const myContact=myMgr
+    ?(`이은진 ${myMgr.tel||''}`.trim()+(myMgr.email?' / '+myMgr.email:''))
     :formatDocContact(MY.contact||'　');
   const curNo=String(tsNo||'').trim();
   const origNo=stripTsRevSuffix(String(tsOrig||'').trim() || curNo);
