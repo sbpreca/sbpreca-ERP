@@ -843,7 +843,7 @@ input[readonly]{background:#f5f5f5;color:#999}
       <table class="data-tbl">
         <thead><tr>
           <th style="width:90px">날짜</th><th>내용</th><th class="r" style="width:100px">금액</th><th style="width:60px">구분</th>
-          <th style="width:150px">계정</th><th style="width:150px">규칙 키워드</th><th style="width:70px">규칙저장</th>
+          <th style="width:150px">계정</th><th style="width:60px;text-align:center" title="공제: 부가세를 빼고(÷1.1) 손익에 반영 · 불공제: 출금액 그대로">부가세</th><th style="width:150px">규칙 키워드</th><th style="width:70px">규칙저장</th>
         </tr></thead>
         <tbody id="tx-review-body"></tbody>
       </table>
@@ -6735,7 +6735,7 @@ function priorYearMonth(ym){
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
 }
 // 지출분류(bank_tx)에서 판관비만 계정별로 합산 (건별 내역은 넣지 않음)
-// 공제(과세)는 공급가액(÷1.1), 면세·불공제는 출금액 그대로
+// 공제(과세)는 공급가액(÷1.1), 불공제는 출금액 그대로
 function aggregateSgaFromBank(ym){
   const map={};
   (txAll||[]).forEach(t=>{
@@ -7801,12 +7801,13 @@ const ACCOUNT_PLTYPE={
 };
 const ACCOUNT_LIST=Object.keys(ACCOUNT_PLTYPE);
 
-// 판관비 중 출금액 그대로(÷1.1 안 함): 급여·보험료·세금과공과·기업업무추진비·500원 지급수수료
-// 접대비는 불공제(출금액 그대로). 나머지 판관비는 기본 공제(÷1.1 공급가액)
+// 부가세 구분은 공제/불공제 두 가지만 쓴다 (예전 '면세'도 불공제로 본다).
+// 불공제(출금액 그대로, ÷1.1 안 함): 급여·보험료·세금과공과·기업업무추진비·접대비·500원 이체수수료·개인 명의 휴대폰(SKT)
+// 나머지 판관비는 기본 공제(÷1.1 공급가액)
 const ACCOUNT_VAT_TYPE={
-  '급여':'면세',
-  '보험료':'면세',
-  '세금과공과':'면세',
+  '급여':'불공제',
+  '보험료':'불공제',
+  '세금과공과':'불공제',
   '기업업무추진비':'불공제',
   '접대비':'불공제',
 };
@@ -7907,12 +7908,23 @@ function vatTypeFor(description, account, amount){
   if(personalPhoneSupport(description)) return '불공제';
   if(!account) return '';
   // 500원 지급수수료(이체수수료)는 부가세 없음 → 출금액 그대로
-  if(isBankTransferFee(account, amount)) return '면세';
+  if(isBankTransferFee(account, amount)) return '불공제';
   if(ACCOUNT_VAT_TYPE[account]) return ACCOUNT_VAT_TYPE[account];
   if(ACCOUNT_PLTYPE[account]==='판관비') return '공제';
   return '해당없음';
 }
 // 판관비 손익용 금액: 공제(과세)만 ÷1.1 공급가액. 급여·보험료·세금과공과·기업업무추진비·500원 지급수수료 등은 출금액 그대로
+/** 화면 표시용 부가세 구분: 공제 / 불공제 두 가지. 손익에 안 들어가는 거래(해당없음)는 '-' */
+function vatTypeLabel(v){
+  if(v==='공제') return '공제';
+  if(v==='불공제' || v==='면세') return '불공제';
+  return '-';
+}
+function vatTypeLabelHtml(v){
+  const label=vatTypeLabel(v);
+  const color=label==='공제'?'#166534':label==='불공제'?'#dc2626':'#888';
+  return `<span style="color:${color}">${label}</span>`;
+}
 function sgaSupplyAmt(t){
   const amt=+t.amount||0;
   if(!amt) return 0;
@@ -8043,7 +8055,7 @@ async function handleTxFile(e){
   txRowsPending = fresh.map(p=>{
     // 은행 거래에서 500원은 항상 이체수수료 (신창수/김은희/이은진 등 이름과 무관하게)
     if(p.source==='bank' && Math.round(+p.amount||0)===500){
-      return {...p, account:'지급수수료', vat_type:'면세', ruleKeyword:p.description, saveRule:false};
+      return {...p, account:'지급수수료', vat_type:'불공제', ruleKeyword:p.description, saveRule:false};
     }
     const matched=matchTxRule(p.description);
     const defaultAccount = matched ? matched.account : '';
@@ -8072,7 +8084,7 @@ function renderTxReview(){
       </select>
     </td>
     <td style="text-align:center;font-size:11px" id="vat-type-${i}">
-      <span style="color:${r.vat_type==='불공제'?'#dc2626':r.vat_type==='면세'?'#888':r.vat_type==='공제'?'#166534':'#888'}">${r.vat_type||'-'}</span>
+      ${vatTypeLabelHtml(r.vat_type)}
     </td>
     <td style="padding:2px 4px">
       <input value="${r.ruleKeyword.replace(/"/g,'&quot;')}" style="width:100%;font-size:11px;padding:3px" onchange="txRowsPending[${i}].ruleKeyword=this.value">
@@ -8086,11 +8098,7 @@ function renderTxReviewRowState(i){
   r.vat_type=vatTypeFor(r.description, r.account, r.amount);
   r.saveRule=true;
   const vatEl=document.getElementById('vat-type-'+i);
-  if(vatEl){
-    const label=r.vat_type||'-';
-    const color=r.vat_type==='불공제'?'#dc2626':r.vat_type==='면세'?'#888':r.vat_type==='공제'?'#166534':'#888';
-    vatEl.innerHTML=`<span style="color:${color}">${label}</span>`;
-  }
+  if(vatEl) vatEl.innerHTML=vatTypeLabelHtml(r.vat_type);
   const chk=document.getElementById('tx-rule-'+i);
   if(chk) chk.checked=true;
 }
@@ -8234,7 +8242,7 @@ async function applyTxToPL(){
       return;
     }
     if(t.pl_type==='판관비'){
-      const vat=isBankTransferFee(t.account, t.amount) ? '면세'
+      const vat=isBankTransferFee(t.account, t.amount) ? '불공제'
         : (personalPhoneSupport(t.description) ? '불공제' : (t.vat_type || vatTypeFor(t.description, t.account, t.amount)));
       const supply=sgaSupplyAmt({...t, vat_type:vat});
       byAccount[t.account].out+=supply;
