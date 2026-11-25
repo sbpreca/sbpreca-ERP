@@ -497,7 +497,7 @@ input[readonly]{background:#f5f5f5;color:#999}
           <th style="width:50px" class="r">수량</th>
           <th style="width:75px" class="r">판매단가</th>
           <th style="width:80px" class="r">공급가액</th>
-          <th style="width:110px" title="당사를 거쳐 매출처로 나가는 건은 [+ 매출 납품일]로 날짜를 따로 적을 수 있어요">납품일</th>
+          <th style="width:100px">납품일</th>
           <th style="width:74px" class="c">납품상태</th>
           <th style="width:110px" class="c">문서번호</th>
           <th style="width:108px" class="c">명세</th>
@@ -1204,11 +1204,9 @@ const fmtW=n=>fmt(n)+'원';
 const ym=d=>d?d.slice(0,7):'';
 // 매입·매출 인식: 납품완료된 품목만. 매입월=출하월, 매출월=정산월(있으면) 아니면 출하월.
 function isDeliveredItem(i){ return !!(i && i.status==='납품완료'); }
-/** 매출 납품일: 당사를 거쳐 매출처로 나간 날(sell_ship). 직배송이면 비어 있어 납품일(ship)을 쓴다 */
-function sellShipOf(i){ return String((i&&(i.sell_ship||i.ship))||'').slice(0,10); }
 function sellMonthOf(i){
   const o=String(i&&i.closing_month_override||'').slice(0,7);
-  return /^\d{4}-\d{2}$/.test(o) ? o : ym(sellShipOf(i));
+  return /^\d{4}-\d{2}$/.test(o) ? o : ym(i&&i.ship);
 }
 
 // 업체별 결제조건에 따른 결제예정일 자동계산
@@ -1724,19 +1722,7 @@ async function orderItemsSupportTsCols(){
   }
   return _orderItemTsCols;
 }
-/** order_items에 sell_ship(매출 납품일) 컬럼이 있는지 한 번만 확인 */
-let _orderItemSellShipCol=null;
-async function orderItemsSupportSellShip(){
-  if(_orderItemSellShipCol!=null) return _orderItemSellShipCol;
-  try{
-    const {error}=await sb.from('order_items').select('sell_ship').limit(1);
-    _orderItemSellShipCol=!error;
-  }catch(e){
-    _orderItemSellShipCol=false;
-  }
-  return _orderItemSellShipCol;
-}
-function orderItemToDbRow(it, orderId, idx, withTs, withSellShip){
+function orderItemToDbRow(it, orderId, idx, withTs){
   const row={
     order_id:orderId, buyer:it.buyer||'', item:it.item||'', spec:it.spec||'',
     bqty:it.bqty||0, bprice:it.bprice||0, bamt:it.bamt||0,
@@ -1754,7 +1740,6 @@ function orderItemToDbRow(it, orderId, idx, withTs, withSellShip){
     row.deliver_addr=it.deliver_addr!=null?String(it.deliver_addr):null;
     row.deliver_contact=it.deliver_contact!=null?String(it.deliver_contact):null;
   }
-  if(withSellShip) row.sell_ship=it.sell_ship||null;
   return row;
 }
 /** 품목 문서번호 보존 키 (발주번호+품목 지문) — DB 컬럼 없을 때 company_config에 저장 */
@@ -1971,8 +1956,7 @@ async function saveDirtyOrdersNow(){
         const orderId=noToId[o.no];
         if(!orderId) throw new Error('발주 번호를 저장하지 못했어요: '+o.no);
         const supportTs=await orderItemsSupportTsCols();
-        const supportSellShip=await orderItemsSupportSellShip();
-        const itemRows=(o.items||[]).map((it,idx)=>orderItemToDbRow(it, orderId, idx, supportTs, supportSellShip));
+        const itemRows=(o.items||[]).map((it,idx)=>orderItemToDbRow(it, orderId, idx, supportTs));
         // 전체 교체: 기존 삭제 → 신규 삽입. 삽입 실패 시 백업으로 복구
         const {data:oldRows, error:oldErr}=await sb.from('order_items').select('*').eq('order_id', orderId);
         if(oldErr) throw oldErr;
@@ -1982,11 +1966,10 @@ async function saveDirtyOrdersNow(){
           const {error:e3}=await sb.from('order_items').insert(itemRows);
           if(e3){
             // ts_no 등 새 컬럼이 아직 없으면 기본 컬럼만으로 재시도 (번호는 company_config에 보존)
-            if((supportTs||supportSellShip) && /ts_no|deliver_|sell_ship|column/i.test(String(e3.message||e3.code||''))){
-              if(/sell_ship/i.test(String(e3.message||''))) _orderItemSellShipCol=false;
-              else _orderItemTsCols=false;
+            if(supportTs && /ts_no|deliver_|column/i.test(String(e3.message||e3.code||''))){
+              _orderItemTsCols=false;
               const basic=itemRows.map(r=>{
-                const {ts_no,ts_orig,deliver_label,deliver_addr,deliver_contact,sell_ship,...rest}=r;
+                const {ts_no,ts_orig,deliver_label,deliver_addr,deliver_contact,...rest}=r;
                 return rest;
               });
               const {error:e4}=await sb.from('order_items').insert(basic);
@@ -2035,7 +2018,7 @@ function buildOrdersFromDbRows(dbOrders, dbItems){
       buyer:it.buyer, item:it.item, spec:it.spec,
       bqty:it.bqty, bprice:it.bprice, bamt:it.bamt,
       seller:it.seller, sqty:it.sqty, sprice:it.sprice, samt:it.samt,
-      ship:it.ship, sell_ship:it.sell_ship||'', status:it.status, closing_sell_exclude:it.closing_sell_exclude||false, closing_month_override:it.closing_month_override||'',
+      ship:it.ship, status:it.status, closing_sell_exclude:it.closing_sell_exclude||false, closing_month_override:it.closing_month_override||'',
       ts_no:it.ts_no||'', ts_orig:it.ts_orig||'',
       // null=미설정(등록지 폴백), ''=의도적 공란 — ||'' 로 합치지 않음
       deliver_label:it.deliver_label!=null?it.deliver_label:null,
@@ -3260,8 +3243,6 @@ function commitFormOrder(){
       memo: (it.memo!=null&&it.memo!=='')?it.memo:((prev&&prev.memo)||''),
       ts_no: (prev&&prev.ts_no)||'',
       ts_orig: (prev&&prev.ts_orig)||'',
-      // 매출 납품일은 납품현황에서만 고친다 (매출처를 바꾼 행은 비운다)
-      sell_ship: (keepDeliver&&prev.sell_ship)||'',
       closing_sell_exclude: (prev&&prev.closing_sell_exclude)||false,
       closing_month_override: (prev&&prev.closing_month_override)||''
     };
@@ -3995,7 +3976,7 @@ function collectItemsForTsEdit(seed){
   const seedNo=String(seed.ts_no||'').trim();
   const seedOrig=resolveTsOrig(seed, seedNo);
   const co=sellerCompany(seed.seller);
-  const ship=sellShipOf(seed);
+  const ship=seed.ship||'';
   const out=[];
   const seen=new Set();
   const add=(o,item,item_idx)=>{
@@ -4020,7 +4001,7 @@ function collectItemsForTsEdit(seed){
       (o.items||[]).forEach((item,item_idx)=>{
         if(!(+item.samt>0)) return;
         if(sellerCompany(item.seller)!==co) return;
-        if(sellShipOf(item)!==ship) return;
+        if((item.ship||'')!==ship) return;
         const cur=String(item.ts_no||'').trim();
         if(cur && (seedNo||seedOrig) && !sameTsDocFamily(item, seedNo, seedOrig)) return;
         add(o,item,item_idx);
@@ -4039,14 +4020,14 @@ function collectItemsForTsEdit(seed){
 function collectItemsForTsShipGroup(seed, {requireEmptyTsNo=false}={}){
   if(!seed) return [];
   const co=sellerCompany(seed.seller);
-  const ship=sellShipOf(seed);
+  const ship=seed.ship||'';
   const status=seed.status||'';
   const out=[];
   orders.forEach(o=>{
     (o.items||[]).forEach((item,item_idx)=>{
       if(!(+item.samt>0)) return;
       if(sellerCompany(item.seller)!==co) return;
-      if(sellShipOf(item)!==ship) return;
+      if((item.ship||'')!==ship) return;
       if(status && (item.status||'')!==status) return;
       if(requireEmptyTsNo && String(item.ts_no||'').trim()) return;
       out.push(toDeliverRow(o,item,item_idx));
@@ -4137,13 +4118,13 @@ function resolveDisplayTsNo(row){
   const own=String((row&&row.ts_no)||'').trim();
   if(own) return {ts_no:own, ts_orig:resolveTsOrig(row, own), inherited:false};
   const co=sellerCompany(row&&row.seller);
-  const ship=sellShipOf(row);
+  const ship=(row&&row.ship)||'';
   if(!co||!ship) return {ts_no:'', ts_orig:'', inherited:false};
   let best='';
   orders.forEach(o=>{
     (o.items||[]).forEach(item=>{
       if(sellerCompany(item.seller)!==co) return;
-      if(sellShipOf(item)!==ship) return;
+      if((item.ship||'')!==ship) return;
       if(!(+item.samt>0)) return;
       const cur=String(item.ts_no||'').trim();
       if(!cur) return;
@@ -4201,7 +4182,7 @@ function stampTsNoOnItems(items, tsNo, opts={}){
   const keys=new Set();
   (items||[]).forEach(it=>{
     const co=sellerCompany(it.seller);
-    const ship=sellShipOf(it);
+    const ship=it.ship||'';
     if(co&&ship) keys.add(co+'|'+ship);
   });
   keys.forEach(key=>{
@@ -4210,7 +4191,7 @@ function stampTsNoOnItems(items, tsNo, opts={}){
       (o.items||[]).forEach(item=>{
         if(!(+item.samt>0)) return;
         if(sellerCompany(item.seller)!==co) return;
-        if(sellShipOf(item)!==ship) return;
+        if((item.ship||'')!==ship) return;
         const cur=String(item.ts_no||'').trim();
         if(cur && !sameTsDocFamily(item, no, orig)) return;
         item.ts_no=no;
@@ -4232,7 +4213,7 @@ function backfillTsNosInOrders(){
     (o.items||[]).forEach((item,item_idx)=>{
       if(!(+item.samt>0)) return;
       const co=sellerCompany(item.seller);
-      const ship=sellShipOf(item);
+      const ship=item.ship||'';
       if(!co||!ship) return;
       const k=co+'|'+ship;
       (groups[k]=groups[k]||[]).push({o,item,item_idx});
@@ -4387,7 +4368,7 @@ function persistTsNosFromOverlay(){
     const ships=new Set(
       metaItems
         .filter(it=>!co || sellerCompany(it.seller)===co)
-        .map(it=>sellShipOf(it))
+        .map(it=>String(it.ship||'').trim())
         .filter(Boolean)
     );
     if(co && (bases.length || ships.size)){
@@ -4398,7 +4379,7 @@ function persistTsNosFromOverlay(){
           const cur=String(item.ts_no||'').trim();
           const orig=resolveTsOrig(item, cur);
           const familyHit=bases.some(b=>cur===b || stripTsRevSuffix(cur)===b || orig===b || sameTsDocFamily(item, no, origFromDom||b));
-          const shipHit=!cur && ships.has(sellShipOf(item));
+          const shipHit=!cur && ships.has(String(item.ship||'').trim());
           if(!familyHit && !shipHit) return;
           if(cur && !familyHit) return;
           item.ts_no=no;
@@ -4740,7 +4721,7 @@ function tsPageHtml({company, seller, contact, addr, its, dy, dm, dd, tsNo, tsOr
   const totS=its.reduce((s,i)=>s+(i.samt||0),0),totV=Math.round(totS*0.1);
   // 명세표 일자 칸: 지정한 거래일자 우선 (출하일 ship은 발주에 그대로 둠)
   const dataRows=its.map(r=>{
-    const d=tradeDate||sellShipOf(r);
+    const d=tradeDate||r.ship||'';
     return `<tr>
     <td>${d?d.slice(5).replace('-','.'):'　'}</td>
     ${docFitHtml(r.item||'', 'l')}
@@ -4817,7 +4798,7 @@ async function buildTS(selectedItems, issueDate){
     (groups[k]=groups[k]||[]).push(i);
   });
   if(!Object.keys(groups).length){alert('매출처가 있는 항목을 선택해주세요');return;}
-  const ships=[...new Set(selectedItems.map(sellShipOf).filter(Boolean))];
+  const ships=[...new Set(selectedItems.map(i=>i.ship).filter(Boolean))];
   const tradeDate=promptTsTradeDate(issueDate||(ships.length===1?ships[0]:new Date().toISOString().slice(0,10)));
   const dy=tradeDate.slice(0,4),dm=tradeDate.slice(5,7),dd=tradeDate.slice(8,10);
   const {contactMap, addrMap}=tsDeliverMapsFromGroups(groups, 'seller');
@@ -4869,41 +4850,6 @@ function updateShip(idx,val){
   // 화면 행(deliverRows)은 복사본이라 함께 바꿔야 거래명세표가 고친 날짜로 열린다
   o.items[r.item_idx].ship=val;r.ship=val;persist(o.no);
 }
-/** 납품현황 날짜 칸: 납품일(발주·매입) + 따로 적은 매출 납품일(거래명세표·매출) */
-function deliverDateCellHtml(r, idx){
-  const shipInp=`<input type="date" value="${r.ship||''}" onchange="updateShip(${idx},this.value)" title="발주서 납품일 (당사 입고일·매입 기준)">`;
-  if(r.sell_ship || r._sellShipOpen){
-    return `${shipInp}<div style="display:flex;align-items:center;gap:3px;margin-top:3px">
-      <span style="font-size:10px;color:#1d4ed8;white-space:nowrap">매출</span>
-      <input type="date" value="${r.sell_ship||''}" style="color:#1d4ed8;flex:1;min-width:0" onchange="updateSellShip(${idx},this.value)" title="매출처 납품일 (거래명세표·매출 기준). 비우면 납품일을 써요">
-    </div>`;
-  }
-  return `${shipInp}<button class="btn" style="font-size:10px;padding:1px 6px;margin-top:3px;color:#1d4ed8;border-color:#bfdbfe" onclick="openSellShip(${idx})" title="당사를 거쳐 매출처로 나가는 건: 거래명세표 날짜를 따로 적어요">+ 매출 납품일</button>`;
-}
-function openSellShip(idx){
-  const r=deliverRows[idx];if(!r)return;
-  r._sellShipOpen=true;
-  const tr=document.querySelectorAll('#deliver-body tr')[idx];
-  const cell=tr&&tr.querySelector('button[onclick^="openSellShip"]');
-  if(cell&&cell.parentElement){
-    cell.parentElement.innerHTML=deliverDateCellHtml(r, idx);
-    const inp=tr.querySelector('input[onchange^="updateSellShip"]');
-    if(inp) inp.focus();
-  }
-}
-async function updateSellShip(idx,val){
-  const r=deliverRows[idx];if(!r)return;
-  const o=orders.find(x=>x.no===r.order_no);if(!o)return;
-  if(val && !(await orderItemsSupportSellShip())){
-    alert('매출 납품일을 저장할 칸이 아직 데이터베이스에 없어요.\nSupabase SQL Editor에서 supabase/migrations/20261125_order_items_sell_ship.sql 을 먼저 실행해 주세요.');
-    renderDeliver();
-    return;
-  }
-  // 납품일과 같으면 따로 둘 필요가 없으니 비운다
-  const v=(val && val!==(o.items[r.item_idx].ship||''))?val:'';
-  o.items[r.item_idx].sell_ship=v;r.sell_ship=v;
-  persist(o.no);
-}
 function updateStatus(idx,val){
   const r=deliverRows[idx];if(!r)return;
   const o=orders.find(x=>x.no===r.order_no);if(!o)return;
@@ -4919,7 +4865,7 @@ function updateStatus(idx,val){
 async function showTSfromDeliver(){
   const checked=[...document.querySelectorAll('.dl-chk:checked')].map(c=>deliverRows[+c.dataset.idx]).filter(Boolean);
   if(!checked.length){alert('항목을 선택해주세요');return;}
-  const ships=[...new Set(checked.map(sellShipOf).filter(Boolean))];
+  const ships=[...new Set(checked.map(r=>r.ship).filter(Boolean))];
   const defaultTrade=ships.length===1?ships[0]:new Date().toISOString().slice(0,10);
   const tradeDate=promptTsTradeDate(defaultTrade);
   // 매출처(회사)별로 묶고, 문서·품목 일자는 납품일(거래일자) 사용
@@ -4985,7 +4931,7 @@ async function quickTS(idx, mode){
     const sameGroup=collectItemsForTsShipGroup(r, {requireEmptyTsNo:true});
     items=sameGroup.length?sameGroup:[r];
   }
-  const tradeDate=promptTsTradeDate(sellShipOf(r)||today);
+  const tradeDate=promptTsTradeDate(r.ship||today);
   const groups={};
   items.forEach(i=>{const k=sellerCompany(i.seller);if(k)(groups[k]=groups[k]||[]).push(i);});
   const {contactMap, addrMap}=tsDeliverMapsFromGroups(groups, 'company');
@@ -5022,7 +4968,7 @@ function renderDeliver(){
   const dst=document.getElementById('dl-status').value;
   const dq=(document.getElementById('dl-search')||{value:''}).value.trim().toLowerCase();
   // 출하일(납품일) 기준으로 월 목록/필터링 (발주일 아님 - 손익계산서/연간현황/마감현황과 동일 기준)
-  const months=[...new Set(orders.flatMap(o=>o.items.map(i=>ym(sellShipOf(i)))).filter(Boolean))].sort().reverse();
+  const months=[...new Set(orders.flatMap(o=>o.items.map(i=>i.ship?ym(i.ship):'')).filter(Boolean))].sort().reverse();
   // 매출처는 회사명으로 수집
   const sellers=[...new Set(orders.flatMap(o=>o.items.map(i=>sellerCompany(i.seller)).filter(Boolean)))].sort();
   document.getElementById('dl-month').innerHTML=`<option value="">전체 월</option>`+months.map(m=>`<option${m===dm?' selected':''}>${m}</option>`).join('');
@@ -5031,7 +4977,7 @@ function renderDeliver(){
   deliverRows=[];
   orders.forEach(o=>{
     o.items.forEach((item,item_idx)=>{
-      if(dm && ym(sellShipOf(item))!==dm) return; // 매출 납품일(없으면 납품일) 기준 필터 (발주일 아님)
+      if(dm && ym(item.ship)!==dm) return; // 출하일 기준 필터 (발주일 아님)
       const sk=item.seller||'';
       if(!sk && !item.buyer)return;
       if(!sk)return;
@@ -5045,7 +4991,7 @@ function renderDeliver(){
       deliverRows.push({...item,seller:sk,order_no:o.no,order_date:o.date,item_idx});
     });
   });
-  deliverRows.sort((a,b)=>(a.status==='미납품'?0:1)-(b.status==='미납품'?0:1)||sellShipOf(a).localeCompare(sellShipOf(b)));
+  deliverRows.sort((a,b)=>(a.status==='미납품'?0:1)-(b.status==='미납품'?0:1)||(a.ship||'').localeCompare(b.ship||''));
 
   const pendCnt=deliverRows.filter(r=>r.status==='미납품').length;
   const doneCnt=deliverRows.filter(r=>r.status==='납품완료').length;
@@ -5080,7 +5026,7 @@ function renderDeliver(){
         <td class="r">${fmt(r.sqty)}</td>
         <td class="r">${fmt(r.sprice)}</td>
         <td class="r profit-val">${fmtW(r.samt||0)}</td>
-        <td>${deliverDateCellHtml(r, idx)}</td>
+        <td><input type="date" value="${r.ship||''}" onchange="updateShip(${idx},this.value)"></td>
         <td class="c"><select class="stsel" style="color:${isPend?'#854d0e':'#166534'}" onchange="this.style.color=({'미납품':'#854d0e','납품완료':'#166534'}[this.value]);updateStatus(${idx},this.value)">
           <option${isPend?' selected':''}>미납품</option>
           <option${!isPend?' selected':''}>납품완료</option>
@@ -5263,7 +5209,7 @@ async function copyOrder(no){
   // 품목 행 추가 (납품 관련 필드 초기화)
   document.getElementById('items-body').innerHTML='';
   o.items.forEach(it=>{
-    addRow({...it, ship:'', sell_ship:'', status:'미납품', closing_sell_exclude:false, closing_month_override:''});
+    addRow({...it, ship:'', status:'미납품', closing_sell_exclude:false, closing_month_override:''});
   });
   calcS();
   showSyncStatus('복사됨 — 날짜 입력 후 저장해주세요');
@@ -7242,7 +7188,7 @@ async function clearAllManualForParty(year, category, party){
 function renderAnnual(){
   const nowYear=String(new Date().getFullYear());
   const years=[...new Set([
-    ...orders.flatMap(o=>o.items.flatMap(i=>[i.ship?yr(i.ship):'', i.sell_ship?yr(i.sell_ship):''])).filter(Boolean),
+    ...orders.flatMap(o=>o.items.map(i=>i.ship?yr(i.ship):'')).filter(Boolean),
     ...annualManual.map(r=>String(r.year)),
     nowYear
   ])].sort().reverse();
@@ -7708,11 +7654,11 @@ async function confirmOrderUpload(){
 }
 
 function exportOrdersExcel(){
-  const rows=[['발주번호','발주일','매입처','품목','규격','매입수량','매입단가','매입금액','납품일','매출처','판매수량','판매단가','공급가액','상태','매출납품일']];
+  const rows=[['발주번호','발주일','매입처','품목','규격','매입수량','매입단가','매입금액','납품일','매출처','판매수량','판매단가','공급가액','상태']];
   orders.forEach(o=>{
     o.items.forEach(it=>{
       rows.push([o.no,o.date,it.buyer,it.item,it.spec||'',it.bqty||0,it.bprice||0,it.bamt||0,
-        it.ship||'',it.seller||'',it.sqty||0,it.sprice||0,it.samt||0,it.status||'',it.sell_ship||'']);
+        it.ship||'',it.seller||'',it.sqty||0,it.sprice||0,it.samt||0,it.status||'']);
     });
   });
   const ws=XLSX.utils.aoa_to_sheet(rows);
@@ -8429,10 +8375,10 @@ function openCompanyPrint(cm){
   const _cmap=new Map();
   orders.forEach(o=>(o.items||[]).forEach(it=>{
     if(!isDeliveredItem(it) || it.closing_sell_exclude) return;
-    if(cm && ym(it.ship)!==cm && ym(sellShipOf(it))!==cm) return;
-    if(it.buyer && (!cm || ym(it.ship)===cm)) _cmap.set('buy|'+it.buyer, {name:it.buyer, type:'buy'});
+    if(cm && !(it.ship && ym(it.ship)===cm)) return;
+    if(it.buyer) _cmap.set('buy|'+it.buyer, {name:it.buyer, type:'buy'});
     const sc=sellerCompany(it.seller);
-    if(sc && (!cm || ym(sellShipOf(it))===cm)) _cmap.set('sell|'+sc, {name:sc, type:'sell'});
+    if(sc) _cmap.set('sell|'+sc, {name:sc, type:'sell'});
   }));
   const allCompanies=[..._cmap.values()].sort((a,b)=>a.name.localeCompare(b.name,'ko'));
 
@@ -8523,13 +8469,13 @@ function _doPrintClosingByCompany(cm, selected){
     const lines=[];
     orders.forEach(o=>(o.items||[]).forEach(it=>{
       if(!isDeliveredItem(it) || it.closing_sell_exclude) return;
-      if(cm && ym(type==='buy'?it.ship:sellShipOf(it))!==cm) return;
+      if(cm && !(it.ship && ym(it.ship)===cm)) return;
       if(type==='buy'){
         if(it.buyer!==name) return;
         lines.push({d:it.ship, item:it.item, spec:it.spec, qty:+it.bqty||0, price:+it.bprice||0, amt:+it.bamt||0});
       }else{
         if(sellerCompany(it.seller)!==name) return;
-        lines.push({d:sellShipOf(it), item:it.item, spec:it.spec, qty:+it.sqty||0, price:+it.sprice||0, amt:+it.samt||0});
+        lines.push({d:it.ship, item:it.item, spec:it.spec, qty:+it.sqty||0, price:+it.sprice||0, amt:+it.samt||0});
       }
     }));
     return lines.filter(l=>l.amt!==0||l.qty!==0)
