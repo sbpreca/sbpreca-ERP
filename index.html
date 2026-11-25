@@ -5622,8 +5622,9 @@ async function deleteOrder(no){
 /* ── 마감현황 ── */
 function setClosingTab(tab){
   document.getElementById('cl-tab').value=tab;
-  ['all','조명','원부자재'].forEach(t=>{
-    const id=t==='all'?'cl-tab-all':(t==='조명'?'cl-tab-light':'cl-tab-material');
+  // 수수료 탭도 선택 표시가 되게 (빠져 있어서 수수료를 눌러도 어느 탭인지 안 보였다)
+  const ids={'all':'cl-tab-all','조명':'cl-tab-light','원부자재':'cl-tab-material','수수료':'cl-tab-fee'};
+  Object.entries(ids).forEach(([t,id])=>{
     const btn=document.getElementById(id);
     if(btn){
       btn.style.background=t===tab?'#111':'';
@@ -6287,7 +6288,14 @@ async function renderClosing(){
   const sellDiff = htSellVat - appSellVat;
   const buyDiff = htBuyVat - appBuyVat;
   let htVatHtml = '';
-  if(htSellVat || htBuyVat){
+  // 홈택스 합계는 업종 구분이 없어 '전체' 탭에서만 비교한다 (다른 탭에서는 늘 차이로 보였다)
+  if(tab!=='all' && (htSellVat || htBuyVat)){
+    htVatHtml = '<div class="metric" style="border-left:3px solid #e5e7eb;padding-left:12px;margin-left:4px">'
+      + '<div class="metric-lbl">🔍 홈택스 비교</div>'
+      + '<div class="metric-val" style="color:#64748b;font-size:12px;font-weight:400">'
+      + '<a href="#" onclick="setClosingTab(\'all\');return false" style="color:#1d4ed8">전체</a> 탭에서 확인해요'
+      + '</div></div>';
+  }else if(htSellVat || htBuyVat){
     htVatHtml = '<div class="metric" style="border-left:3px solid #e5e7eb;padding-left:12px;margin-left:4px">'
       + '<div class="metric-lbl">🔍 홈택스 매출세액</div>'
       + '<div class="metric-val" style="color:'+(Math.abs(sellDiff)<1000?'#166534':'#dc2626')+';font-size:12px">'
