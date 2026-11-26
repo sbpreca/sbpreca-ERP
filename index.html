@@ -1016,7 +1016,7 @@ tr.cat-head .cat-count{font-weight:400;color:#888;margin-left:6px}
         <h3>품목 단가표 (매입단가 / 매출단가)</h3>
         <input type="search" id="search-price" class="setting-search" placeholder="검색" oninput="renderItemPrices()">
       </div>
-      <p style="font-size:13px;color:#666;margin-bottom:12px">업체와 무관하게 품목 하나에 매입단가·매출단가·단위를 등록해두면, 발주·견적 입력 시 품목을 고를 때 단가가 채워지고, 규격이 없으면 단위가 규격으로 들어가요. <strong>품목명을 바꾸면 기존 발주·납품 내역에도 같이 반영</strong>됩니다.</p>
+      <p style="font-size:13px;color:#666;margin-bottom:12px">업체와 무관하게 품목 하나에 매입단가·매출단가·단위를 등록해두면, 발주·견적 입력 시 품목을 고를 때 단가가 채워져요. <strong>품목명을 바꾸면 기존 발주·납품 내역에도 같이 반영</strong>됩니다.</p>
       <table class="data-tbl">
         <thead><tr><th>품목</th><th style="width:90px">분류</th><th style="width:120px">단위</th><th class="r" style="width:140px">매입단가</th><th class="r" style="width:140px">매출단가</th><th style="width:60px"></th></tr></thead>
         <tbody id="item-price-body"></tbody>
@@ -2861,7 +2861,7 @@ function itemSpecOf(name){
   if(!name) return '';
   if(MY&&MY.item_specs&&MY.item_specs[name]) return MY.item_specs[name];
   if(SPECS[name]) return SPECS[name];
-  return itemUnitOf(name);
+  return ''; // 단위는 규격이 아니다 — 규격이 없으면 빈칸
 }
 async function setItemCategory(item, category){
   if(!MY.item_categories) MY.item_categories={};
@@ -3997,7 +3997,7 @@ function orderItemToQuoteLine(r){
     qty,
     price,
     amt:qty*price,
-    due:r.ship||'',
+    due:'', // 견적서 납기일은 비워 두고 견적서에서 적는다
     memo:''
   };
 }
@@ -4015,7 +4015,7 @@ function buildQuotePageHtml({finalNo, customer, contact, contactInfo, date, vali
     <td class="r">${fmt(r.qty)}</td>
     <td class="r">${fmt(r.price)}</td>
     <td class="r">${fmt(r.amt)}</td>
-    <td>${r.due?String(r.due).replace(/-/g,'.'):'　'}</td>
+    <td><input class="doc-inline-input quote-due-input" style="text-align:center" value="${escHtml(r.due?String(r.due).replace(/-/g,'.'):'')}"></td>
     ${docMemoHtml(r.memo||'')}
   </tr>`).join('');
   const blank=emptyRows(items.length, Math.max(FIXED_ROWS, items.length), 8, 'empty-row');
@@ -4223,7 +4223,13 @@ async function persistQuoteFromOverlay(){
     // 빈 하단 멘트는 기본 문구로 보이므로, 보이는 값과 같으면 바뀐 것으로 보지 않는다
     if(noteEl && (noteEl.value||'')!==normalizeQuoteNote(q.note||'')) next.note=noteEl.value||'';
     const memos=[...page.querySelectorAll('.po-tbl tbody tr:not(.empty-row) textarea.doc-memo-input')];
-    next.items=(q.items||[]).map((it,i)=>memos[i]?{...it, memo:memos[i].value||''}:it);
+    const dues=[...page.querySelectorAll('.po-tbl tbody tr:not(.empty-row) input.quote-due-input')];
+    next.items=(q.items||[]).map((it,i)=>{
+      let row=memos[i]?{...it, memo:memos[i].value||''}:it;
+      // 화면에는 2026.12.20처럼 보이므로 같은 날짜면 원래 값을 둔다
+      if(dues[i]){ const v=(dues[i].value||'').trim(); if(v!==String(it.due||'').replace(/-/g,'.')) row={...row, due:v}; }
+      return row;
+    });
     const changed=['valid','pay','deliver','remark','note','contact','contact_info','manager'].some(k=>String(next[k]||'')!==String(q[k]||''))
       || JSON.stringify(next.items)!==JSON.stringify(q.items||[]);
     if(changed) await saveQuoteRecord(next);
@@ -4328,7 +4334,7 @@ function addQuoteRow(){
     <td><input type="number" class="qq" style="text-align:right" oninput="calcQuoteRow(this)"></td>
     <td><input type="number" class="qp" style="text-align:right" oninput="calcQuoteRow(this)"></td>
     <td class="amt qa">-</td>
-    <td><input type="date" class="qd" style="font-size:11px"></td>
+    <td><input type="text" class="qd" style="font-size:11px" placeholder="예: 12.20"></td>
     <td><input type="text" class="qm"></td>
     <td><button class="del-btn" onclick="this.closest('tr').remove();calcQuoteTotal()">×</button></td>`;
   document.getElementById('quote-items-body').appendChild(tr);
