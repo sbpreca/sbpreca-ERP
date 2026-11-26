@@ -22,6 +22,14 @@ h1{font-size:17px;font-weight:600;margin-bottom:16px;color:#111}
 .nav-btn:hover{background:#f9f9f9;color:#333}
 .page{display:none;background:#fff;border-radius:0 0 8px 8px;padding:16px 12px;border:1px solid #ddd}
 .page.on{display:block}
+#list-split{display:flex;gap:14px;align-items:flex-start}
+#list-area{flex:1;min-width:0}
+#po-side{display:none;flex:none;width:520px;position:sticky;top:8px;max-height:calc(100vh - 16px);overflow:auto;background:#e9e9e9;border:1px solid #ddd;border-radius:7px}
+#po-side.on{display:block}
+#po-side-bar{position:sticky;top:0;z-index:1;display:flex;gap:6px;justify-content:flex-end;padding:8px 10px;background:#e9e9e9}
+#po-side-doc{margin:0 10px 10px;background:#fff;overflow:hidden}
+.card.po-side-sel{border-color:#111;box-shadow:0 0 0 1px #111}
+@media (max-width:1200px){#po-side{width:420px}}
 .form-grid{display:grid;grid-template-columns:160px 160px 1fr;gap:12px;margin-bottom:20px}
 .field{display:flex;flex-direction:column;gap:5px}
 .field label{font-size:11px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:0.3px}
@@ -420,7 +428,16 @@ input[readonly]{background:#f5f5f5;color:#999}
         <tbody id="order-upload-review-body"></tbody>
       </table>
     </div>
-    <div id="list-area"></div>
+    <div id="list-split">
+      <div id="list-area"></div>
+      <aside id="po-side">
+        <div id="po-side-bar">
+          <button class="btn btn-po" onclick="editPoFromSide()">수정</button>
+          <button class="btn" onclick="closePoSide()">닫기</button>
+        </div>
+        <div id="po-side-doc"></div>
+      </aside>
+    </div>
   </div>
 
   <!-- 견적서 작성 (발주 없이 바로) -->
@@ -3403,8 +3420,8 @@ function fitDocMemoCell(el){
   el.style.height=Math.min(maxH, Math.max(el.scrollHeight, 14))+'px';
 }
 /** 품목·규격·비고가 칸 높이를 넘으면 글씨를 줄여 칸 안에 맞춘다 */
-function fitDocOverflowCells(){
-  document.querySelectorAll('#doc-content td.doc-fit .doc-fit-text').forEach(el=>{
+function fitDocOverflowCells(root){
+  (root||document.getElementById('doc-content')).querySelectorAll('td.doc-fit .doc-fit-text').forEach(el=>{
     const text=(el.textContent||'').replace(/\u3000/g,'').trim();
     el.style.display='block';
     el.style.width='100%';
@@ -3423,7 +3440,7 @@ function fitDocOverflowCells(){
       guard++;
     }
   });
-  document.querySelectorAll('#doc-content td.doc-memo textarea.doc-memo-input').forEach(fitDocMemoCell);
+  (root||document.getElementById('doc-content')).querySelectorAll('td.doc-memo textarea.doc-memo-input').forEach(fitDocMemoCell);
 }
 
 /* ── 발주서 발급 여부(목록에서 바로 보기용) ── */
@@ -3547,6 +3564,56 @@ function hydratePoDocsOntoOrders(){
   return n;
 }
 /** 목록「발주서」: 저장된 발주서를 바로 보여 준다 (확인 창·수정 화면 없음) */
+/* ── 발주 목록 우측 발주서 미리보기 (보기 전용, [수정]으로 편집 창을 연다) ── */
+var _poSideNo='';
+function showPoSide(no){
+  const order=orders.find(x=>x.no===no);
+  if(!order){alert('발주를 찾을 수 없어요');return;}
+  const built=buildPOHtml(cloneOrder(order));
+  if(!built.html){alert('발주서에 넣을 품목이 없어요 (매입처를 확인해주세요)');return;}
+  _poSideNo=no;
+  const side=document.getElementById('po-side');
+  side.classList.add('on');
+  renderPoSideDoc(built.html);
+  document.querySelectorAll('#list-area .card').forEach(c=>c.classList.toggle('po-side-sel', c.dataset.orderNo===no));
+}
+function renderPoSideDoc(html){
+  const host=document.getElementById('po-side-doc');
+  // 미리보기는 그림자 DOM에 그려, 편집 창(#doc-content)을 찾는 코드와 섞이지 않게 한다
+  const root=host.shadowRoot||host.attachShadow({mode:'open'});
+  const css=[...document.querySelectorAll('style')].map(st=>st.textContent).join('\n');
+  root.innerHTML=`<style>${css}
+    :host{display:block}
+    .po-side-scale{width:794px;transform-origin:top left}
+    .po-side-scale input,.po-side-scale textarea{pointer-events:none}
+  </style><div class="po-side-scale">${html}</div>`;
+  root.querySelectorAll('input,textarea').forEach(el=>{ el.readOnly=true; el.tabIndex=-1; });
+  fitDocOverflowCells(root);
+  const fit=()=>{
+    const box=root.querySelector('.po-side-scale');
+    if(!box) return;
+    const w=host.clientWidth||500;
+    const k=Math.min(1, w/794);
+    box.style.transform=`scale(${k})`;
+    host.style.height=Math.ceil(box.offsetHeight*k)+'px';
+  };
+  fit();
+  requestAnimationFrame(()=>{ fitDocOverflowCells(root); fit(); });
+}
+function closePoSide(){
+  _poSideNo='';
+  document.getElementById('po-side').classList.remove('on');
+  document.querySelectorAll('#list-area .card.po-side-sel').forEach(c=>c.classList.remove('po-side-sel'));
+}
+/** 편집 창을 닫거나 목록을 다시 그린 뒤 미리보기를 최신 내용으로 */
+function refreshPoSide(){
+  if(!_poSideNo) return;
+  if(!orders.some(x=>x.no===_poSideNo)){ closePoSide(); return; }
+  showPoSide(_poSideNo);
+}
+function editPoFromSide(){
+  if(_poSideNo) viewPoDoc(_poSideNo);
+}
 async function viewPoDoc(no){
   let formSnap=null;
   const formNo=String((document.getElementById('f-no')||{}).value||'').trim();
@@ -4561,6 +4628,7 @@ async function closeDocOverlay(){
   // 명세 저장 후 목록·납품현황의 문서번호 칸을 바로 갱신
   if(document.getElementById('page-deliver')?.classList.contains('on') && typeof renderDeliver==='function') renderDeliver();
   if(document.getElementById('page-list')?.classList.contains('on') && typeof renderList==='function') renderList();
+  refreshPoSide();
 }
 function collectDocNos(kind){
   // kind: true/'po' | 'quote' | false/'ts'
@@ -5234,7 +5302,7 @@ function renderList(){
     const its=[...new Set(o.items.map(i=>i.item).filter(Boolean))].join(', ');
     const pend=o.items.filter(i=>i.status==='미납품').length;
     const pendDates=pendingShipDatesHtml(o);
-    return `<div class="card">
+    return `<div class="card${o.no===_poSideNo?' po-side-sel':''}" data-order-no="${escHtml(o.no)}">
       <div class="card-top">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <span class="card-no">${o.no}</span>
@@ -5249,12 +5317,13 @@ function renderList(){
       </div>
       <div class="card-btns">
         <button class="btn" style="font-size:12px;padding:5px 12px" onclick="loadOrder('${o.no}')">수정</button>
-        <button class="btn btn-po" style="font-size:12px;padding:5px 12px" onclick="viewPoDoc('${o.no}')">발주서</button>
+        <button class="btn btn-po" style="font-size:12px;padding:5px 12px" onclick="showPoSide('${o.no}')">발주서</button>
         <button class="btn" style="font-size:12px;padding:5px 12px;background:#f0fdf4;border-color:#86efac;color:#166534" onclick="copyOrder('${o.no}')">복사</button>
         <button class="btn" style="font-size:12px;padding:5px 12px;color:#dc2626;border-color:#fecaca" onclick="deleteOrder('${o.no}')">삭제</button>
       </div>
     </div>`;
   }).join('');
+  if(_poSideNo && !orders.some(x=>x.no===_poSideNo)) closePoSide();
 
 }
 async function loadAndDoc(no){
