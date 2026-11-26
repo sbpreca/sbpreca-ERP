@@ -357,6 +357,7 @@ tr.cat-head .cat-count{font-weight:400;color:#888;margin-left:6px}
   <div id="delivery-alert" style="display:none;margin-bottom:12px;padding:10px 16px;border-radius:8px;font-size:13px;border:1px solid"></div>
   <div class="nav">
     <button class="nav-btn on" onclick="go('list')">발주 목록</button>
+    <button class="nav-btn" onclick="go('quotes')">견적 내역</button>
     <button class="nav-btn" onclick="go('deliver')">납품 현황</button>
     <button class="nav-btn" onclick="go('closing')">마감현황</button>
     <button class="nav-btn" onclick="go('cashflow')">실입출금</button>
@@ -418,7 +419,6 @@ tr.cat-head .cat-count{font-weight:400;color:#888;margin-left:6px}
   <div id="page-list" class="page on">
     <div class="filter-row">
       <button class="btn btn-save" onclick="newOrderFromList()">+ 새 발주</button>
-      <button class="btn btn-po" onclick="openQuoteForm()">견적서 작성</button>
       <input id="fl-search" type="text" placeholder="🔍 품목·발주번호·문서번호 검색" style="width:220px;padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px" oninput="renderList()">
       <select id="fl-month" onchange="renderList()"><option value="">전체 월</option></select>
       <select id="fl-buyer" onchange="renderList()"><option value="">전체 매입처</option></select>
@@ -460,6 +460,32 @@ tr.cat-head .cat-count{font-weight:400;color:#888;margin-left:6px}
   </div>
 
   <!-- 견적서 작성 (발주 없이 바로) -->
+  <!-- 견적 내역 -->
+  <div id="page-quotes" class="page">
+    <div class="filter-row">
+      <button class="btn btn-save" onclick="newQuoteFromList()">+ 새 견적</button>
+      <input id="ql-search" type="text" placeholder="🔍 견적번호·업체·품목 검색" style="width:220px;padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px" oninput="renderQuotes()">
+      <select id="ql-month" onchange="renderQuotes()"><option value="">전체 월</option></select>
+      <select id="ql-customer" onchange="renderQuotes()"><option value="">전체 업체</option></select>
+    </div>
+    <div id="quote-split" style="display:flex;gap:14px;align-items:flex-start">
+      <div id="quote-list-area" style="flex:1;min-width:0"></div>
+      <aside id="quote-side" class="doc-side">
+        <div class="doc-side-bar">
+          <div class="side-zoom">
+            <button class="btn" onclick="zoomSide(-1)">−</button>
+            <span class="side-zoom-val">맞춤</span>
+            <button class="btn" onclick="zoomSide(1)">+</button>
+            <button class="btn" onclick="zoomSide(0)">맞춤</button>
+          </div>
+          <button class="btn btn-po" onclick="editQuoteFromSide()">수정</button>
+          <button class="btn" onclick="closeQuoteSide()">닫기</button>
+        </div>
+        <div id="quote-side-doc" class="doc-side-doc"></div>
+      </aside>
+    </div>
+  </div>
+
   <div id="page-quote" class="page">
     <div class="form-grid" style="grid-template-columns:160px 160px 1fr 1fr">
       <div class="field"><label>견적일</label><input type="date" id="q-date"></div>
@@ -486,7 +512,7 @@ tr.cat-head .cat-count{font-weight:400;color:#888;margin-left:6px}
       <datalist id="q-item-list"></datalist>
     </div>
     <div class="actions">
-      <button class="btn" onclick="go('list')">← 목록으로</button>
+      <button class="btn" onclick="go('quotes')">← 견적 내역</button>
       <button class="btn" onclick="addQuoteRow()">+ 품목 추가</button>
       <button class="btn" onclick="resetQuoteForm()">새로 작성</button>
       <button class="btn btn-po" onclick="showStandaloneQuote()">견적서 PDF</button>
@@ -2465,6 +2491,7 @@ async function loadAll(){
     annualManual = await loadAnnualManualFromDb();
     txRules = await loadTxRulesFromDb();
     ITEM_PRICES = await loadItemPricesFromDb();
+    QUOTES = await loadQuotesFromDb();
     balanceData = await loadBalanceFromDb();
     monthlyNotes = await loadMonthlyNotesFromDb();
     advancePayments = await loadAdvancePaymentsFromDb();
@@ -3834,7 +3861,10 @@ async function refreshQuoteDocSeqFromDb(){
 async function suggestQuoteNo(quoteDate){
   await refreshQuoteDocSeqFromDb();
   const ymd=quoteDateKey(quoteDate);
-  const next=(+MY.doc_seq.quote[ymd]||0)+1;
+  let next=(+MY.doc_seq.quote[ymd]||0)+1;
+  // 견적 내역에 이미 있는 번호는 건너뛴다 (복사한 견적이 기존 견적을 덮어쓰지 않게)
+  const used=new Set((typeof QUOTES!=='undefined'?QUOTES:[]).map(q=>q.quote_no));
+  while(used.has(formatDocNo('quote', ymd, next))) next++;
   return formatDocNo('quote', ymd, next);
 }
 async function refreshPoDocSeqFromDb(){
@@ -3918,13 +3948,176 @@ function buildQuotePageHtml({finalNo, customer, contact, contactInfo, date, vali
   </div>`;
 }
 /** 견적 번호를 제안·확인받고 순번을 기록한다. 취소하면 null */
-async function issueQuoteNo(date){
-  const defaultNo=await suggestQuoteNo(date);
+async function issueQuoteNo(date, existingNo){
+  // 견적 내역에서 [수정]으로 연 견적은 원래 번호를 먼저 보여 준다 (그대로 두면 같은 견적을 고쳐 저장)
+  const keep=String(existingNo||'').trim();
+  const defaultNo=keep||await suggestQuoteNo(date);
   const no=prompt('견적 번호를 확인/수정해주세요', defaultNo);
   if(no===null) return null;
   const finalNo=String(no).trim()||defaultNo;
-  await commitQuoteDocNo(finalNo, date);
+  if(finalNo!==keep) await commitQuoteDocNo(finalNo, date);
   return finalNo;
+}
+
+/* ── 견적 내역: 발행한 견적서 저장·목록 ── */
+var QUOTES=[];
+var _quotesTableOk=true;
+var _editingQuoteNo='';
+var _quoteSideNo='';
+async function loadQuotesFromDb(){
+  try{
+    const {data,error}=await sb.from('quotes').select('*').order('quote_date',{ascending:false}).order('quote_no',{ascending:false});
+    if(error) throw error;
+    _quotesTableOk=true;
+    return (data||[]).map(r=>({...r, items:Array.isArray(r.items)?r.items:[], total:+r.total||0}));
+  }catch(e){
+    console.warn('quotes load', e);
+    _quotesTableOk=false;
+    return [];
+  }
+}
+/** 발행한 견적서를 견적 내역에 저장 (같은 번호면 덮어씀) */
+async function saveQuoteRecord(rec){
+  const row={
+    quote_no:rec.quote_no, quote_date:rec.quote_date||null, customer:rec.customer||'',
+    contact:rec.contact||'', contact_info:rec.contact_info||'', deliver:rec.deliver||'',
+    manager:rec.manager||'', valid:rec.valid||'', pay:rec.pay||'', note:rec.note||'',
+    items:(rec.items||[]).map(r=>({item:r.item||'', spec:r.spec||'', qty:+r.qty||0, price:+r.price||0, amt:+r.amt||0, due:r.due||'', memo:r.memo||''})),
+    total:(rec.items||[]).reduce((s,r)=>s+(+r.amt||0),0),
+    order_no:rec.order_no||'', updated_at:new Date().toISOString()
+  };
+  const i=QUOTES.findIndex(q=>q.quote_no===row.quote_no);
+  if(i>=0) QUOTES[i]={...QUOTES[i], ...row}; else QUOTES.unshift(row);
+  try{
+    const {error}=await sb.from('quotes').upsert(row,{onConflict:'quote_no'});
+    if(error) throw error;
+    _quotesTableOk=true;
+  }catch(e){
+    console.warn('quote save', e);
+    _quotesTableOk=false;
+    alert('견적 내역에 저장하지 못했어요.\n저장할 표가 아직 없다면 Supabase SQL Editor에서 supabase/migrations/20261126_quotes.sql 을 먼저 실행해 주세요.\n(견적서는 그대로 열어요)');
+  }
+}
+function quoteRecordToPageArgs(q){
+  return {
+    finalNo:q.quote_no, customer:q.customer||'', contact:q.contact||'담당자', contactInfo:q.contact_info||'',
+    date:q.quote_date||'', valid:q.valid||'', pay:q.pay||'', deliver:q.deliver||'', note:q.note||'',
+    manager:q.manager||'이은진', items:q.items||[]
+  };
+}
+function renderQuotes(){
+  const fm=document.getElementById('ql-month').value, fc=document.getElementById('ql-customer').value;
+  const fs=(document.getElementById('ql-search')||{value:''}).value.trim().toLowerCase();
+  const months=[...new Set(QUOTES.map(q=>ym(q.quote_date||'')).filter(Boolean))].sort().reverse();
+  const customers=[...new Set(QUOTES.map(q=>q.customer).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'ko'));
+  document.getElementById('ql-month').innerHTML=`<option value="">전체 월</option>`+months.map(m=>`<option${m===fm?' selected':''}>${m}</option>`).join('');
+  document.getElementById('ql-customer').innerHTML=`<option value="">전체 업체</option>`+customers.map(c=>`<option value="${escHtml(c)}"${c===fc?' selected':''}>${escHtml(c)}</option>`).join('');
+  const list=QUOTES.filter(q=>{
+    if(fm && ym(q.quote_date||'')!==fm) return false;
+    if(fc && q.customer!==fc) return false;
+    if(!fs) return true;
+    const hay=[q.quote_no, q.customer, q.contact, q.order_no, ...(q.items||[]).map(r=>`${r.item} ${r.spec}`)].join(' ').toLowerCase();
+    return hay.includes(fs);
+  }).sort((a,b)=>String(b.quote_date||'').localeCompare(String(a.quote_date||''))||String(b.quote_no).localeCompare(String(a.quote_no)));
+  const area=document.getElementById('quote-list-area');
+  if(!_quotesTableOk){
+    area.innerHTML='<p style="color:#b45309;text-align:center;padding:2rem">견적 내역을 저장할 표가 아직 없어요. Supabase SQL Editor에서 supabase/migrations/20261126_quotes.sql 을 실행해 주세요.</p>';
+    return;
+  }
+  if(!list.length){ area.innerHTML='<p style="color:#bbb;text-align:center;padding:2rem">견적 내역이 없어요</p>'; return; }
+  area.innerHTML=list.map(q=>{
+    const its=[...new Set((q.items||[]).map(r=>r.item).filter(Boolean))].join(', ');
+    const no=escHtml(q.quote_no);
+    const jsNo=escHtml(JSON.stringify(q.quote_no));
+    return `<div class="card${q.quote_no===_quoteSideNo?' po-side-sel':''}" data-quote-no="${no}">
+      <div class="card-top">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span class="card-no">${no}</span>
+          ${q.order_no?`<span class="badge" style="background:#f1f5f9;color:#475569">발주 ${escHtml(q.order_no)}</span>`:''}
+        </div>
+        <span class="card-date">${escHtml(q.quote_date||'')}</span>
+      </div>
+      <div class="card-name">${escHtml(q.customer||'미지정')}</div>
+      <div class="card-items-txt">${escHtml(its)}</div>
+      <div class="card-amts">
+        <div class="card-amt"><span class="card-amt-lbl">견적 합계</span><span class="card-amt-val">${fmtW(q.total||0)}</span></div>
+      </div>
+      <div class="card-btns">
+        <button class="btn btn-po" style="font-size:12px;padding:5px 12px" onclick="showQuoteSide(${jsNo})">견적서</button>
+        <button class="btn" style="font-size:12px;padding:5px 12px" onclick="loadQuoteToForm(${jsNo})">수정</button>
+        <button class="btn" style="font-size:12px;padding:5px 12px;background:#f0fdf4;border-color:#86efac;color:#166534" onclick="loadQuoteToForm(${jsNo},true)">복사</button>
+        <button class="btn" style="font-size:12px;padding:5px 12px;color:#dc2626;border-color:#fecaca" onclick="deleteQuote(${jsNo})">삭제</button>
+      </div>
+    </div>`;
+  }).join('');
+  if(_quoteSideNo && !QUOTES.some(q=>q.quote_no===_quoteSideNo)) closeQuoteSide();
+}
+function showQuoteSide(no){
+  const q=QUOTES.find(x=>x.quote_no===no);
+  if(!q){ alert('견적을 찾을 수 없어요'); return; }
+  _quoteSideNo=no;
+  document.getElementById('quote-side').classList.add('on');
+  renderSideDoc('quote-side-doc', buildQuotePageHtml(quoteRecordToPageArgs(q)));
+  document.querySelectorAll('#quote-list-area .card').forEach(c=>c.classList.toggle('po-side-sel', c.dataset.quoteNo===no));
+}
+function closeQuoteSide(){
+  _quoteSideNo='';
+  document.getElementById('quote-side').classList.remove('on');
+  document.querySelectorAll('#quote-list-area .card.po-side-sel').forEach(c=>c.classList.remove('po-side-sel'));
+}
+function editQuoteFromSide(){ if(_quoteSideNo) loadQuoteToForm(_quoteSideNo); }
+/** 견적 내역의 견적을 작성 화면에 불러온다. asCopy면 새 견적(새 번호·오늘 날짜)으로 */
+function loadQuoteToForm(no, asCopy){
+  const q=QUOTES.find(x=>x.quote_no===no);
+  if(!q){ alert('견적을 찾을 수 없어요'); return; }
+  document.getElementById('quote-items-body').innerHTML='';
+  openQuoteForm();
+  document.getElementById('quote-items-body').innerHTML='';
+  _editingQuoteNo=asCopy?'':q.quote_no;
+  document.getElementById('q-date').value=asCopy?new Date().toISOString().slice(0,10):(q.quote_date||'');
+  const mgr=document.getElementById('q-manager');
+  if(q.manager && [...mgr.options].some(o=>o.value===q.manager)) mgr.value=q.manager;
+  document.getElementById('q-customer').value=q.customer||'';
+  const c=document.getElementById('q-contact'), d=document.getElementById('q-deliver');
+  c.value=q.contact||''; c.dataset.auto='';
+  d.value=q.deliver||''; d.dataset.auto='';
+  (q.items||[]).forEach(r=>{
+    addQuoteRow();
+    const tr=document.querySelector('#quote-items-body tr:last-child');
+    tr.querySelector('.qi').value=r.item||'';
+    tr.querySelector('.qs').value=r.spec||'';
+    tr.querySelector('.qq').value=r.qty||'';
+    tr.querySelector('.qp').value=r.price||'';
+    tr.querySelector('.qa').textContent=(r.qty&&r.price)?fmt(r.qty*r.price):'-';
+    tr.querySelector('.qd').value=r.due||'';
+    tr.querySelector('.qm').value=r.memo||'';
+  });
+  if(!(q.items||[]).length){ addQuoteRow(); addQuoteRow(); }
+  calcQuoteTotal();
+}
+function newQuoteFromList(){
+  if(_editingQuoteNo){
+    // 고치던 견적을 비우고 새로 시작
+    _editingQuoteNo='';
+    ['q-customer','q-contact','q-deliver'].forEach(id=>{ document.getElementById(id).value=''; });
+    document.getElementById('q-date').value=new Date().toISOString().slice(0,10);
+    document.getElementById('quote-items-body').innerHTML='';
+  }
+  openQuoteForm();
+}
+async function deleteQuote(no){
+  if(!confirm(`견적 ${no}을(를) 견적 내역에서 삭제할까요?`)) return;
+  try{
+    const {error}=await sb.from('quotes').delete().eq('quote_no', no);
+    if(error) throw error;
+  }catch(e){
+    console.warn(e);
+    alert('삭제하지 못했어요. 다시 시도해 주세요.');
+    return;
+  }
+  QUOTES=QUOTES.filter(q=>q.quote_no!==no);
+  if(_editingQuoteNo===no) _editingQuoteNo='';
+  renderQuotes();
 }
 
 /* ── 견적서 단독 작성: 발주를 만들지 않고 발주 목록에서 바로 ── */
@@ -3947,6 +4140,7 @@ function openQuoteForm(){
 function resetQuoteForm(){
   const hasInput=getQuoteRows().length||document.getElementById('q-customer').value.trim();
   if(hasInput && !confirm('작성 중인 견적 내용을 지우고 새로 시작할까요?')) return;
+  _editingQuoteNo='';
   ['q-customer','q-contact','q-deliver'].forEach(id=>{ document.getElementById(id).value=''; });
   document.getElementById('q-date').value=new Date().toISOString().slice(0,10);
   document.getElementById('quote-items-body').innerHTML='';
@@ -4013,10 +4207,10 @@ async function showStandaloneQuote(){
   if(!customer){ alert('견적서를 받을 수신처(매출처)를 입력해주세요'); return; }
   const date=document.getElementById('q-date').value||new Date().toISOString().slice(0,10);
   const manager=document.getElementById('q-manager').value||'이은진';
-  const finalNo=await issueQuoteNo(date);
+  const finalNo=await issueQuoteNo(date, _editingQuoteNo);
   if(finalNo===null) return;
   const si=SELLERS[customer]||{};
-  const html=buildQuotePageHtml({
+  const args={
     finalNo, customer,
     contact:document.getElementById('q-contact').value.trim()||si.contact||'담당자',
     contactInfo:si.email||'',
@@ -4026,7 +4220,11 @@ async function showStandaloneQuote(){
     deliver:document.getElementById('q-deliver').value.trim()||si.addr||'',
     note:(MY.quote_note||DEFAULT_CFG.quote_note||'').trim(),
     manager, items
-  });
+  };
+  const html=buildQuotePageHtml(args);
+  await saveQuoteRecord({quote_no:finalNo, quote_date:date, customer, contact:args.contact, contact_info:args.contactInfo,
+    deliver:args.deliver, manager, valid:args.valid, pay:args.pay, note:args.note, items});
+  _editingQuoteNo=finalNo; // 다시 [견적서 PDF]를 눌러도 같은 견적으로
   setDocMailMeta('quote', [{name:customer, role:'seller'}], items);
   openDocOverlay(html);
 }
@@ -4053,6 +4251,7 @@ async function showQuote(){
   const note=(MY.quote_note||DEFAULT_CFG.quote_note||'').trim();
   let html='';
   const allItems=[];
+  const records=[];
   customers.forEach((customer,idx)=>{
     const its=groups[customer];
     const sample=its[0]||{};
@@ -4067,7 +4266,10 @@ async function showQuote(){
     html+=buildQuotePageHtml({
       finalNo:pageNo, customer, contact, contactInfo, date, valid, pay, deliver, note, manager, items
     });
+    records.push({quote_no:pageNo, quote_date:date, customer, contact, contact_info:contactInfo, deliver, manager, valid, pay, note, items,
+      order_no:String((document.getElementById('f-no')||{}).value||'').trim()});
   });
+  for(const rec of records) await saveQuoteRecord(rec);
   setDocMailMeta('quote', customers.map(name=>({name, role:'seller'})), allItems);
   openDocOverlay(html);
 }
@@ -5395,18 +5597,19 @@ function renderDeliver(){
 
 /* ── 탭 전환 ── */
 function go(p){
-  const navIds=['list','deliver','closing','cashflow','pl','hometax','balance','txclass','annual','settings'];
-  const allIds=['list','deliver','closing','cashflow','hometax','pl','balance','txclass','annual','new','quote','settings'];
+  const navIds=['list','quotes','deliver','closing','cashflow','pl','hometax','balance','txclass','annual','settings'];
+  const allIds=['list','quotes','deliver','closing','cashflow','hometax','pl','balance','txclass','annual','new','quote','settings'];
   allIds.forEach(id=>{
     const el=document.getElementById('page-'+id);
     if(el) el.classList.toggle('on',id===p);
   });
   document.querySelectorAll('.nav-btn').forEach((btn,i)=>{
-    const navP=(p==='new'||p==='quote')?'list':p; // 새 발주·견적서 작성 화면일 땐 발주목록 탭 강조
+    const navP=p==='new'?'list':(p==='quote'?'quotes':p); // 새 발주는 발주목록, 견적서 작성은 견적 내역 탭 강조
     btn.classList.toggle('on',navIds[i]===navP);
   });
   _currentPage=p;
   if(p==='list')renderList();
+  if(p==='quotes')renderQuotes();
   if(p==='deliver')renderDeliver();
   if(p==='closing')renderClosing();
   if(p==='cashflow')renderCashflow();
