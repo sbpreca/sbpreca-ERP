@@ -141,6 +141,12 @@ input[readonly]{background:#f5f5f5;color:#999}
 .setting-section h3{font-size:13px;font-weight:700;color:#333;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #eee}
 .setting-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #eee;flex-wrap:wrap}
 .setting-head h3{margin:0;padding:0;border:0}
+.setting-search{width:220px;border:1px solid #ddd;border-radius:4px;padding:5px 10px;font-size:13px}
+tr.cat-head td{background:#f5f5f5;font-weight:600;font-size:13px;color:#333;cursor:pointer;user-select:none;padding:8px 10px}
+tr.cat-head:hover td{background:#eee}
+tr.cat-head .cat-arrow{display:inline-block;width:14px;color:#888;transition:transform .15s}
+tr.cat-head.open .cat-arrow{transform:rotate(90deg)}
+tr.cat-head .cat-count{font-weight:400;color:#888;margin-left:6px}
 .setting-cat-filter{border:1px solid #ddd;border-radius:4px;padding:5px 10px;font-size:13px;background:#fff;color:#333;min-width:110px}
 .setting-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 
@@ -966,13 +972,7 @@ input[readonly]{background:#f5f5f5;color:#999}
     <div class="setting-section">
       <div class="setting-head">
         <h3>품목 단가표 (매입단가 / 매출단가)</h3>
-        <select id="filter-price-cat" class="setting-cat-filter" onchange="renderItemPrices()">
-          <option value="전체">전체</option>
-          <option value="조명">조명</option>
-          <option value="원부자재">원부자재</option>
-          <option value="수수료">수수료</option>
-          <option value="미분류">미분류</option>
-        </select>
+        <input type="search" id="search-price" class="setting-search" placeholder="검색" oninput="renderItemPrices()">
       </div>
       <p style="font-size:13px;color:#666;margin-bottom:12px">업체와 무관하게 품목 하나에 매입단가·매출단가·단위를 등록해두면, 발주·견적 입력 시 품목을 고를 때 단가가 채워지고, 규격이 없으면 단위가 규격으로 들어가요. <strong>품목명을 바꾸면 기존 발주·납품 내역에도 같이 반영</strong>됩니다.</p>
       <table class="data-tbl">
@@ -1024,13 +1024,7 @@ input[readonly]{background:#f5f5f5;color:#999}
     <div class="setting-section">
       <div class="setting-head">
         <h3>매입처 관리</h3>
-        <select id="filter-buyer-cat" class="setting-cat-filter" onchange="renderBuyerContacts()">
-          <option value="전체">전체</option>
-          <option value="조명">조명</option>
-          <option value="원부자재">원부자재</option>
-          <option value="수수료">수수료</option>
-          <option value="미분류">미분류</option>
-        </select>
+        <input type="search" id="search-buyer" class="setting-search" placeholder="검색" oninput="renderBuyerContacts()">
       </div>
       <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
         <input id="new-buyer-name" placeholder="매입처명" style="width:160px">
@@ -1046,13 +1040,7 @@ input[readonly]{background:#f5f5f5;color:#999}
     <div class="setting-section">
       <div class="setting-head">
         <h3>매출처 관리</h3>
-        <select id="filter-seller-cat" class="setting-cat-filter" onchange="renderSellerContacts()">
-          <option value="전체">전체</option>
-          <option value="조명">조명</option>
-          <option value="원부자재">원부자재</option>
-          <option value="수수료">수수료</option>
-          <option value="미분류">미분류</option>
-        </select>
+        <input type="search" id="search-seller" class="setting-search" placeholder="검색" oninput="renderSellerContacts()">
       </div>
       <p style="font-size:12px;color:#666;margin:0 0 12px">매출처는 회사명만 등록해요. 납품 주소·담당자는 아래 배송지에서 관리합니다.</p>
       <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
@@ -2706,6 +2694,48 @@ async function delDeliverySite(idx){
   renderDeliverySites();
 }
 
+/* ── 설정 목록: 분류별 접기 + 검색 ── */
+const SETTING_CATS=['조명','원부자재','수수료','미분류'];
+var _settingCatOpen={};
+try{ _settingCatOpen=JSON.parse(localStorage.getItem('setting_cat_open')||'{}')||{}; }catch(e){ _settingCatOpen={}; }
+function settingSearchQuery(id){
+  return String((document.getElementById(id)||{}).value||'').trim().toLowerCase();
+}
+/**
+ * rows: [{cat, text, html}] → 분류 머리줄(접기/펴기) + 행.
+ * 검색어가 있으면 맞는 행만, 해당 분류는 펼쳐서 보여 준다.
+ */
+function settingGroupedRowsHtml(listKey, rows, colspan, q){
+  const shown=q ? rows.filter(r=>String(r.text||'').toLowerCase().includes(q)) : rows;
+  if(!shown.length) return `<tr><td colspan="${colspan}" style="text-align:center;color:#bbb;padding:1.2rem">${q?'검색 결과가 없어요':'등록된 항목이 없어요'}</td></tr>`;
+  const cats=[...SETTING_CATS, ...new Set(shown.map(r=>r.cat).filter(c=>!SETTING_CATS.includes(c)))];
+  return cats.map(cat=>{
+    const list=shown.filter(r=>(r.cat||'미분류')===cat);
+    if(!list.length) return '';
+    const open=!!q || !!(_settingCatOpen[listKey]&&_settingCatOpen[listKey][cat]);
+    const key=escHtml(listKey), c=escHtml(cat);
+    return `<tr class="cat-head${open?' open':''}" data-list="${key}" data-cat="${c}" onclick="toggleSettingCat(this)"><td colspan="${colspan}"><span class="cat-arrow">▸</span>${c}<span class="cat-count">${list.length}</span></td></tr>`
+      + list.map(r=>r.html.replace(/^\s*<tr/, `<tr data-cat-row="${key}|${c}"${open?'':' style="display:none"'}`)).join('');
+  }).join('');
+}
+function toggleSettingCat(head){
+  const list=head.dataset.list, cat=head.dataset.cat;
+  const open=!head.classList.contains('open');
+  head.classList.toggle('open', open);
+  head.closest('tbody').querySelectorAll('tr[data-cat-row]').forEach(tr=>{
+    if(tr.dataset.catRow===`${list}|${cat}`) tr.style.display=open?'':'none';
+  });
+  // 검색 중에 펼친 것은 기억하지 않는다
+  const sid={item:'search-price',buyer:'search-buyer',seller:'search-seller'}[list];
+  if(sid && settingSearchQuery(sid)) return;
+  (_settingCatOpen[list]=_settingCatOpen[list]||{})[cat]=open;
+  try{ localStorage.setItem('setting_cat_open', JSON.stringify(_settingCatOpen)); }catch(e){}
+}
+/** 새로 추가한 항목이 보이게 그 분류를 펼쳐 둔다 */
+function openSettingCat(list, cat){
+  (_settingCatOpen[list]=_settingCatOpen[list]||{})[cat||'미분류']=true;
+  try{ localStorage.setItem('setting_cat_open', JSON.stringify(_settingCatOpen)); }catch(e){}
+}
 function settingsCatFilter(id){
   const el=document.getElementById(id);
   return el?el.value:'전체';
@@ -2761,25 +2791,20 @@ async function setItemCategory(item, category){
 }
 
 function renderItemPrices(){
-  const filter=settingsCatFilter('filter-price-cat');
+  const q=settingSearchQuery('search-price');
   // 단가표 + 발주에만 있는 품목도 보여 이름 변경·단가 등록이 가능하게
   const names=[...new Set([
     ...Object.keys(ITEM_PRICES||{}),
     ...(orders||[]).flatMap(o=>(o.items||[]).map(i=>String(i.item||'').trim()).filter(Boolean))
-  ])].sort((a,b)=>a.localeCompare(b,'ko'))
-    .filter(item=>!filter||filter==='전체'||itemCategory(item)===filter);
+  ])].sort((a,b)=>a.localeCompare(b,'ko'));
   const body=document.getElementById('item-price-body');
-  if(!names.length){
-    body.innerHTML=`<tr><td colspan="6" style="text-align:center;color:#bbb;padding:1.2rem">${filter!=='전체'?'이 분류에 등록된 단가가 없어요':'등록된 단가가 없어요'}</td></tr>`;
-    return;
-  }
-  body.innerHTML=names.map(item=>{
+  const rows=names.map(item=>{
     const p=ITEM_PRICES[item]||{buy:0,sell:0};
     const cat=itemCategory(item);
     const unit=escHtml(itemUnitOf(item));
     const inPrice=!!ITEM_PRICES[item];
     const attr=escHtml(item);
-    return `<tr>
+    const html=`<tr>
       <td style="padding:4px 6px">
         <input type="text" value="${attr}" data-old="${attr}" title="품목명 수정 시 기존 발주에도 반영"
           style="width:100%;font-weight:500;border:1px solid #ddd;border-radius:4px;padding:4px 6px;font-size:12px"
@@ -2810,7 +2835,9 @@ function renderItemPrices(){
       </td>
       <td style="text-align:center"><button class="del-btn" data-item="${attr}" onclick="delItemPrice(this.getAttribute('data-item'))" title="단가표에서만 삭제 (발주 내역은 유지)">×</button></td>
     </tr>`;
-  }).join('');
+    return {cat, text:`${item} ${itemUnitOf(item)||''}`, html};
+  });
+  body.innerHTML=settingGroupedRowsHtml('item', rows, 6, q);
 }
 
 async function saveItemUnit(item, value){
@@ -2906,6 +2933,7 @@ async function addItemPrice(){
   ITEM_PRICES[item]={buy,sell};
   if(!MY.item_categories) MY.item_categories={};
   MY.item_categories[item]=category;
+  openSettingCat('item', category);
   if(!MY.item_units) MY.item_units={};
   if(unit) MY.item_units[item]=unit;
   else delete MY.item_units[item];
@@ -2933,14 +2961,13 @@ async function delItemPrice(item){
 }
 
 function renderBuyerContacts(){
-  const filter=settingsCatFilter('filter-buyer-cat');
-  const rows=Object.entries(BUYERS).filter(([,info])=>partyMatchesCat(info,filter));
+  const q=settingSearchQuery('search-buyer');
+  const rows=Object.entries(BUYERS);
   const body=document.getElementById('buyer-contact-body');
-  if(!rows.length){
-    body.innerHTML=`<tr><td colspan="6" style="text-align:center;color:#bbb;padding:1.2rem">${filter!=='전체'?'이 분류에 매입처가 없어요':'등록된 매입처가 없어요'}</td></tr>`;
-    return;
-  }
-  body.innerHTML=rows.map(([name,info])=>`
+  body.innerHTML=settingGroupedRowsHtml('buyer', rows.map(([name,info])=>({
+    cat:info.category||'미분류',
+    text:[name, info.contact, info.email, info.manager, info.biz].filter(Boolean).join(' '),
+    html:`
     <tr id="buyer-row-${name}">
       <td style="font-weight:500">${name}</td>
       <td id="buyer-contact-${name}">${info.contact||'-'}</td>
@@ -2951,7 +2978,7 @@ function renderBuyerContacts(){
         <button class="btn" style="font-size:11px;padding:3px 10px" onclick="editBuyer('${name}')">수정</button>
         <button class="btn" style="font-size:11px;padding:3px 10px;color:#dc2626;border-color:#fecaca" onclick="delBuyer('${name}')">삭제</button>
       </td>
-    </tr>`).join('');
+    </tr>`})), 6, q);
 }
 
 
@@ -2994,14 +3021,13 @@ async function editBuyer(name){
   row.querySelector('button').style.color='#fff';
 }
 function renderSellerContacts(){
-  const filter=settingsCatFilter('filter-seller-cat');
-  const rows=Object.entries(SELLERS).filter(([,info])=>partyMatchesCat(info,filter));
+  const q=settingSearchQuery('search-seller');
+  const rows=Object.entries(SELLERS);
   const body=document.getElementById('seller-contact-body');
-  if(!rows.length){
-    body.innerHTML=`<tr><td colspan="7" style="text-align:center;color:#bbb;padding:1.2rem">${filter!=='전체'?'이 분류에 매출처가 없어요':'등록된 매출처가 없어요'}</td></tr>`;
-    return;
-  }
-  body.innerHTML=rows.map(([name,info])=>`
+  body.innerHTML=settingGroupedRowsHtml('seller', rows.map(([name,info])=>({
+    cat:info.category||'미분류',
+    text:[name, info.contact, info.email, info.manager, info.biz].filter(Boolean).join(' '),
+    html:`
     <tr id="seller-row-${name}">
       <td style="font-weight:500">${name}</td>
       <td id="seller-contact-${name}">${info.contact||'-'}</td>
@@ -3013,7 +3039,7 @@ function renderSellerContacts(){
         <button class="btn" style="font-size:11px;padding:3px 10px" onclick="editSeller('${name}')">수정</button>
         <button class="btn" style="font-size:11px;padding:3px 10px;color:#dc2626;border-color:#fecaca" onclick="delSeller('${name}')">삭제</button>
       </td>
-    </tr>`).join('');
+    </tr>`})), 7, q);
 }
 
 async function editSeller(name){
@@ -3088,6 +3114,7 @@ async function addBuyer(){
   if(!name){alert('매입처명을 입력해주세요');return;}
   if(BUYERS[name]){alert('이미 있는 매입처예요');return;}
   BUYERS[name]={contact,category,manager:'이은진'};
+  openSettingCat('buyer', category);
   await saveBuyerToDb(name, BUYERS[name]);
   document.getElementById('new-buyer-name').value='';
   document.getElementById('new-buyer-contact').value='';
@@ -3112,6 +3139,7 @@ async function addSeller(){
   if(name.includes('@')||name.includes('_')){alert('매출처명은 회사명만 입력해주세요 (배송지는 배송지 관리에서 등록)');return;}
   if(SELLERS[name]){alert('이미 있는 매출처예요');return;}
   SELLERS[name]={contact,biz,ceo,addr,btype,bitem,category,manager:'이은진',email:''};
+  openSettingCat('seller', category);
   await saveSellerToDb(name, SELLERS[name]);
   ensureDeliverySites();
   if(addr||contact){
