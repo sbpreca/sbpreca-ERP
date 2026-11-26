@@ -1144,6 +1144,9 @@ async function loginSubmit(){
   loginBtn.textContent = '로그인'; loginBtn.disabled = false;
   if(error){ errEl.textContent = '이메일 또는 비밀번호가 올바르지 않아요'; return; }
   showApp(data.user);
+  // 로그인 화면에서 들어오면 데이터를 아직 안 불러온 상태라 여기서 불러온다
+  // (안 하면 발주·견적 내역이 비어 보이고, 로그인해야만 읽히는 견적 내역은 [수정]도 안 됐다)
+  await startApp();
 }
 
 async function logoutApp(){
