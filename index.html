@@ -456,6 +456,7 @@ tr.cat-head .cat-count{font-weight:400;color:#888;margin-left:6px}
             <button class="btn" onclick="zoomSide(1)">+</button>
             <button class="btn" onclick="zoomSide(0)">맞춤</button>
           </div>
+          <button class="btn btn-save" onclick="pdfPoFromSide()">PDF 저장</button>
           <button class="btn btn-po" onclick="editPoFromSide()">수정</button>
           <button class="btn" onclick="closePoSide()">닫기</button>
         </div>
@@ -3777,6 +3778,15 @@ function refreshPoSide(){
   if(!orders.some(x=>x.no===_poSideNo)){ closePoSide(); return; }
   showPoSide(_poSideNo);
 }
+/** 미리보기에서 바로 PDF 저장: 편집 창과 같은 방식으로 열어 저장하고 닫는다 */
+async function pdfPoFromSide(){
+  if(!_poSideNo) return;
+  await viewPoDoc(_poSideNo);
+  const ov=document.getElementById('overlay');
+  if(!ov || ov.style.display!=='block' || currentDocKind()!=='po') return; // 번호 확인을 취소한 경우
+  try{ await printDocOverlay(); }
+  finally{ await closeDocOverlay(); }
+}
 function editPoFromSide(){
   if(_poSideNo) viewPoDoc(_poSideNo);
 }
@@ -3833,7 +3843,8 @@ function buildPOHtml(order){
     const di=resolveDeliverInfo(sample.seller||'', sample);
     const deliverName=di.company||'';
     const deliverLabel=di.label||'';
-    const deliverDisp=deliverLabel?`${deliverName} (${deliverLabel})`:deliverName;
+    // 납품처에는 업체명만 적는다 (배송지명은 소재지·인수 담당으로 충분)
+    const deliverDisp=deliverName||deliverLabel;
     // data-orig: 화면에 처음 보인 값(고쳤는지 판단), data-reg: 설정에 등록된 값
     const reg=registeredDeliverInfo(sample.seller||'');
     const footInp=(val, regVal, extra='')=>{
