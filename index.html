@@ -138,6 +138,11 @@ input[readonly]{background:#f5f5f5;color:#999}
 .deliver-tbl input[type=checkbox]{width:15px;height:15px;cursor:pointer;accent-color:#111}
 .deliver-tbl input[type=date]{font-size:12px;padding:4px 7px;border:1px solid #ddd;border-radius:4px;width:auto}
 .setting-section{margin-bottom:28px}
+.setting-fold>summary{list-style:none;cursor:pointer;user-select:none}
+.setting-fold>summary::-webkit-details-marker{display:none}
+.setting-fold>summary h3::before{content:'▸';display:inline-block;width:16px;color:#888;transition:transform .15s}
+.setting-fold[open]>summary h3::before{transform:rotate(90deg)}
+.setting-fold:not([open])>summary h3{margin-bottom:0}
 .setting-section h3{font-size:13px;font-weight:700;color:#333;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #eee}
 .setting-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #eee;flex-wrap:wrap}
 .setting-head h3{margin:0;padding:0;border:0}
@@ -468,6 +473,15 @@ tr.cat-head .cat-count{font-weight:400;color:#888;margin-left:6px}
       <select id="ql-month" onchange="renderQuotes()"><option value="">전체 월</option></select>
       <select id="ql-customer" onchange="renderQuotes()"><option value="">전체 업체</option></select>
     </div>
+    <details class="setting-section setting-fold" style="margin-bottom:14px">
+      <summary><h3>견적서 기본값</h3></summary>
+      <div class="setting-grid">
+        <div class="field" style="grid-column:1/-1"><label>지불조건</label><input id="cfg-quote-pay" placeholder="세금계산서 발행 후 익월 말일 현금 지급"></div>
+        <div class="field" style="grid-column:1/-1"><label>유효기간</label><input id="cfg-quote-valid" placeholder="견적일로부터 30일"></div>
+        <div class="field" style="grid-column:1/-1"><label>하단 멘트</label><textarea id="cfg-quote-note" rows="4" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:5px;font:inherit;font-size:13px;resize:vertical"></textarea></div>
+      </div>
+      <div style="margin-top:12px"><button class="btn btn-save" onclick="saveQuoteDefaults()">저장</button><span class="msg" id="quote-cfg-msg" style="margin-left:10px"></span></div>
+    </details>
     <div id="quote-split" style="display:flex;gap:14px;align-items:flex-start">
       <div id="quote-list-area" style="flex:1;min-width:0"></div>
       <aside id="quote-side" class="doc-side">
@@ -1014,16 +1028,8 @@ tr.cat-head .cat-count{font-weight:400;color:#888;margin-left:6px}
         <button class="btn btn-save" onclick="addItemPrice()">+ 추가</button>
       </div>
     </div>
-    <div class="setting-section">
-      <h3>업체 데이터 초기화</h3>
-      <p style="font-size:13px;color:#666;margin-bottom:12px">업체 담당자 설정이 안 보이거나 이상할 때 눌러주세요. 발주 데이터는 유지돼요.</p>
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-        <button class="btn" style="color:#854d0e;border-color:#fde68a" onclick="resetContacts()">업체 목록 초기화</button>
-        <span id="reset-msg" style="font-size:12px;color:#15803d"></span>
-      </div>
-    </div>
-    <div class="setting-section">
-      <h3>회사 정보</h3>
+    <details class="setting-section setting-fold">
+      <summary><h3>회사 정보</h3></summary>
       <div class="setting-grid">
         <div class="field"><label>회사명</label><input id="cfg-name"></div>
         <div class="field"><label>사업자번호</label><input id="cfg-biz"></div>
@@ -1032,9 +1038,6 @@ tr.cat-head .cat-count{font-weight:400;color:#888;margin-left:6px}
         <div class="field" style="grid-column:1/-1"><label>주소</label><input id="cfg-addr"></div>
         <div class="field" style="grid-column:1/-1"><label>계좌 (거래명세표 하단)</label><input id="cfg-bank"></div>
         <div class="field" style="grid-column:1/-1"><label>발주서 특기사항 기본값</label><textarea id="cfg-note" rows="4" placeholder="줄바꿈해서 여러 줄로 적을 수 있어요" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:5px;font:inherit;font-size:13px;line-height:1.5;resize:vertical;box-sizing:border-box"></textarea></div>
-        <div class="field" style="grid-column:1/-1"><label>견적서 지불조건 기본값</label><input id="cfg-quote-pay" placeholder="세금계산서 발행 후 익월 말일 현금 지급"></div>
-        <div class="field" style="grid-column:1/-1"><label>견적서 유효기간 기본값</label><input id="cfg-quote-valid" placeholder="견적일로부터 30일"></div>
-        <div class="field" style="grid-column:1/-1"><label>견적서 하단 멘트 기본값</label><textarea id="cfg-quote-note" rows="4" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:5px;font:inherit;font-size:13px;resize:vertical"></textarea></div>
       </div>
       <div style="margin-top:16px;padding-top:16px;border-top:1px solid #eee">
         <h4 style="font-size:13px;font-weight:600;color:#444;margin-bottom:12px">관리자별 연락처</h4>
@@ -1046,7 +1049,7 @@ tr.cat-head .cat-count{font-weight:400;color:#888;margin-left:6px}
         </div>
       </div>
       <div style="margin-top:16px"><button class="btn btn-save" onclick="saveConfig()">설정 저장</button><span class="msg" id="cfg-msg" style="margin-left:10px"></span></div>
-    </div>
+    </details>
     <div class="setting-section">
       <div class="setting-head">
         <h3>매입처 관리</h3>
@@ -2581,31 +2584,11 @@ function vatPeriodLabel(month){
 
 const DEFAULT_SGA=['급여','보험료','지급수수료','여비교통비','통신비','복리후생비','접대비','소모품비','수도광열비','세금과공과'];
 
-async function resetContacts(){
-  if(!confirm('⚠ 모든 팀원의 매입처·매출처 목록이 초기화돼요. 정말 진행할까요?')) return;
-  showSyncStatus('초기화 중...');
-  await sb.from('buyers').delete().neq('name','');
-  await sb.from('sellers').delete().neq('name','');
-  const buyerRows=Object.entries(DEFAULT_BUYERS).map(([name,v])=>({name,...v}));
-  const sellerRows=Object.entries(DEFAULT_BUYERS).map(([name,v])=>({name,...v}));
-  await sb.from('buyers').insert(buyerRows);
-  await sb.from('sellers').insert(Object.entries(DEFAULT_SELLERS).map(([name,v])=>({name,...v})));
-  BUYERS = {...DEFAULT_BUYERS};
-  SELLERS = {...DEFAULT_SELLERS};
-  MY.delivery_sites = JSON.parse(JSON.stringify(DEFAULT_DELIVERY_SITES));
-  await saveConfigToDb();
-  document.getElementById('reset-msg').textContent = '초기화 완료!';
-  setTimeout(()=>location.reload(), 1000);
-}
-
 async function saveConfig(){
   ['name','biz','ceo','tel','addr','bank','note'].forEach(k=>{
     const v=document.getElementById('cfg-'+k).value;
     if(v) MY[k]=v;
   });
-  MY.quote_pay=(document.getElementById('cfg-quote-pay')||{}).value||DEFAULT_CFG.quote_pay;
-  MY.quote_valid=(document.getElementById('cfg-quote-valid')||{}).value||DEFAULT_CFG.quote_valid;
-  MY.quote_note=normalizeQuoteNote((document.getElementById('cfg-quote-note')||{}).value||DEFAULT_CFG.quote_note);
   // 관리자별 연락처
   if(!MY.managers) MY.managers={};
   const m1tel=document.getElementById('cfg-mgr1-tel').value;
@@ -2619,16 +2602,27 @@ async function saveConfig(){
   document.getElementById('cfg-msg').textContent='저장 완료!';
   setTimeout(()=>document.getElementById('cfg-msg').textContent='',1500);
 }
-function loadConfig(){
-  ['name','biz','ceo','tel','addr','bank','note'].forEach(k=>{
-    document.getElementById('cfg-'+k).value=MY[k]||'';
-  });
+/** 견적 내역 탭의 견적서 기본값 (지불조건·유효기간·하단 멘트) */
+function loadQuoteDefaults(){
   const qp=document.getElementById('cfg-quote-pay');
   const qv=document.getElementById('cfg-quote-valid');
   const qn=document.getElementById('cfg-quote-note');
   if(qp) qp.value=MY.quote_pay||DEFAULT_CFG.quote_pay;
   if(qv) qv.value=MY.quote_valid||DEFAULT_CFG.quote_valid;
   if(qn) qn.value=normalizeQuoteNote(MY.quote_note||DEFAULT_CFG.quote_note);
+}
+async function saveQuoteDefaults(){
+  MY.quote_pay=(document.getElementById('cfg-quote-pay')||{}).value||DEFAULT_CFG.quote_pay;
+  MY.quote_valid=(document.getElementById('cfg-quote-valid')||{}).value||DEFAULT_CFG.quote_valid;
+  MY.quote_note=normalizeQuoteNote((document.getElementById('cfg-quote-note')||{}).value||DEFAULT_CFG.quote_note);
+  await saveConfigToDb();
+  const msg=document.getElementById('quote-cfg-msg');
+  if(msg){ msg.textContent='저장 완료!'; setTimeout(()=>{ msg.textContent=''; },1500); }
+}
+function loadConfig(){
+  ['name','biz','ceo','tel','addr','bank','note'].forEach(k=>{
+    document.getElementById('cfg-'+k).value=MY[k]||'';
+  });
   const mgrs=MY.managers||{};
   document.getElementById('cfg-mgr1-tel').value=(mgrs['이은진']||{}).tel||'010-5501-4883';
   document.getElementById('cfg-mgr1-email').value=(mgrs['이은진']||{}).email||'flyingej@naver.com';
@@ -5609,7 +5603,7 @@ function go(p){
   });
   _currentPage=p;
   if(p==='list')renderList();
-  if(p==='quotes')renderQuotes();
+  if(p==='quotes'){ loadQuoteDefaults(); renderQuotes(); }
   if(p==='deliver')renderDeliver();
   if(p==='closing')renderClosing();
   if(p==='cashflow')renderCashflow();
