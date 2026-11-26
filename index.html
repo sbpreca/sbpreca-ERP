@@ -4025,9 +4025,9 @@ function buildQuotePageHtml({finalNo, customer, contact, contactInfo, date, vali
     <div class="quote-no">No. ${escHtml(finalNo)}</div>
     <div class="po-meta">
       <div class="po-row"><span class="po-key">수 신 처</span><span class="po-val">${escHtml(customer)}</span><span class="po-key">상 호</span><span class="po-val">${escHtml(MY.name)}</span></div>
-      <div class="po-row"><span class="po-key">담 당 자</span><span class="po-val">${escHtml(formatDocContact(contact))}${contactInfo?'　'+escHtml(contactInfo):''}</span><span class="po-key">사업자번호</span><span class="po-val">${escHtml(MY.biz)}　대표: ${escHtml(MY.ceo)}</span></div>
+      <div class="po-row"><span class="po-key">담 당 자</span><span class="po-val"><input class="doc-inline-input quote-to-contact" value="${escHtml(docFieldText(formatDocContact(contact)+(contactInfo?'　'+contactInfo:'')))}"></span><span class="po-key">사업자번호</span><span class="po-val">${escHtml(MY.biz)}　대표: ${escHtml(MY.ceo)}</span></div>
       <div class="po-row"><span class="po-key">견 적 일</span><span class="po-val">${escHtml(String(date).replace(/-/g,'.'))}</span><span class="po-key">소 재 지</span><span class="po-val">${escHtml(MY.addr)}</span></div>
-      <div class="po-row"><span class="po-key">유효기간</span><span class="po-val"><input class="doc-inline-input" value="${escHtml(docFieldText(valid))}"></span><span class="po-key">담 당 자</span><span class="po-val">${escHtml(myContact)}</span></div>
+      <div class="po-row"><span class="po-key">유효기간</span><span class="po-val"><input class="doc-inline-input" value="${escHtml(docFieldText(valid))}"></span><span class="po-key">담 당 자</span><span class="po-val"><input class="doc-inline-input quote-my-contact" value="${escHtml(docFieldText(myContact))}"></span></div>
     </div>
     <div class="quote-lead"><span>아래와 같이 견적 드립니다.</span><span class="vat-hint">(부가가치세 별도)</span></div>
     <table class="po-tbl">
@@ -4201,15 +4201,30 @@ async function persistQuoteFromOverlay(){
       return (inp.value||'').replace(/\u3000/g,' ').trim();
     };
     const next={...q};
+    // 담당자: 수신처 담당자는 그대로 저장, 당사 담당자는 등록된 담당자 줄과 다르게 고쳤을 때만 그 글자를 저장
+    const toEl=page.querySelector('input.quote-to-contact');
+    if(toEl){
+      const cur=docFieldText(formatDocContact(q.contact||'')+(q.contact_info?'　'+q.contact_info:''));
+      const val=(toEl.value||'').replace(/\u3000/g,' ').trim();
+      if(val!==cur.replace(/\u3000/g,' ').trim()){ next.contact=val; next.contact_info=''; }
+    }
+    const myEl=page.querySelector('input.quote-my-contact');
+    if(myEl){
+      const mgr=q.manager||'이은진', info=(MY.managers&&MY.managers[mgr])||{};
+      const cur=(MY.managers&&MY.managers[mgr]) ? mgr+(info.tel?'　'+info.tel:'')+(info.email?' / '+info.email:'') : mgr;
+      const val=(myEl.value||'').trim();
+      if(val && val.replace(/\u3000/g,' ')!==cur.replace(/\u3000/g,' ')) next.manager=val;
+    }
     const v=field('유효기간'); if(v!=null) next.valid=v;
     const p=field('지불조건'); if(p!=null) next.pay=p;
     const d=field('납품장소'); if(d!=null) next.deliver=d;
     const r=field('특이사항'); if(r!=null) next.remark=r;
     const noteEl=page.querySelector('.quote-note textarea.doc-note-input');
-    if(noteEl) next.note=noteEl.value||'';
+    // 빈 하단 멘트는 기본 문구로 보이므로, 보이는 값과 같으면 바뀐 것으로 보지 않는다
+    if(noteEl && (noteEl.value||'')!==normalizeQuoteNote(q.note||'')) next.note=noteEl.value||'';
     const memos=[...page.querySelectorAll('.po-tbl tbody tr:not(.empty-row) textarea.doc-memo-input')];
     next.items=(q.items||[]).map((it,i)=>memos[i]?{...it, memo:memos[i].value||''}:it);
-    const changed=['valid','pay','deliver','remark','note'].some(k=>String(next[k]||'')!==String(q[k]||''))
+    const changed=['valid','pay','deliver','remark','note','contact','contact_info','manager'].some(k=>String(next[k]||'')!==String(q[k]||''))
       || JSON.stringify(next.items)!==JSON.stringify(q.items||[]);
     if(changed) await saveQuoteRecord(next);
   }
