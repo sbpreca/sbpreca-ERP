@@ -2991,11 +2991,16 @@ async function renameItemMaster(oldName, newName, inputEl){
 
 /** 열려 있는 발주 입력칸의 품목 목록/선택값을 새 이름에 맞춤 */
 function refreshOpenItemSelectors(from, to){
-  const all=catalogItems();
-  document.querySelectorAll('#items-body .isel').forEach(sel=>{
-    const cur=sel.value===from?to:sel.value;
-    sel.innerHTML='<option></option>'+all.map(k=>`<option${k===cur?' selected':''}>${escHtml(k)}</option>`).join('');
+  refreshFormItemList();
+  document.querySelectorAll('#items-body .isel').forEach(inp=>{
+    if(inp.value===from){ inp.value=to; inp.closest('tr').dataset.prevItem=to; }
   });
+}
+/** 발주 입력 품목칸의 추천 목록 (입력하면 걸러지고, 목록에 없는 이름도 적을 수 있다) */
+function refreshFormItemList(){
+  let dl=document.getElementById('f-item-list');
+  if(!dl){ dl=document.createElement('datalist'); dl.id='f-item-list'; document.body.appendChild(dl); }
+  dl.innerHTML=catalogItems().map(k=>`<option value="${escHtml(k)}"></option>`).join('');
 }
 
 async function addItemPrice(){
@@ -3255,8 +3260,7 @@ function stSel(val,cls){
 function addRow(it={}){
   const tr=document.createElement('tr');
   const bOpts=Object.keys(BUYERS).map(k=>`<option${k===it.buyer?' selected':''}>${k}</option>`).join('');
-  const allItems=catalogItems();
-  const iOpts=allItems.map(k=>`<option${k===it.item?' selected':''}>${escHtml(k)}</option>`).join('');
+  refreshFormItemList();
   const company=sellerCompany(it.seller);
   const site=sellerSite(it.seller);
   const companies=Object.keys(SELLERS).sort((a,b)=>a.localeCompare(b,'ko'));
@@ -3268,7 +3272,7 @@ function addRow(it={}){
   const selectedSite=extraLabel||site||(sites.length===1?sites[0].name:'');
   tr.innerHTML=`
     <td><select class="bsel" onchange="calcS();autoBPrice(this)" style="width:100%;font-size:12px;border:1px solid #e8e8e8;padding:4px 5px;border-radius:4px"><option></option>${bOpts}</select></td>
-    <td><select class="isel" onchange="onItemChange(this)" style="width:100%;font-size:12px;border:1px solid #e8e8e8;padding:4px 5px;border-radius:4px"><option></option>${iOpts}</select></td>
+    <td><input type="text" class="isel" list="f-item-list" value="${escHtml(it.item||'')}" placeholder="품목 선택 또는 직접 입력" onchange="onItemChange(this)" style="width:100%;font-size:12px;border:1px solid #e8e8e8;padding:4px 5px;border-radius:4px"></td>
     <td><input type="text" class="spin" value="${it.spec||''}" style="width:100%"></td>
     <td><input type="number" class="bq" value="${it.bqty||''}" style="width:100%;text-align:right" oninput="syncSellQty(this);calcRow(this);calcS()"></td>
     <td><input type="number" class="bp" value="${it.bprice||''}" style="width:100%;text-align:right" oninput="calcRow(this);calcS()"></td>
@@ -3320,7 +3324,9 @@ function markQtyDiff(tr){
 function onItemChange(sel){
   const tr=sel.closest('tr');
   const prev=tr.dataset.prevItem||'';
+  sel.value=String(sel.value||'').replace(/\s+/g,' ').trim();
   const cur=sel.value;
+  if(cur===prev) return;
   const spin=tr.querySelector('.spin');
   const newSpec=itemSpecOf(cur);
   if(newSpec) spin.value=newSpec;
@@ -3379,7 +3385,7 @@ function getRows(){
     const site=(siteRaw===MANUAL_SITE_VALUE)?(manualLabel||''):(manualLabel||siteRaw);
     return {
       buyer:tr.querySelector('.bsel').value,
-      item:tr.querySelector('.isel').value,
+      item:tr.querySelector('.isel').value.trim(),
       spec:tr.querySelector('.spin').value,
       bqty:+tr.querySelector('.bq').value||0,
       bprice:+tr.querySelector('.bp').value||0,
