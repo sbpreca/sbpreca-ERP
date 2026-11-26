@@ -24,12 +24,19 @@ h1{font-size:17px;font-weight:600;margin-bottom:16px;color:#111}
 .page.on{display:block}
 #list-split{display:flex;gap:14px;align-items:flex-start}
 #list-area{flex:1;min-width:0}
-#po-side{display:none;flex:none;width:520px;position:sticky;top:8px;max-height:calc(100vh - 16px);overflow:auto;background:#e9e9e9;border:1px solid #ddd;border-radius:7px}
-#po-side.on{display:block}
-#po-side-bar{position:sticky;top:0;z-index:1;display:flex;gap:6px;justify-content:flex-end;padding:8px 10px;background:#e9e9e9}
-#po-side-doc{margin:0 10px 10px;background:#fff;overflow:hidden}
+.doc-side{display:none;flex-direction:column;flex:none;width:50%;position:sticky;top:8px;height:calc(100vh - 16px);overflow:hidden;background:#e9e9e9;border:1px solid #ddd;border-radius:7px}
+.doc-side.on{display:flex}
+.doc-side-bar{display:flex;gap:6px;justify-content:flex-end;padding:8px 10px;background:#e9e9e9}
+.doc-side-doc{flex:1;min-height:0;margin:0 10px 10px;overflow:auto}
 .card.po-side-sel{border-color:#111;box-shadow:0 0 0 1px #111}
-@media (max-width:1200px){#po-side{width:420px}}
+.side-zoom{display:flex;align-items:center;gap:4px;margin-right:auto}
+.side-zoom .btn{min-width:30px;padding:4px 8px}
+.side-zoom-val{font-size:12px;color:#555;min-width:44px;text-align:center;font-variant-numeric:tabular-nums}
+#deliver-split{display:flex;gap:14px;align-items:flex-start}
+#deliver-main{flex:1;min-width:0;overflow-x:auto}
+#deliver-split.side-open .deliver-tbl th,#deliver-split.side-open .deliver-tbl td{padding-left:6px;padding-right:6px}
+.deliver-tbl tr.ts-side-sel td{background:#eef2ff}
+#deliver-split.side-open .deliver-tbl :is(th,td):is(:nth-child(4),:nth-child(6),:nth-child(8)){display:none}
 .form-grid{display:grid;grid-template-columns:160px 160px 1fr;gap:12px;margin-bottom:20px}
 .field{display:flex;flex-direction:column;gap:5px}
 .field label{font-size:11px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:0.3px}
@@ -430,12 +437,18 @@ input[readonly]{background:#f5f5f5;color:#999}
     </div>
     <div id="list-split">
       <div id="list-area"></div>
-      <aside id="po-side">
-        <div id="po-side-bar">
+      <aside id="po-side" class="doc-side">
+        <div class="doc-side-bar">
+          <div class="side-zoom">
+            <button class="btn" onclick="zoomSide(-1)">−</button>
+            <span class="side-zoom-val">맞춤</span>
+            <button class="btn" onclick="zoomSide(1)">+</button>
+            <button class="btn" onclick="zoomSide(0)">맞춤</button>
+          </div>
           <button class="btn btn-po" onclick="editPoFromSide()">수정</button>
           <button class="btn" onclick="closePoSide()">닫기</button>
         </div>
-        <div id="po-side-doc"></div>
+        <div id="po-side-doc" class="doc-side-doc"></div>
       </aside>
     </div>
   </div>
@@ -495,6 +508,8 @@ input[readonly]{background:#f5f5f5;color:#999}
       <span id="ts-sel-count">0건 선택됨</span>
       <button class="btn btn-ts" onclick="showTSfromDeliver()">거래명세표 PDF 생성</button>
     </div>
+    <div id="deliver-split">
+    <div id="deliver-main">
     <div class="section-box">
       <div class="section-title">
         <span>납품 내역</span>
@@ -521,6 +536,21 @@ input[readonly]{background:#f5f5f5;color:#999}
         </tr></thead>
         <tbody id="deliver-body"></tbody>
       </table>
+    </div>
+    </div>
+      <aside id="ts-side" class="doc-side">
+        <div class="doc-side-bar">
+          <div class="side-zoom">
+            <button class="btn" onclick="zoomSide(-1)">−</button>
+            <span class="side-zoom-val">맞춤</span>
+            <button class="btn" onclick="zoomSide(1)">+</button>
+            <button class="btn" onclick="zoomSide(0)">맞춤</button>
+          </div>
+          <span id="ts-side-btns" style="display:flex;gap:6px"></span>
+          <button class="btn" onclick="closeTsSide()">닫기</button>
+        </div>
+        <div id="ts-side-doc" class="doc-side-doc"></div>
+      </aside>
     </div>
   </div>
 
@@ -3577,29 +3607,56 @@ function showPoSide(no){
   renderPoSideDoc(built.html);
   document.querySelectorAll('#list-area .card').forEach(c=>c.classList.toggle('po-side-sel', c.dataset.orderNo===no));
 }
-function renderPoSideDoc(html){
-  const host=document.getElementById('po-side-doc');
+function renderPoSideDoc(html){ renderSideDoc('po-side-doc', html); }
+/** 미리보기 패널에 서류를 보기 전용으로 그린다 */
+function renderSideDoc(hostId, html){
+  const host=document.getElementById(hostId);
   // 미리보기는 그림자 DOM에 그려, 편집 창(#doc-content)을 찾는 코드와 섞이지 않게 한다
   const root=host.shadowRoot||host.attachShadow({mode:'open'});
   const css=[...document.querySelectorAll('style')].map(st=>st.textContent).join('\n');
   root.innerHTML=`<style>${css}
     :host{display:block}
-    .po-side-scale{width:794px;transform-origin:top left}
-    .po-side-scale input,.po-side-scale textarea{pointer-events:none}
-  </style><div class="po-side-scale">${html}</div>`;
+    .side-scale{width:794px;transform-origin:top left;background:#fff}
+    .side-scale input,.side-scale textarea{pointer-events:none}
+  </style><div class="side-scale">${html}</div>`;
   root.querySelectorAll('input,textarea').forEach(el=>{ el.readOnly=true; el.tabIndex=-1; });
   fitDocOverflowCells(root);
-  const fit=()=>{
-    const box=root.querySelector('.po-side-scale');
-    if(!box) return;
-    const w=host.clientWidth||500;
-    const k=Math.min(1, w/794);
-    box.style.transform=`scale(${k})`;
-    host.style.height=Math.ceil(box.offsetHeight*k)+'px';
-  };
-  fit();
-  requestAnimationFrame(()=>{ fitDocOverflowCells(root); fit(); });
+  applySideZoom();
+  requestAnimationFrame(()=>{ fitDocOverflowCells(root); applySideZoom(); });
 }
+/* 미리보기 배율: 0이면 패널 폭에 맞춤, 아니면 실제 크기 대비 배율 (발주서·거래명세표 같이, 넘겨도 유지) */
+var _sideZoom=0;
+try{ _sideZoom=+localStorage.getItem('po_side_zoom')||0; }catch(e){}
+const SIDE_ZOOM_STEPS=[0.5,0.6,0.7,0.8,0.9,1,1.1,1.25,1.5,1.75,2];
+function sideFitScale(host){
+  return Math.min(1.5, ((host&&host.clientWidth)||600)/794);
+}
+function applySideZoom(){
+  document.querySelectorAll('.doc-side-doc').forEach(host=>{
+    const box=host.shadowRoot&&host.shadowRoot.querySelector('.side-scale');
+    if(!box || !host.clientWidth) return;
+    const k=_sideZoom||sideFitScale(host);
+    box.style.transform=`scale(${k})`;
+    // 변환은 자리를 차지하지 않으니, 줄이거나 키운 크기만큼 자리를 만들어 스크롤되게 한다
+    box.style.marginRight=(794*k-794)+'px';
+    box.style.marginBottom=(box.offsetHeight*k-box.offsetHeight)+'px';
+    const lbl=host.parentElement.querySelector('.side-zoom-val');
+    if(lbl) lbl.textContent=_sideZoom?Math.round(k*100)+'%':'맞춤';
+  });
+}
+function zoomSide(dir){
+  if(!dir){ _sideZoom=0; }
+  else{
+    const host=[...document.querySelectorAll('.doc-side-doc')].find(h=>h.clientWidth);
+    const cur=_sideZoom||sideFitScale(host);
+    const next=dir>0 ? SIDE_ZOOM_STEPS.find(z=>z>cur+0.001) : [...SIDE_ZOOM_STEPS].reverse().find(z=>z<cur-0.001);
+    if(next==null) return;
+    _sideZoom=next;
+  }
+  try{ localStorage.setItem('po_side_zoom', String(_sideZoom)); }catch(e){}
+  applySideZoom();
+}
+window.addEventListener('resize', ()=>{ if(!_sideZoom) applySideZoom(); });
 function closePoSide(){
   _poSideNo='';
   document.getElementById('po-side').classList.remove('on');
@@ -4554,6 +4611,13 @@ async function saveDocOverlay(){
   }
 }
 function suggestDocPdfFilename(){
+  const reports=[...document.querySelectorAll('#doc-content .report-page')];
+  if(reports.length && !document.querySelector('#doc-content .a4-page')){
+    const txt=sel=>((reports[0].querySelector(sel)||{}).textContent||'').trim();
+    const period=(txt('.report-sub').match(/\d{4}-\d{2}/)||[''])[0];
+    const name=reports.length>1 ? `업체별 마감 확인서 ${period}` : (txt('.report-section-title')||txt('.report-title')||'보고서');
+    return name.replace(/[\\/:*?"<>|]+/g,' ').replace(/\s*·\s*/g,' ').replace(/\s+/g,'_').trim()+'.pdf';
+  }
   const kind=currentDocKind()||'ts';
   const nos=collectDocNos(kind);
   return docPdfBaseName(kind, nos[0])+'.pdf';
@@ -4629,6 +4693,7 @@ async function closeDocOverlay(){
   if(document.getElementById('page-deliver')?.classList.contains('on') && typeof renderDeliver==='function') renderDeliver();
   if(document.getElementById('page-list')?.classList.contains('on') && typeof renderList==='function') renderList();
   refreshPoSide();
+  refreshTsSide();
 }
 function collectDocNos(kind){
   // kind: true/'po' | 'quote' | false/'ts'
@@ -4705,7 +4770,12 @@ async function buildDocPdfBlob(){
   if(typeof html2pdf==='undefined') throw new Error('PDF 라이브러리를 불러오지 못했습니다');
   const root=document.getElementById('doc-content');
   const pages=[...root.querySelectorAll('.a4-page')];
-  if(!pages.length) throw new Error('문서가 없습니다');
+  if(!pages.length){
+    // 업체별 출력·손익계산서 같은 보고서(.report-page)는 길이가 제각각이라 A4 높이로 잘라 붙인다
+    const reports=[...root.querySelectorAll('.report-page')];
+    if(reports.length) return buildReportPdfBlob(reports);
+    throw new Error('문서가 없습니다');
+  }
   const opt=docPdfCaptureOpts();
   const overlay=document.getElementById('overlay');
   const prevScroll=overlay?overlay.scrollTop:0;
@@ -4721,6 +4791,45 @@ async function buildDocPdfBlob(){
       pdf.addPage([794,1123],'portrait');
       pdf.addImage(canvas.toDataURL('image/jpeg',0.98),'JPEG',0,0,794,1123);
     }
+    const blob=pdf.output('blob');
+    const bytes=new Uint8Array(await blob.arrayBuffer());
+    if(bytes.length<5000 || bytes[0]!==0x25 || bytes[1]!==0x50 || bytes[2]!==0x44 || bytes[3]!==0x46){
+      throw new Error('PDF 생성에 실패했습니다. 다시 시도해 주세요.');
+    }
+    return new Blob([bytes],{type:'application/pdf'});
+  }finally{
+    if(overlay) overlay.scrollTop=prevScroll;
+  }
+}
+/** 보고서 페이지들을 A4(794×1123) 여러 장으로 나눠 PDF로 만든다 */
+async function buildReportPdfBlob(reports){
+  const W=794, H=1123;
+  const overlay=document.getElementById('overlay');
+  const prevScroll=overlay?overlay.scrollTop:0;
+  let pdf=null;
+  try{
+    for(const el of reports){
+      el.scrollIntoView({block:'start'});
+      await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+      const h=Math.max(H, Math.ceil(el.scrollHeight));
+      const base=docPdfCaptureOpts();
+      const opt={...base, html2canvas:{...base.html2canvas, width:W, height:h}};
+      const canvas=await html2pdf().set(opt).from(el).toCanvas().get('canvas');
+      const k=canvas.width/W;          // 캔버스 배율 (scale:2)
+      const sliceH=Math.round(H*k);
+      for(let y=0; y<canvas.height-2; y+=sliceH){
+        const part=document.createElement('canvas');
+        part.width=canvas.width; part.height=sliceH;
+        const ctx=part.getContext('2d');
+        ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,part.width,part.height);
+        ctx.drawImage(canvas, 0, y, canvas.width, Math.min(sliceH, canvas.height-y), 0, 0, canvas.width, Math.min(sliceH, canvas.height-y));
+        // 첫 장은 html2pdf로 PDF를 만들고(jsPDF가 전역에 없음), 다음 장부터 같은 PDF에 붙인다
+        if(!pdf){ pdf=await html2pdf().set(docPdfCaptureOpts()).from(part,'canvas').toPdf().get('pdf'); continue; }
+        pdf.addPage([W,H],'portrait');
+        pdf.addImage(part.toDataURL('image/jpeg',0.98),'JPEG',0,0,W,H);
+      }
+    }
+    if(!pdf) throw new Error('문서가 없습니다');
     const blob=pdf.output('blob');
     const bytes=new Uint8Array(await blob.arrayBuffer());
     if(bytes.length<5000 || bytes[0]!==0x25 || bytes[1]!==0x50 || bytes[2]!==0x44 || bytes[3]!==0x46){
@@ -5118,6 +5227,64 @@ async function quickTS(idx, mode){
   openDocOverlay(html);
 }
 
+/* ── 납품현황 우측 거래명세표 미리보기 (보기 전용, [수정]·[재발행]·[발행]은 편집 창을 연다) ── */
+var _tsSideKey='';
+function tsSideKeyOf(r){ return r?`${r.order_no}|${r.item_idx}`:''; }
+function tsSideRowIdx(){ return deliverRows.findIndex(r=>tsSideKeyOf(r)===_tsSideKey); }
+/** quickTS와 같은 묶음·날짜로, 번호를 묻거나 저장하지 않고 거래명세표 HTML만 만든다 */
+function buildTsPreview(r){
+  const disp=resolveDisplayTsNo(r);
+  const tsNo=disp.ts_no||String(r.ts_no||'').trim();
+  const issued=!!tsNo || r.status==='납품완료';
+  let items=issued ? collectItemsForTsEdit(r) : collectItemsForTsShipGroup(r, {requireEmptyTsNo:true});
+  if(!items.length) items=[r];
+  const tradeDate=sellShipOf(r)||new Date().toISOString().slice(0,10);
+  const dy=tradeDate.slice(0,4),dm=tradeDate.slice(5,7),dd=tradeDate.slice(8,10);
+  const groups={};
+  items.forEach(i=>{const k=sellerCompany(i.seller);if(k)(groups[k]=groups[k]||[]).push(i);});
+  const {contactMap, addrMap}=tsDeliverMapsFromGroups(groups, 'company');
+  let html='';
+  Object.entries(groups).forEach(([seller,its],gIdx)=>{
+    const company=sellerCompany(seller);
+    const own=String((its.find(i=>String(i.ts_no||'').trim())||{}).ts_no||tsNo||'').trim();
+    html+=tsPageHtml({
+      company, seller:its[0]&&its[0].seller||seller, contact:contactMap[company], addr:addrMap[company],
+      its, dy, dm, dd, tsNo:own, tsOrig:own?resolveTsOrig(its.find(i=>i.ts_orig||i.ts_no)||its[0], own):'',
+      tradeDate, sepClass:gIdx>0?' doc-sep':''
+    });
+  });
+  return {html, issued};
+}
+function showTsSide(idx){
+  const r=deliverRows[idx];if(!r)return;
+  const {html, issued}=buildTsPreview(r);
+  if(!html){alert('매출처가 있는 항목만 거래명세표를 볼 수 있어요');return;}
+  _tsSideKey=tsSideKeyOf(r);
+  document.getElementById('ts-side').classList.add('on');
+  document.getElementById('deliver-split').classList.add('side-open');
+  const btn=(label,mode)=>`<button class="btn btn-ts" onclick="tsSideAction('${mode}')">${label}</button>`;
+  document.getElementById('ts-side-btns').innerHTML=issued ? btn('수정','edit')+btn('재발행','reissue') : btn('발행','new');
+  renderSideDoc('ts-side-doc', html);
+  document.querySelectorAll('#deliver-body tr[data-ts-key]').forEach(tr=>tr.classList.toggle('ts-side-sel', tr.dataset.tsKey===_tsSideKey));
+}
+function tsSideAction(mode){
+  const idx=tsSideRowIdx();
+  if(idx<0){ closeTsSide(); return; }
+  quickTS(idx, mode);
+}
+function closeTsSide(){
+  _tsSideKey='';
+  document.getElementById('ts-side').classList.remove('on');
+  document.getElementById('deliver-split').classList.remove('side-open');
+  document.querySelectorAll('#deliver-body tr.ts-side-sel').forEach(tr=>tr.classList.remove('ts-side-sel'));
+}
+/** 편집 창을 닫거나 목록을 다시 그린 뒤 미리보기를 최신 내용으로 (목록에서 빠졌으면 닫는다) */
+function refreshTsSide(){
+  if(!_tsSideKey) return;
+  const idx=tsSideRowIdx();
+  if(idx<0){ closeTsSide(); return; }
+  showTsSide(idx);
+}
 function renderDeliver(){
   backfillTsNosInOrders();
   const dm=document.getElementById('dl-month').value;
@@ -5173,7 +5340,8 @@ function renderDeliver(){
       const dispTip=dispNo
         ?(disp.inherited?`같은 납품일 형제 품목 번호 ${dispNo}`:`거래명세표 ${dispNo}`)
         :'미발급';
-      return `<tr class="${!isPend?'done-row':''}">
+      const sideSel=_tsSideKey && tsSideKeyOf(r)===_tsSideKey;
+      return `<tr class="${!isPend?'done-row':''}${sideSel?' ts-side-sel':''}" data-ts-key="${escHtml(tsSideKeyOf(r))}">
         <td class="c" style="color:#999;font-size:11px">${idx+1}</td>
         <td class="c"><input type="checkbox" class="dl-chk" data-idx="${idx}" ${!isPend?'disabled':''} onchange="updateTsBar()"></td>
         <td style="font-weight:600">${escHtml(sellerLabel(r.seller))}${siteHint?`<span style="font-weight:400;color:#888;font-size:11px">${escHtml(siteHint)}</span>`:''}</td>
@@ -5189,21 +5357,11 @@ function renderDeliver(){
           <option${!isPend?' selected':''}>납품완료</option>
         </select></td>
         <td class="c" style="font-size:11px;font-variant-numeric:tabular-nums;color:${dispNo?(disp.inherited?'#64748b':'#111'):'#bbb'}" title="${escHtml(dispTip)}">${tsNoStackHtml(dispNo, disp.ts_orig)}${disp.inherited&&dispNo?'<div style="font-size:9px;color:#94a3b8">형제</div>':''}</td>
-        <td class="c">${(()=>{
-          if(!(r.samt>0)) return '　';
-          const tsNo=dispNo||String(r.ts_no||'').trim();
-          const btn=(label,mode,title,extra='')=>`<button class="btn btn-ts" style="font-size:11px;padding:3px 6px;margin:1px${extra}" onclick="quickTS(${idx},'${mode}')" title="${escHtml(title)}">${label}</button>`;
-          // 기존 번호 있거나 납품완료 → 수정 + 재발행 둘 다
-          if(tsNo || !isPend){
-            const editTip=tsNo?(`현재 ${tsNo} → 수정본 ${nextTsRevNo(tsNo)}`):'기존 문서번호 입력 후 -R1 수정';
-            return `${btn('수정','edit',editTip)}${btn('재발행','reissue','새 문서번호로 재발행',';margin-left:2px')}`;
-          }
-          // 미납품·번호 없음 → 최초 명세서만
-          return btn('명세서','new','신규 발행');
-        })()}</td>
+        <td class="c">${(+r.samt>0)?`<button class="btn btn-ts" style="font-size:11px;padding:3px 8px" onclick="showTsSide(${idx})">명세서</button>`:'　'}</td>
       </tr>`;
     }).join('')
     :'<tr><td colspan="13" style="text-align:center;color:#bbb;padding:2rem">납품 내역이 없어요</td></tr>';
+  if(_tsSideKey && tsSideRowIdx()<0) closeTsSide();
 
 }
 
