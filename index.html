@@ -2358,7 +2358,13 @@ async function loadConfigFromDb(){
     await sb.from('company_config').insert({id:1, data:DEFAULT_CFG});
     return {...DEFAULT_CFG};
   }
-  const cfg=data.data||{};
+  const rawQuoteNote=String((data.data||{}).quote_note||'').trim();
+  const cfg=normalizeCfg(data.data||{});
+  if(cfg.quote_note!==rawQuoteNote) cfg.__persistQuoteNote=true;
+  return cfg;
+}
+/** 설정 객체의 빠진 칸을 기본값으로 채운다 (불러올 때·합쳐 저장한 뒤) */
+function normalizeCfg(cfg){
   if(!cfg.item_categories||typeof cfg.item_categories!=='object') cfg.item_categories={};
   if(!cfg.item_specs||typeof cfg.item_specs!=='object') cfg.item_specs={};
   if(!cfg.item_units||typeof cfg.item_units!=='object') cfg.item_units={};
@@ -2371,16 +2377,63 @@ async function loadConfigFromDb(){
   if(!cfg.ts_item_docs||typeof cfg.ts_item_docs!=='object') cfg.ts_item_docs={};
   if(!cfg.quote_pay) cfg.quote_pay=DEFAULT_CFG.quote_pay;
   if(!cfg.quote_valid) cfg.quote_valid=DEFAULT_CFG.quote_valid;
-  const rawQuoteNote=String(cfg.quote_note||'').trim();
   cfg.quote_note=normalizeQuoteNote(cfg.quote_note);
-  if(cfg.quote_note!==rawQuoteNote) cfg.__persistQuoteNote=true;
   return cfg;
 }
 
+/* ── 설정 저장: 다른 창·다른 사람이 그 사이 바꾼 설정을 덮어쓰지 않게 합쳐서 저장 ──
+   _cfgBase = 이 창이 마지막으로 불러온(또는 저장한) 설정.
+   저장할 때 DB의 최신 설정을 다시 읽고, 이 창에서 바꾼 칸만 그 위에 얹는다. */
+var _cfgBase=null;
+function cfgClone(v){ return v===undefined?undefined:JSON.parse(JSON.stringify(v)); }
+function cfgStable(v){
+  if(v===undefined) return 'u';
+  if(v===null || typeof v!=='object') return JSON.stringify(v);
+  if(Array.isArray(v)) return '['+v.map(cfgStable).join(',')+']';
+  return '{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+cfgStable(v[k])).join(',')+'}';
+}
+function cfgEq(a,b){ return cfgStable(a)===cfgStable(b); }
+function cfgIsObj(v){ return !!v && typeof v==='object' && !Array.isArray(v); }
+/** 3방향 합치기: base에서 local이 바꾼 것만 remote 위에 적용 (둘 다 바꾼 같은 칸은 이 창 값) */
+function mergeCfg3(base, local, remote){
+  if(cfgEq(local, base)) return cfgClone(remote);
+  if(cfgEq(remote, base)) return cfgClone(local);
+  if(cfgIsObj(local) && cfgIsObj(remote)){
+    const b=cfgIsObj(base)?base:{};
+    const out={};
+    new Set([...Object.keys(b), ...Object.keys(local), ...Object.keys(remote)]).forEach(k=>{
+      const v=mergeCfg3(b[k], local[k], remote[k]);
+      if(v!==undefined) out[k]=v;
+    });
+    return out;
+  }
+  return cfgClone(local);
+}
 async function saveConfigToDb(){
   showSyncStatus('저장 중...');
-  const {error}=await sb.from('company_config').upsert({id:1, data:MY}, {onConflict:'id'});
+  let data=MY;
+  try{
+    const {data:row, error:readErr}=await sb.from('company_config').select('data').eq('id',1).maybeSingle();
+    if(readErr) throw readErr;
+    if(row && row.data){
+      // 처음 불러오기에 실패했으면 기본값을 기준으로 삼아, 기본값에서 바꾼 칸만 얹는다
+      const base=_cfgBase||cfgClone(DEFAULT_CFG);
+      data=normalizeCfg(mergeCfg3(base, MY, row.data));
+    }
+  }catch(e){
+    console.warn('최신 설정을 읽지 못해 저장하지 않아요', e);
+    showSyncStatus('저장 실패', true);
+    return false;
+  }
+  delete data.__persistQuoteNote;
+  const {error}=await sb.from('company_config').upsert({id:1, data}, {onConflict:'id'});
   if(error){ console.error(error); showSyncStatus('저장 실패', true); return false; }
+  // 다른 창에서 바뀐 내용도 이 창에 반영 (MY 객체는 그대로 두고 내용만 맞춘다)
+  if(data!==MY){
+    Object.keys(MY).forEach(k=>{ if(!(k in data)) delete MY[k]; });
+    Object.assign(MY, cfgClone(data));
+  }
+  _cfgBase=cfgClone(data);
   showSyncStatus('저장됨');
   return true;
 }
@@ -2467,6 +2520,7 @@ async function loadAll(){
   showSyncStatus('불러오는 중...');
   try{
     MY = await loadConfigFromDb();
+    _cfgBase=cfgClone(MY); // 이 창이 불러온 설정 (저장할 때 바꾼 칸만 골라내는 기준)
     if(MY && MY.__persistQuoteNote){
       delete MY.__persistQuoteNote;
       saveConfigToDb().catch(e=>console.warn('quote_note normalize save', e));
