@@ -5362,11 +5362,11 @@ function tsPageHtml({company, seller, contact, addr, its, dy, dm, dd, tsNo, tsOr
   }).join('');
   const blank=`<tr class="empty-row"><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>`.repeat(Math.max(0,FIXED_ROWS-its.length));
   const contactText=(()=>{ const c=formatDocContact(contact!=null?contact:di.contact); return c&&c!=='　'?c:'　'; })();
-  const addrText=(addr!=null&&addr!=='')?addr:(di.addr||si.addr||'');
+  // 공급받는자 사업장주소: 매출처에 등록한 회사 주소 (설정 > 매출처). 없을 때만 배송지 주소
+  const addrText=docFieldText(si.addr||'')||docFieldText(di.addr||'')||(addr||'');
   // data-orig: 처음 보인 값(고쳤는지 판단), data-reg: 설정에 등록된 값
   const reg=registeredDeliverInfo(seller||company);
   const regContact=reg.contact||docFieldText(resolveSellerContact(seller||company));
-  const regAddr=reg.addr||docFieldText(si.addr||'');
   // 공급자 담당자: 발주서처럼 전화번호 뒤에 메일 주소도 적는다
   const myMgr=(MY.managers&&MY.managers['이은진'])||null;
   const myContact=myMgr
@@ -5388,7 +5388,7 @@ function tsPageHtml({company, seller, contact, addr, its, dy, dm, dd, tsNo, tsOr
 등록번호</span><span class="ts-val">${MY.biz}</span></div>
       <div class="ts-row"><span class="ts-key">상　호</span><span class="ts-val">${company}</span><span class="ts-key">상　호</span><span class="ts-val">${MY.name}</span></div>
       <div class="ts-row"><span class="ts-key">담 당 자</span><span class="ts-val"><input class="ts-contact-input" data-company="${escHtml(company)}" data-site="${escHtml(siteName)}" value="${escHtml(docFieldText(contactText==='　'?'':contactText))}" data-orig="${escHtml(docFieldText(contactText==='　'?'':contactText))}" data-reg="${escHtml(regContact)}"></span><span class="ts-key">담 당 자</span><span class="ts-val">${escHtml(myContact)}</span></div>
-      <div class="ts-row"><span class="ts-key">사업장주소</span><span class="ts-val"><input class="ts-addr-input" value="${escHtml(docFieldText(addrText))}" data-orig="${escHtml(docFieldText(addrText))}" data-reg="${escHtml(regAddr)}"></span><span class="ts-key">사업장주소</span><span class="ts-val">${MY.addr}</span></div>
+      <div class="ts-row"><span class="ts-key">사업장주소</span><span class="ts-val">${escHtml(docFieldText(addrText))||'　'}</span><span class="ts-key">사업장주소</span><span class="ts-val">${MY.addr}</span></div>
       <div class="ts-row"><span class="ts-key">업　종</span><span class="ts-val">${si.btype||'　'}</span><span class="ts-key">업　태</span><span class="ts-val">${MY.btype}</span></div>
     </div>
     <div class="ts-amt-box">
