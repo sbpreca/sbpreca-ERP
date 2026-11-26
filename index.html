@@ -3243,11 +3243,19 @@ async function delSeller(name){
   renderDeliverySites();
 }
 
+/**
+ * 새 발주번호: 발주서 문서번호와 같은 SBPO-YYMMDD순번.
+ * 발주번호가 곧 발주서 번호가 되도록, 그날 발급된 발주서 순번·이미 있는 발주번호 다음 번호를 쓴다.
+ */
 function nextNo(){
   const d=new Date(),y=String(d.getFullYear()).slice(2),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');
-  const pfx=y+m+day+'-';
-  const n=orders.filter(o=>o.no&&o.no.startsWith(pfx)).length+1;
-  return pfx+String(n).padStart(2,'0');
+  const ymd=y+m+day;
+  ensureDocSeqBuckets();
+  let seq=+MY.doc_seq.po[ymd]||0;
+  const bump=no=>{ const p=parseDocNoParts('po', no); if(p && p.ymd===ymd) seq=Math.max(seq, p.seq); };
+  orders.forEach(o=>{ bump(o.no); bump(o.po_doc_no); });
+  Object.values((MY&&MY.po_docs)||{}).forEach(m=>bump(m&&m.doc_no));
+  return formatDocNo('po', ymd, seq+1);
 }
 
 function stSel(val,cls){
@@ -3680,6 +3688,12 @@ async function resolvePoDocNoForOpen(order, opts={}){
     return finalNo;
   }
   if(!opts.issueIfNew) return cur||order.no;
+  // 예전 발주처럼 발주번호 자체가 SBPO 번호면 그 번호로 발급된 것으로 보고 묻지 않는다
+  if(!meta && parseDocNoParts('po', cur)){
+    rememberPoDoc(order.no, cur, {orig:stripTsRevSuffix(cur)});
+    await commitDocSeqFromNos('po', [cur], quoteDateKey(order.date));
+    return cur;
+  }
   // 문서번호: 상보 접두 SBPO-YYMMDD순번 (발주번호 order.no 와 별개)
   if(!parseDocNoParts('po', cur)) cur=await suggestPoDocNo(order.date);
   const typed=prompt('발주서 문서번호', cur);
@@ -3709,7 +3723,14 @@ var _poSideNo='';
 function showPoSide(no){
   const order=orders.find(x=>x.no===no);
   if(!order){alert('발주를 찾을 수 없어요');return;}
-  const built=buildPOHtml(cloneOrder(order));
+  const view=cloneOrder(order);
+  // 아직 발급 전이면 발급될 번호(SBPO-YYMMDD순번)로 보여 준다 (발주번호가 찍히지 않게)
+  if(!getPoDocMeta(order.no) && !parseDocNoParts('po', resolvePoDocNo(order))){
+    ensureDocSeqBuckets();
+    const ymd=quoteDateKey(order.date);
+    view.po_doc_no=formatDocNo('po', ymd, (+MY.doc_seq.po[ymd]||0)+1);
+  }
+  const built=buildPOHtml(view);
   if(!built.html){alert('발주서에 넣을 품목이 없어요 (매입처를 확인해주세요)');return;}
   _poSideNo=no;
   const side=document.getElementById('po-side');
@@ -3805,8 +3826,9 @@ async function viewPoDoc(no){
   }
   if(!order) order=cloneOrder(orders.find(x=>x.no===no));
   if(!order){alert('발주를 찾을 수 없어요');return;}
-  // 발급 뒤 [저장]으로 내용이 바뀐 경우에만 수정본 번호를 묻는다. 그 외에는 묻지 않고 그대로 보여 준다
-  const docNo=await resolvePoDocNoForOpen(order);
+  // 아직 SBPO 번호가 없으면 여기서 발급한다 (목록 미리보기의 [수정]·[PDF 저장]도 이 길로 연다).
+  // 발급 뒤 [저장]으로 내용이 바뀐 경우에는 수정본 번호를 묻는다.
+  const docNo=await resolvePoDocNoForOpen(order, {issueIfNew:true});
   if(docNo===null) return;
   order.po_doc_no=docNo||order.no;
   const built=buildPOHtml(order);
@@ -5806,11 +5828,8 @@ async function copyOrder(no){
   const o=orders.find(x=>x.no===no);
   if(!o){alert('발주를 찾을 수 없어요');return;}
   if(!confirm(`[${o.no}] 발주를 복사할까요?\n품목 ${o.items.length}개가 복사되고\n발주번호·날짜는 새 화면에서 수정할 수 있어요.`)) return;
-  // 새 발주번호 생성
-  const d=new Date(),y=String(d.getFullYear()).slice(2),m2=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');
-  const pfx=y+m2+day+'-';
-  const existing=orders.filter(x=>x.no.startsWith(pfx));
-  const newNo=pfx+String(existing.length+1).padStart(2,'0');
+  // 새 발주번호 생성 (새 발주와 같은 SBPO 번호)
+  const newNo=nextNo();
   // 새 발주 화면으로 이동
   go('new');
   initForm();
