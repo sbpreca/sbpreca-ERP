@@ -1151,11 +1151,10 @@ async function loginSubmit(){
 
 async function logoutApp(){
   if(!confirm('로그아웃 할까요?')) return;
-  await sb.auth.signOut();
-  document.getElementById('login-screen').style.display = 'flex';
-  document.getElementById('app-wrap').style.display = 'none';
-  document.getElementById('login-email').value = '';
-  document.getElementById('login-pw').value = '';
+  // 이 브라우저에서만 로그아웃 (네트워크 오류가 나도 세션은 지운다)
+  try{ await sb.auth.signOut({scope:'local'}); }catch(e){ console.warn('signOut', e); }
+  // 불러온 데이터가 메모리에 남지 않게 새로 연다 (로그인 화면이 뜬다)
+  location.reload();
 }
 
 let _currentUserEmail = '';
@@ -1186,7 +1185,8 @@ function showSyncStatus(text, isError){
   if(!el){
     el = document.createElement('div');
     el.id = 'sync-status';
-    el.style.cssText = 'position:fixed;top:10px;right:10px;padding:6px 14px;border-radius:6px;font-size:12px;z-index:9999;transition:opacity 0.3s';
+    // 클릭을 가로채지 않게 한다 (사라진 뒤에도 자리를 차지해 바로 아래 [로그아웃]이 눌리지 않았다)
+    el.style.cssText = 'position:fixed;top:10px;right:10px;padding:6px 14px;border-radius:6px;font-size:12px;z-index:9999;transition:opacity 0.3s;pointer-events:none';
     document.body.appendChild(el);
   }
   el.textContent = text;
