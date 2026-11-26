@@ -493,6 +493,7 @@ tr.cat-head .cat-count{font-weight:400;color:#888;margin-left:6px}
             <button class="btn" onclick="zoomSide(1)">+</button>
             <button class="btn" onclick="zoomSide(0)">맞춤</button>
           </div>
+          <button class="btn btn-save" onclick="pdfQuoteFromSide()">PDF 저장</button>
           <button class="btn btn-po" onclick="editQuoteFromSide()">수정</button>
           <button class="btn" onclick="closeQuoteSide()">닫기</button>
         </div>
@@ -3997,7 +3998,7 @@ function orderItemToQuoteLine(r){
     memo:''
   };
 }
-function buildQuotePageHtml({finalNo, customer, contact, contactInfo, date, valid, pay, deliver, note, manager, items}){
+function buildQuotePageHtml({finalNo, customer, contact, contactInfo, date, valid, pay, deliver, note, manager, items, remark}){
   const si=SELLERS[customer]||{};
   const mgrInfo=(MY.managers&&MY.managers[manager])||{};
   const myContact=manager+(mgrInfo.tel?'　'+mgrInfo.tel:'')+(mgrInfo.email?' / '+mgrInfo.email:'');
@@ -4034,7 +4035,7 @@ function buildQuotePageHtml({finalNo, customer, contact, contactInfo, date, vali
     <div class="quote-foot">
       <div class="po-foot-row"><span class="po-foot-key">지불조건</span><span class="po-foot-val"><input class="doc-inline-input" value="${escHtml(docFieldText(pay))}"></span></div>
       <div class="po-foot-row"><span class="po-foot-key">납품장소</span><span class="po-foot-val"><input class="doc-inline-input" value="${escHtml(docFieldText(deliverVal))}"></span></div>
-      <div class="po-foot-row"><span class="po-foot-key">특이사항</span><span class="po-foot-val"><input class="doc-inline-input" value=""></span></div>
+      <div class="po-foot-row"><span class="po-foot-key">특이사항</span><span class="po-foot-val"><input class="doc-inline-input" value="${escHtml(remark||'')}"></span></div>
       ${MY.bank?`<div class="po-foot-row"><span class="po-foot-key">입금계좌</span><span class="po-foot-val">${escHtml(MY.bank)}</span></div>`:''}
     </div>
     <div class="quote-note">
@@ -4057,6 +4058,7 @@ async function issueQuoteNo(date, existingNo){
 /* ── 견적 내역: 발행한 견적서 저장·목록 ── */
 var QUOTES=[];
 var _quotesTableOk=true;
+var _quotesRemarkCol=null; // quotes.remark 칸 유무 (모르면 null)
 var _editingQuoteNo='';
 var _quoteSideNo='';
 async function loadQuotesFromDb(){
@@ -4081,10 +4083,17 @@ async function saveQuoteRecord(rec){
     total:(rec.items||[]).reduce((s,r)=>s+(+r.amt||0),0),
     order_no:rec.order_no||'', updated_at:new Date().toISOString()
   };
+  if(rec.remark!=null && _quotesRemarkCol!==false) row.remark=rec.remark||'';
   const i=QUOTES.findIndex(q=>q.quote_no===row.quote_no);
   if(i>=0) QUOTES[i]={...QUOTES[i], ...row}; else QUOTES.unshift(row);
   try{
-    const {error}=await sb.from('quotes').upsert(row,{onConflict:'quote_no'});
+    let {error}=await sb.from('quotes').upsert(row,{onConflict:'quote_no'});
+    if(error && 'remark' in row && /remark/i.test(String(error.message||''))){
+      // 특이사항 칸(remark)이 아직 DB에 없으면 그것만 빼고 저장
+      _quotesRemarkCol=false;
+      const {remark, ...rest}=row;
+      ({error}=await sb.from('quotes').upsert(rest,{onConflict:'quote_no'}));
+    }
     if(error) throw error;
     _quotesTableOk=true;
   }catch(e){
@@ -4097,7 +4106,7 @@ function quoteRecordToPageArgs(q){
   return {
     finalNo:q.quote_no, customer:q.customer||'', contact:q.contact||'담당자', contactInfo:q.contact_info||'',
     date:q.quote_date||'', valid:q.valid||'', pay:q.pay||'', deliver:q.deliver||'', note:q.note||'',
-    manager:q.manager||'이은진', items:q.items||[]
+    manager:q.manager||'이은진', items:q.items||[], remark:q.remark||''
   };
 }
 function renderQuotes(){
@@ -4160,7 +4169,48 @@ function closeQuoteSide(){
   document.getElementById('quote-side').classList.remove('on');
   document.querySelectorAll('#quote-list-area .card.po-side-sel').forEach(c=>c.classList.remove('po-side-sel'));
 }
-function editQuoteFromSide(){ if(_quoteSideNo) loadQuoteToForm(_quoteSideNo); }
+/** 미리보기 [수정]: 발주서처럼 견적서 편집 창을 연다 (번호는 묻지 않음). 품목은 카드의 [수정]으로 작성 화면에서 고친다 */
+function editQuoteFromSide(){ if(_quoteSideNo) openQuoteDocOverlay(_quoteSideNo); }
+function openQuoteDocOverlay(no){
+  const q=QUOTES.find(x=>x.quote_no===no);
+  if(!q){ alert('견적을 찾을 수 없어요'); return false; }
+  setDocMailMeta('quote', [{name:q.customer, role:'seller'}], q.items||[]);
+  openDocOverlay(buildQuotePageHtml(quoteRecordToPageArgs(q)));
+  return true;
+}
+async function pdfQuoteFromSide(){
+  if(!_quoteSideNo || !openQuoteDocOverlay(_quoteSideNo)) return;
+  try{ await printDocOverlay(); }
+  finally{ await closeDocOverlay(); }
+}
+/** 견적서 편집 창에서 고친 칸(유효기간·지불조건·납품장소·특이사항·하단 멘트·비고)을 견적 내역에 저장 */
+async function persistQuoteFromOverlay(){
+  const pages=[...document.querySelectorAll('#doc-content .a4-page.quote-page')];
+  for(const page of pages){
+    const no=((page.querySelector('.quote-no')||{}).textContent||'').replace(/^No\.\s*/,'').trim();
+    const q=QUOTES.find(x=>x.quote_no===no);
+    if(!q) continue;
+    const field=label=>{
+      const row=[...page.querySelectorAll('.po-row,.po-foot-row')].find(r=>[...r.querySelectorAll('.po-key,.po-foot-key')].some(k=>k.textContent.replace(/\s+/g,'')===label && k.nextElementSibling && k.nextElementSibling.querySelector('input')));
+      if(!row) return null;
+      const key=[...row.querySelectorAll('.po-key,.po-foot-key')].find(k=>k.textContent.replace(/\s+/g,'')===label);
+      const inp=key.nextElementSibling.querySelector('input');
+      return (inp.value||'').replace(/\u3000/g,' ').trim();
+    };
+    const next={...q};
+    const v=field('유효기간'); if(v!=null) next.valid=v;
+    const p=field('지불조건'); if(p!=null) next.pay=p;
+    const d=field('납품장소'); if(d!=null) next.deliver=d;
+    const r=field('특이사항'); if(r!=null) next.remark=r;
+    const noteEl=page.querySelector('.quote-note textarea.doc-note-input');
+    if(noteEl) next.note=noteEl.value||'';
+    const memos=[...page.querySelectorAll('.po-tbl tbody tr:not(.empty-row) textarea.doc-memo-input')];
+    next.items=(q.items||[]).map((it,i)=>memos[i]?{...it, memo:memos[i].value||''}:it);
+    const changed=['valid','pay','deliver','remark','note'].some(k=>String(next[k]||'')!==String(q[k]||''))
+      || JSON.stringify(next.items)!==JSON.stringify(q.items||[]);
+    if(changed) await saveQuoteRecord(next);
+  }
+}
 /** 견적 내역의 견적을 작성 화면에 불러온다. asCopy면 새 견적(새 번호·오늘 날짜)으로 */
 function loadQuoteToForm(no, asCopy){
   const q=QUOTES.find(x=>x.quote_no===no);
@@ -4915,6 +4965,8 @@ async function saveDocOverlay(){
       // 고친 담당자는 설정에도 저장 (data-reg가 새 값이 되어 품목은 설정을 따르게 된다)
       try{ await saveTsContactsToSettings(); }catch(e){ console.warn(e); }
       try{ persistTsNosFromOverlay(); }catch(e){ console.warn(e); }
+    }else if(kind==='quote'){
+      await persistQuoteFromOverlay();
     }else if(kind==='po'){
       // 고친 인수 담당자는 설정에도 저장 (data-reg가 새 값이 되어 품목은 설정을 따르게 된다)
       try{ await savePoContactsToSettings(); }catch(e){ console.warn(e); }
@@ -5005,6 +5057,10 @@ async function closeDocOverlay(){
     if(kind==='po'){
       try{ persistPoFromOverlay(); }catch(e){ console.warn(e); }
     }
+    if(kind==='quote'){
+      // 견적서 편집 창에서 고친 칸은 닫을 때도 견적 내역에 저장 (발주서와 같은 방식)
+      try{ await persistQuoteFromOverlay(); }catch(e){ console.warn(e); }
+    }
     if(kind){
       try{ await syncOverlayDocSeq(); }catch(e){ console.warn(e); }
     }
@@ -5019,6 +5075,10 @@ async function closeDocOverlay(){
   if(document.getElementById('page-list')?.classList.contains('on') && typeof renderList==='function') renderList();
   refreshPoSide();
   refreshTsSide();
+  if(document.getElementById('page-quotes')?.classList.contains('on')){
+    renderQuotes();
+    if(_quoteSideNo) showQuoteSide(_quoteSideNo);
+  }
 }
 function collectDocNos(kind){
   // kind: true/'po' | 'quote' | false/'ts'
@@ -5179,7 +5239,7 @@ function openDocOverlay(html, opts){
   const saveBtn=document.getElementById('doc-save-btn');
   const saveMsg=document.getElementById('doc-save-msg');
   // 발주서·거래명세: 인쇄와 별도로 내용 저장
-  if(saveBtn) saveBtn.style.display=(kind==='po'||kind==='ts')?'':'none';
+  if(saveBtn) saveBtn.style.display=(kind==='po'||kind==='ts'||kind==='quote')?'':'none';
   if(saveMsg){ saveMsg.textContent=''; saveMsg.style.display='none'; }
   refreshLoadRegBtn();
   // nos는 렌더 후 DOM에서 다시 수집
